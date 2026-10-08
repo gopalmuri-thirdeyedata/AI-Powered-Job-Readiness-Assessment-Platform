@@ -99,4 +99,75 @@
     .animate-marquee {
         animation: marquee 30s linear infinite;
     }
+
+    /* Suppress Clerk "Last used" badges and pills */
+    .cl-badge,
+    .cl-badge__lastUsed,
+    .cl-socialButtonsBlockButtonBadge,
+    .cl-socialButtonsBadge,
+    [class*="cl-badge"],
+    [class*="lastUsed"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+    }
+
+    /* Neutralize browser autofill pale blue/yellow background */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover, 
+    input:-webkit-autofill:focus, 
+    input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+        box-shadow: 0 0 0 1000px #ffffff inset !important;
+        -webkit-text-fill-color: #111827 !important;
+        caret-color: #111827 !important;
+        transition: background-color 5000s ease-in-out 0s !important;
+    }
+
+    /* Crisp visible borders on Clerk login input boxes */
+    .cl-formFieldInput:not(.cl-otpCodeFieldInput),
+    input[name="identifier"],
+    input[name="password"] {
+        border: 1.5px solid #d1d5db !important;
+        border-radius: 0.75rem !important;
+        background-color: #ffffff !important;
+    }
+
+    .cl-formFieldInput:not(.cl-otpCodeFieldInput):hover,
+    input[name="identifier"]:hover,
+    input[name="password"]:hover {
+        border-color: #9ca3af !important;
+    }
+
+    .cl-formFieldInput:not(.cl-otpCodeFieldInput):focus,
+    input[name="identifier"]:focus,
+    input[name="password"]:focus {
+        border-color: #16a34a !important;
+        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+        outline: none !important;
+    }
+
+    /* Clean OTP code inputs */
+    .cl-otpCodeFieldInputs {
+        display: flex !important;
+        justify-content: center !important;
+        gap: 0.5rem !important;
+    }
+
+    .cl-otpCodeFieldInput {
+        border: 1.5px solid #d1d5db !important;
+        border-radius: 0.5rem !important;
+        background-color: #ffffff !important;
+        font-weight: 600 !important;
+        font-size: 1.25rem !important;
+        text-align: center !important;
+        width: 2.75rem !important;
+        height: 3.25rem !important;
+    }
+
+    .cl-otpCodeFieldInput:focus {
+        border-color: #16a34a !important;
+        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+        outline: none !important;
+    }
 }

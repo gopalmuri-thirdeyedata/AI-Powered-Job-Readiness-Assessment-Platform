@@ -1,12 +1,11 @@
-
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Layout, Users, Shield, LogOut, Bell, UserCircle, FileSearch, UserCheck, SlidersHorizontal } from 'lucide-react';
+import { Layout, Users, Shield, LogOut, Bell, UserCircle, Menu } from 'lucide-react';
 import CandidateLoginModal from './CandidateLoginModal';
 import { UserButton } from '@clerk/clerk-react';
 import API_URL from '../apiConfig';
 
-const GlobalNavbar = () => {
+const GlobalNavbar = ({ onToggleMobileMenu }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -41,7 +40,35 @@ const GlobalNavbar = () => {
     };
     const [showLoginModal, setShowLoginModal] = useState(false);
 
+    // Profile & Organization State
+    const [profile, setProfile] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('user_profile') || '{}');
+        } catch {
+            return {};
+        }
+    });
 
+    React.useEffect(() => {
+        const fetchProfile = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (token) {
+                    const res = await fetch(`${API_URL}/api/auth/me`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setProfile(data);
+                        localStorage.setItem('user_profile', JSON.stringify(data));
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load user profile", e);
+            }
+        };
+        fetchProfile();
+    }, []);
 
     // Notification Logic
     const [notifications, setNotifications] = useState([]);
@@ -120,64 +147,81 @@ const GlobalNavbar = () => {
         return <p className="text-sm text-gray-800"><span className="font-bold">{n.user_name || 'System'}</span> {n.action} <span className="font-medium">{n.target}</span></p>;
     };
 
-    const navItems = [
-        { path: '/resume-screening', label: 'Resume Screening', icon: FileSearch },
-        { path: '/screened-candidates', label: 'Screened Candidates', icon: UserCheck },
-        { path: '/settings', label: 'Settings', icon: SlidersHorizontal },
-    ];
-
     return (
         <>
-            <nav className="h-16 bg-white/95 backdrop-blur-md border-b border-gray-200/80 fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                {/* Logo Section */}
-                <div className="flex items-center gap-5">
-                    <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-8 w-auto object-contain" />
-                    <div className="hidden sm:block w-[1.5px] h-8 bg-gray-300" />
-                    <span className="text-xl font-bold text-[#5d8c2c] tracking-tight mt-3.5">HiringAI</span>
+            <nav className="h-16 bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-3 sm:px-6 shadow-sm">
+                {/* Logo & Mobile Menu Section */}
+                <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                    {onToggleMobileMenu && (
+                        <button
+                            type="button"
+                            onClick={onToggleMobileMenu}
+                            aria-label="Toggle navigation menu"
+                            className="md:hidden p-2 text-gray-700 hover:text-[#5d8c2c] hover:bg-gray-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[#5d8c2c]/30"
+                        >
+                            <Menu className="w-5 h-5" />
+                        </button>
+                    )}
+                    <Link to="/dashboard" className="flex items-center gap-2.5 sm:gap-4 focus:outline-none min-w-0">
+                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 sm:h-8 w-auto object-contain flex-shrink-0" />
+                        <div className="hidden sm:block w-[1.5px] h-6 bg-gray-300 flex-shrink-0" />
+                        <span className="text-lg sm:text-xl font-bold text-[#5d8c2c] tracking-tight truncate">HiringAI</span>
+                    </Link>
                 </div>
 
-                {/* Center Navigation — Premium Pill Tabs */}
-                <div className="hidden md:flex items-center bg-gray-100/80 rounded-xl p-1 gap-0.5">
-                    {navItems.map(({ path, label, icon: Icon }) => {
-                        const active = isActive(path);
-                        return (
-                            <Link
-                                key={path}
-                                to={path}
-                                className={`relative flex items-center gap-2 text-sm font-semibold px-5 py-2 rounded-lg transition-all duration-300 ${
-                                    active
-                                        ? 'bg-gradient-to-r from-[#5d8c2c] to-[#4a7a1f] text-white shadow-md shadow-green-200/50'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-white/70'
-                                }`}
-                            >
-                                <Icon size={16} className={active ? 'text-white/90' : 'text-gray-400'} />
-                                {label}
-                            </Link>
-                        );
-                    })}
+                {/* Center Navigation Links (Enterprise Style) */}
+                <div className="hidden md:flex items-center gap-2 lg:gap-4">
+                    <Link
+                        to="/dashboard"
+                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/dashboard') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Dashboard
+                    </Link>
+
+                    <Link
+                        to="/analytics"
+                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/analytics') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Analytics
+                    </Link>
+
+                    <Link
+                        to="/settings"
+                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/settings') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Settings
+                    </Link>
+
+                    {profile.role === 'PLATFORM_ADMIN' && (
+                        <Link
+                            to="/platform/organizations"
+                            className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${isActive('/platform/organizations') ? 'bg-purple-100 text-purple-800 border border-purple-300 shadow-xs' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'}`}
+                        >
+                            Platform Admin
+                        </Link>
+                    )}
                 </div>
 
                 {/* Right Section: Profile & Actions */}
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
                     <div className="relative">
                         <button
                             onClick={() => {
                                 setShowNotifications(!showNotifications);
-                                // User asked: "When HR opens... notifications visible, count remains until explictly marked read"
-                                // So we DO NOT mark as read on open. Only on clicking "Mark all" or individual item.
                             }}
-                            className="text-gray-500 hover:text-gray-700 transition-colors relative focus:outline-none"
+                            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors relative focus:outline-none"
+                            aria-label="View notifications"
                         >
                             <Bell className="w-5 h-5" />
                             {unreadCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white shadow-sm">
+                                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white shadow-sm px-1">
                                     {unreadCount}
                                 </span>
                             )}
                         </button>
 
                         {showNotifications && (
-                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                            <div className="absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
                                 <div className="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                                     <h3 className="font-bold text-gray-900 text-sm">Recent Activity</h3>
                                     {unreadCount > 0 && (
@@ -211,6 +255,28 @@ const GlobalNavbar = () => {
                     </div>
 
                     <div className="h-8 w-px bg-gray-200 mx-2" />
+
+                    {/* Organization and Role Badges */}
+                    {profile.organization_name && (
+                        <div className="hidden sm:flex flex-col items-end">
+                            <span className="text-xs font-bold text-gray-900 truncate max-w-[150px]">
+                                {profile.organization_name}
+                            </span>
+                            <span className="text-[10px] font-semibold text-[#5d8c2c] uppercase tracking-wider bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                                {profile.role === 'ORGANIZATION_ADMIN' ? 'Org Admin' : profile.role}
+                            </span>
+                        </div>
+                    )}
+                    {profile.role === 'PLATFORM_ADMIN' && (
+                        <div className="hidden sm:flex flex-col items-end">
+                            <span className="text-xs font-bold text-purple-900">
+                                HiringAI Platform
+                            </span>
+                            <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                Platform Admin
+                            </span>
+                        </div>
+                    )}
 
                     {/* Clerk User Button */}
                     <UserButton

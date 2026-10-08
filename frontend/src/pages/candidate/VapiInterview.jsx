@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Vapi from '@vapi-ai/web';
-import { Mic, MicOff, PhoneOff, Video, Shield, Clock } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Video, Shield, Clock, CheckCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useProctoring from '../../hooks/useProctoring';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
-import useFullscreen from '../../hooks/useFullscreen';
+import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
+import FullscreenGateModal from '../../components/FullscreenGateModal';
 import API_URL from '../../apiConfig';
 
 // Vapi Keys — loaded from frontend/.env.local (VITE_VAPI_PUBLIC_KEY)
@@ -18,6 +19,11 @@ const VapiInterview = () => {
     const [volume, setVolume] = useState(0);
     const [cameraEnabled, setCameraEnabled] = useState(false);
     const [timeRemaining, setTimeRemaining] = useState(null);
+    const [isSubmitted, setIsSubmitted] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showEndConfirm, setShowEndConfirm] = useState(false);
+    const [completedDuration, setCompletedDuration] = useState(0);
+    const isSubmittingRef = useRef(false);
 
     // Auth check — redirect to login if no token
     useEffect(() => {
@@ -116,11 +122,26 @@ const VapiInterview = () => {
     }, []);
 
     // Fullscreen enforcement
-    const { reEnter: reEnterFullscreen } = useFullscreen({
-        enabled: status !== 'ended' && securityConfig.fullscreenProctoring,
-        onExit: () => {
-            handleAnyViolation('Fullscreen exited — please stay in fullscreen during the interview');
-            setTimeout(reEnterFullscreen, 2000);
+    const handleFullscreenTimeout = useCallback(() => {
+        handleAnyViolation('Fullscreen exit exceeded 10-second recovery limit');
+    }, [handleAnyViolation]);
+
+    const {
+        isFullscreen,
+        isGateOpen,
+        isRecoveryOpen,
+        recoveryTimeLeft,
+        error: fullscreenError,
+        enterFullscreen,
+        returnToFullscreen
+    } = useAssessmentFullscreen({
+        enabled: status !== 'ended' && !isSubmitted && securityConfig.fullscreenProctoring,
+        isCompleted: status === 'ended' || isSubmitted,
+        onRecoveryTimeout: handleFullscreenTimeout,
+        onEnterSuccess: () => {
+            if (status === 'idle' && !hasStartedRef.current) {
+                handleBeginInterview();
+            }
         }
     });
 
@@ -223,8 +244,9 @@ const VapiInterview = () => {
                 setStatus("ended");
                 stopTimer();
                 setCurrentSpeaker(null);
-                // Submission is handled by stopInterview — don't submit here
-                // to avoid race condition with token cleanup
+                if (!isSubmittingRef.current) {
+                    stopInterview();
+                }
             });
 
             vapi.on('volume-level', (level) => setVolume(level));
@@ -423,6 +445,11 @@ const VapiInterview = () => {
     };
 
     const stopInterview = async () => {
+        if (isSubmittingRef.current) return;
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
+        setShowEndConfirm(false);
+
         if (vapiRef.current) {
             try {
                 vapiRef.current.stop();
@@ -430,6 +457,11 @@ const VapiInterview = () => {
                 console.error("Error stopping Vapi:", e);
             }
         }
+
+        const duration = startTimeRef.current 
+            ? Math.floor((Date.now() - startTimeRef.current) / 1000) 
+            : 0;
+
         // Try the detailed interview submit first
         await submitInterviewResults();
         
@@ -456,17 +488,11 @@ const VapiInterview = () => {
         }
         
         stopCamera();
-        redirectToCompletion();
-    };
-
-    const redirectToCompletion = () => {
-        localStorage.removeItem('currentAssessment');
-        localStorage.removeItem('candidateToken');
-        localStorage.removeItem('aptitudeQuestions');
-        setTimeout(() => {
-            alert("Interview completed! Thank you.");
-            window.location.href = '/portal/login';
-        }, 500);
+        stopTimer();
+        setCompletedDuration(duration);
+        setIsSubmitting(false);
+        setIsSubmitted(true);
+        setStatus("ended");
     };
 
     const toggleMute = () => {
@@ -573,7 +599,15 @@ const VapiInterview = () => {
     // Pre-interview ready screen — shown when status is idle and no interview has started
     if (status === 'idle' && !hasStartedRef.current) {
         return (
-            <div className="h-screen bg-[#0a0a0a] flex items-center justify-center text-white">
+            <div className="h-screen bg-[#0a0a0a] flex items-center justify-center text-white relative">
+                {/* Fullscreen Gate Modal */}
+                <FullscreenGateModal
+                    isOpen={securityConfig.fullscreenProctoring && (isGateOpen || isRecoveryOpen)}
+                    mode={isRecoveryOpen ? 'recovery' : 'entry'}
+                    timeLeft={recoveryTimeLeft}
+                    error={fullscreenError}
+                    onAction={isRecoveryOpen ? returnToFullscreen : enterFullscreen}
+                />
                 <motion.div
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -610,7 +644,7 @@ const VapiInterview = () => {
                     <motion.button
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.97 }}
-                        onClick={handleBeginInterview}
+                        onClick={securityConfig.fullscreenProctoring ? enterFullscreen : handleBeginInterview}
                         className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-bold text-lg transition-all shadow-lg shadow-blue-500/25"
                     >
                         Start Interview
@@ -620,8 +654,115 @@ const VapiInterview = () => {
         );
     }
 
+    // Post-interview Completion Screen
+    if (isSubmitted && !showTerminalOverlay) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4 text-white relative overflow-hidden">
+                {/* Background decorative ambient glows */}
+                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute bottom-1/4 left-1/3 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.92, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.4, ease: 'easeOut' }}
+                    className="bg-gray-900/90 border border-gray-800 rounded-3xl p-8 sm:p-10 max-w-lg w-full text-center shadow-2xl backdrop-blur-xl relative z-10"
+                >
+                    {/* Glowing emerald check icon */}
+                    <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/10">
+                        <CheckCircle className="text-emerald-400" size={42} />
+                    </div>
+
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-3">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Interview Submitted Successfully
+                    </div>
+
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-white mb-2 tracking-tight">
+                        Interview Completed
+                    </h2>
+
+                    <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                        Thank you for completing your AI Video Interview session. Your responses and conversation transcript have been recorded.
+                    </p>
+
+                    {/* Session Summary Card */}
+                    <div className="bg-gray-950/70 border border-gray-800/80 rounded-2xl p-5 mb-6 text-left space-y-3">
+                        <div className="flex items-center justify-between text-xs sm:text-sm">
+                            <span className="text-gray-400">Interview Status</span>
+                            <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                Recorded & Finalized
+                            </span>
+                        </div>
+                        {completedDuration > 0 && (
+                            <div className="flex items-center justify-between text-xs sm:text-sm border-t border-gray-800/60 pt-2.5">
+                                <span className="text-gray-400">Total Duration</span>
+                                <span className="font-mono font-semibold text-white">
+                                    {Math.floor(completedDuration / 60)}m {completedDuration % 60}s
+                                </span>
+                            </div>
+                        )}
+                        <div className="flex items-center justify-between text-xs sm:text-sm border-t border-gray-800/60 pt-2.5">
+                            <span className="text-gray-400">Evaluation Round</span>
+                            <span className="font-semibold text-gray-200">AI Technical Interview</span>
+                        </div>
+                    </div>
+
+                    {/* Next Steps Card */}
+                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 mb-8 text-left">
+                        <div className="flex items-start gap-3">
+                            <Clock size={18} className="text-blue-400 shrink-0 mt-0.5" />
+                            <div>
+                                <h4 className="text-xs font-bold text-blue-300 uppercase tracking-wider mb-1">What Happens Next?</h4>
+                                <p className="text-xs text-gray-400 leading-relaxed">
+                                    Our recruiting team will review your interview transcript and technical evaluation. You will be contacted via email regarding your application status.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                localStorage.removeItem('currentAssessment');
+                                localStorage.removeItem('candidateToken');
+                                localStorage.removeItem('aptitudeQuestions');
+                                navigate('/portal/login');
+                            }}
+                            className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                            <span>Return to Portal</span>
+                            <ArrowRight size={16} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                localStorage.clear();
+                                navigate('/portal/login');
+                            }}
+                            className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl font-semibold text-sm transition-colors cursor-pointer"
+                        >
+                            Log Out
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
+
     return (
         <div className="h-screen bg-[#0a0a0a] flex flex-col text-white relative overflow-hidden">
+            {/* Fullscreen Gate & Recovery Modal */}
+            <FullscreenGateModal
+                isOpen={securityConfig.fullscreenProctoring && (isGateOpen || isRecoveryOpen)}
+                mode={isRecoveryOpen ? 'recovery' : 'entry'}
+                timeLeft={recoveryTimeLeft}
+                error={fullscreenError}
+                onAction={isRecoveryOpen ? returnToFullscreen : enterFullscreen}
+            />
             {/* Warning Banner */}
             <AnimatePresence mode="wait">
                 {showWarning && (
@@ -883,14 +1024,81 @@ const VapiInterview = () => {
                             {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                         </button>
                         <button
-                            onClick={stopInterview}
-                            className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors"
+                            type="button"
+                            onClick={() => setShowEndConfirm(true)}
+                            title="End Interview"
+                            className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all cursor-pointer shadow-lg shadow-red-600/30 hover:scale-105 active:scale-95"
                         >
                             <PhoneOff className="w-5 h-5" />
                         </button>
                     </div>
                 )
             }
+
+            {/* End Interview Confirmation Modal */}
+            <AnimatePresence>
+                {showEndConfirm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 text-center"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.92, opacity: 0, y: 15 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.92, opacity: 0, y: 15 }}
+                            className="bg-gray-900 border border-gray-800 p-7 rounded-2xl max-w-md w-full shadow-2xl text-left"
+                        >
+                            <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mb-5">
+                                <PhoneOff size={28} className="text-red-500" />
+                            </div>
+
+                            <h3 className="text-xl font-bold text-white mb-2">End Interview Session?</h3>
+                            <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                                Are you sure you want to end your interview? Your responses and conversation transcript will be finalized and submitted for evaluation. You cannot resume after ending.
+                            </p>
+
+                            <div className="flex items-center gap-3 justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEndConfirm(false)}
+                                    disabled={isSubmitting}
+                                    className="px-4 py-2.5 rounded-xl border border-gray-700 hover:bg-gray-800 text-gray-300 font-semibold text-sm transition-colors cursor-pointer"
+                                >
+                                    Continue Interview
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={stopInterview}
+                                    disabled={isSubmitting}
+                                    className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all shadow-lg shadow-red-600/25 flex items-center gap-2 cursor-pointer"
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <Loader2 size={16} className="animate-spin" />
+                                            <span>Submitting...</span>
+                                        </>
+                                    ) : (
+                                        <span>Yes, End & Submit</span>
+                                    )}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Submitting Overlay */}
+            {isSubmitting && (
+                <div className="fixed inset-0 z-[250] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="text-center">
+                        <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-white mb-1">Finalizing Interview</h3>
+                        <p className="text-sm text-gray-400">Submitting your responses and transcript...</p>
+                    </div>
+                </div>
+            )}
 
             {/* Connecting Overlay */}
             {

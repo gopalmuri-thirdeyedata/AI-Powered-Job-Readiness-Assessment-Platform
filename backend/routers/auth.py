@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 import schemas, models, utils, database
@@ -16,7 +17,8 @@ class LoginSchema(BaseModel):
 
 @router.post("/login/", response_model=schemas.Token)
 def login(login_data: LoginSchema, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.email == login_data.username).first()
+    email_clean = login_data.username.strip().lower()
+    user = db.query(models.User).filter(func.lower(models.User.email) == email_clean).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -31,8 +33,29 @@ def login(login_data: LoginSchema, db: Session = Depends(database.get_db)):
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Authorization Check: Platform Admin or active Organization Membership
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+    is_platform = (user.email.lower() == platform_admin_email or user.email.lower() == "admin@hiringai.com")
+
+    if not is_platform:
+        member = db.query(models.OrganizationMember).filter(
+            models.OrganizationMember.user_id == user.id,
+            models.OrganizationMember.status == "active"
+        ).first()
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account has not been invited to HiringAI (invite-only access). Please contact your organization administrator."
+            )
+        org = db.query(models.Organization).filter(models.Organization.id == member.organization_id).first()
+        if not org or org.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your organization account is inactive or suspended. Please contact your administrator."
+            )
     
-    access_token = utils.create_access_token(data={"sub": user.email})
+    access_token = utils.create_access_token(data={"sub": user.email, "role": user.role})
     return {"access": access_token, "token_type": "bearer"}
 
 @router.post("/candidate-login/", response_model=schemas.Token)
@@ -71,35 +94,197 @@ def candidate_login(login_data: LoginSchema, db: Session = Depends(database.get_
     access_token = utils.create_access_token(data={"sub": shadow_email})
     return {"access": access_token, "token_type": "bearer"}
 
+import os
+from typing import Optional
+from pydantic import BaseModel
+
+class CheckEmailSchema(BaseModel):
+    email: str
+
+def _check_email_allowed(raw_email: str, db: Session) -> dict:
+    raw_email = (raw_email or "").strip().lower()
+    if not raw_email or "@" not in raw_email:
+        return {
+            "allowed": False,
+            "detail": "Please enter a valid email address."
+        }
+
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+
+    # 1. Explicit Platform Admin check
+    if raw_email == platform_admin_email or raw_email == "gopalmuri1919@gmail.com" or raw_email == "admin@hiringai.com":
+        return {
+            "allowed": True,
+            "role": "PLATFORM_ADMIN",
+            "organization_name": "Platform Administration"
+        }
+
+    # 2. Organization Member check
+    membership = db.query(models.OrganizationMember).join(
+        models.User, models.OrganizationMember.user_id == models.User.id
+    ).filter(
+        func.lower(models.User.email) == raw_email
+    ).first()
+
+    if not membership:
+        direct_user = db.query(models.User).filter(func.lower(models.User.email) == raw_email).first()
+        if direct_user and direct_user.role == models.UserRole.PLATFORM_ADMIN:
+            return {
+                "allowed": True,
+                "role": "PLATFORM_ADMIN",
+                "organization_name": "Platform Administration"
+            }
+        return {
+            "allowed": False,
+            "detail": "This email has not been invited to HiringAI. Please contact your organization administrator."
+        }
+
+    # Check organization status
+    org = db.query(models.Organization).filter(models.Organization.id == membership.organization_id).first()
+    if not org or org.status != "active":
+        return {
+            "allowed": False,
+            "detail": "Your organization account is inactive or suspended. Please contact your administrator."
+        }
+
+    if membership.status == "deactivated":
+        return {
+            "allowed": False,
+            "detail": "Your account has been deactivated. Please contact your organization administrator."
+        }
+
+    return {
+        "allowed": True,
+        "role": membership.role,
+        "organization_id": org.id,
+        "organization_name": org.name
+    }
+
+@router.post("/check-email/")
+def check_email_registered_post(payload: CheckEmailSchema, db: Session = Depends(database.get_db)):
+    """
+    Pre-authentication authorization check:
+    Validates whether an email address is authorized in HiringAI BEFORE sending OTP.
+    Prevents OTP credits/send waste for unregistered emails.
+    """
+    return _check_email_allowed(payload.email, db)
+
+@router.get("/check-email/")
+def check_email_registered_get(email: str, db: Session = Depends(database.get_db)):
+    """GET variant of check-email."""
+    return _check_email_allowed(email, db)
+
 class ClerkSyncSchema(BaseModel):
     email: str
+    clerk_user_id: Optional[str] = None
+    clerk_org_id: Optional[str] = None
+    org_slug: Optional[str] = None
 
 @router.post("/clerk-sync/", response_model=schemas.Token)
 def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db)):
     email = sync_data.email.strip().lower()
-    
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        try:
+    clerk_id = sync_data.clerk_user_id.strip() if sync_data.clerk_user_id else None
+
+    platform_admin_clerk_id = os.getenv("PLATFORM_ADMIN_CLERK_USER_ID", "").strip()
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+
+    # 1. EXPLICIT PLATFORM ADMIN CHECK
+    # Only matches explicitly configured platform identity: gopalmuri1919@gmail.com, configured clerk ID, or admin@hiringai.com
+    existing_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+    is_platform = False
+    if platform_admin_clerk_id and clerk_id and clerk_id == platform_admin_clerk_id:
+        is_platform = True
+    elif platform_admin_email and email == platform_admin_email:
+        is_platform = True
+    elif email == "gopalmuri1919@gmail.com":
+        is_platform = True
+    elif email == "admin@hiringai.com":
+        is_platform = True
+
+    if is_platform:
+        user = existing_user
+        if not user:
             user = models.User(
                 email=email,
-                role=models.UserRole.SUPER_ADMIN,
+                role=models.UserRole.PLATFORM_ADMIN,
                 hashed_password=utils.get_password_hash("clerk_managed_user"),
-                is_active=True
+                is_active=True,
+                clerk_user_id=clerk_id
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-        except Exception as e:
-            db.rollback()
-            user = db.query(models.User).filter(models.User.email == email).first()
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Database sync failed: {str(e)}"
-                )
-        
-    access_token = utils.create_access_token(data={"sub": user.email})
+        else:
+            user.role = models.UserRole.PLATFORM_ADMIN
+            if clerk_id:
+                user.clerk_user_id = clerk_id
+            db.commit()
+
+        access_token = utils.create_access_token(data={"sub": user.email, "role": models.UserRole.PLATFORM_ADMIN})
+        return {"access": access_token, "token_type": "bearer"}
+
+    # 2. NON-PLATFORM USER: LOOKUP EXPLICIT PROVISIONED MEMBERSHIP
+    # Google/OTP login alone DOES NOT grant access. An explicit membership MUST exist.
+    membership = None
+    if clerk_id:
+        membership = db.query(models.OrganizationMember).filter(
+            models.OrganizationMember.clerk_user_id == clerk_id
+        ).first()
+
+    if not membership:
+        membership = db.query(models.OrganizationMember).join(
+            models.User, models.OrganizationMember.user_id == models.User.id
+        ).filter(
+            func.lower(models.User.email) == email
+        ).first()
+
+    # If no membership was found, REJECT with 403 Forbidden!
+    # Do NOT insert into organization_members.
+    # Do NOT assign HR, ORGANIZATION_ADMIN, or PLATFORM_ADMIN.
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has not been invited to HiringAI (invite-only access). Please contact your organization administrator."
+        )
+
+    # Membership exists! Validate that the organization is active
+    org = db.query(models.Organization).filter(models.Organization.id == membership.organization_id).first()
+    if not org or org.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Your organization account is inactive or suspended. Please contact your administrator."
+        )
+
+    # Retrieve or bind the user record
+    user = db.query(models.User).filter(models.User.id == membership.user_id).first()
+    if not user:
+        user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has not been invited to HiringAI. Please contact your organization administrator."
+        )
+
+    # Activate pending membership if user accepted invitation
+    if membership.status == "pending":
+        membership.status = "active"
+
+    # Link Clerk User ID if provided
+    if clerk_id:
+        membership.clerk_user_id = clerk_id
+        user.clerk_user_id = clerk_id
+
+    # Strictly sync role and tenant org from explicit organization membership
+    assigned_role = membership.role
+    if assigned_role not in ("ORGANIZATION_ADMIN", "HR"):
+        assigned_role = "HR"
+
+    user.role = assigned_role
+    user.organization_id = membership.organization_id
+    db.commit()
+
+    access_token = utils.create_access_token(data={"sub": user.email, "role": user.role})
     return {"access": access_token, "token_type": "bearer"}
 
 # Dependency
@@ -114,7 +299,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
         email: str = payload.get("sub")
-            
         if email is None:
             raise credentials_exception
         token_data = schemas.TokenData(email=email)
@@ -129,8 +313,166 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise HTTPException(
             status_code=401, 
-            detail=f"User not found",
+            detail="User not found",
             headers={"WWW-Authenticate": "Bearer"}
         )
-        
     return user
+
+def get_current_tenant(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+) -> Optional[models.Organization]:
+    """
+    Centralized dependency resolving the active Organization for the authenticated user.
+    Never trusts frontend-provided organization identifiers.
+    """
+    # Candidate users operate within their shadow user assessment context
+    if current_user.email.endswith(".internal") or current_user.role == models.UserRole.CANDIDATE:
+        return None
+
+    # Check organization membership
+    member = db.query(models.OrganizationMember).filter(
+        models.OrganizationMember.user_id == current_user.id,
+        models.OrganizationMember.status == "active"
+    ).first()
+
+    org = None
+    if member:
+        org = db.query(models.Organization).filter(models.Organization.id == member.organization_id).first()
+    elif current_user.role == models.UserRole.PLATFORM_ADMIN:
+        if current_user.organization_id:
+            org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
+        else:
+            org = db.query(models.Organization).filter(models.Organization.id == 1).first()
+
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active organization membership required."
+        )
+
+    if org.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Organization '{org.name}' is currently {org.status}. Access denied."
+        )
+
+    return org
+
+def require_platform_admin(
+    current_user: models.User = Depends(get_current_user)
+) -> models.User:
+    """Security check: Ensures only explicit Platform Admin can execute platform operations."""
+    if current_user.role != models.UserRole.PLATFORM_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform administrator privileges required."
+        )
+    return current_user
+
+def require_organization_admin(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+) -> models.User:
+    """Security check: Ensures user is an Organization Admin or Platform Admin."""
+    if current_user.role == models.UserRole.PLATFORM_ADMIN:
+        return current_user
+
+    member = db.query(models.OrganizationMember).filter(
+        models.OrganizationMember.user_id == current_user.id,
+        models.OrganizationMember.status == "active"
+    ).first()
+
+    if not member or member.role != "ORGANIZATION_ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization administrator privileges required."
+        )
+    return current_user
+
+def require_hr_or_admin(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+) -> models.User:
+    """Security check: Ensures user is an authorized recruiter (HR, Org Admin, or Platform Admin)."""
+    if current_user.role == models.UserRole.CANDIDATE or current_user.email.endswith(".internal"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Candidates are not permitted to access recruiter tools."
+        )
+
+    if current_user.role == models.UserRole.PLATFORM_ADMIN:
+        return current_user
+
+    member = db.query(models.OrganizationMember).filter(
+        models.OrganizationMember.user_id == current_user.id,
+        models.OrganizationMember.status == "active"
+    ).first()
+
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has not been invited to HiringAI. Please contact your organization administrator."
+        )
+
+    return current_user
+
+@router.get("/me")
+def get_current_user_profile(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Returns the authenticated user's profile, role, and resolved organization details.
+    """
+    if current_user.role == models.UserRole.PLATFORM_ADMIN:
+        return {
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "role": "PLATFORM_ADMIN",
+            "organization_id": None,
+            "organization_name": None,
+            "organization_slug": None
+        }
+
+    if current_user.role == models.UserRole.CANDIDATE or current_user.email.endswith(".internal"):
+        return {
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "role": "CANDIDATE",
+            "organization_id": None,
+            "organization_name": None,
+            "organization_slug": None
+        }
+
+    member = db.query(models.OrganizationMember).filter(
+        models.OrganizationMember.user_id == current_user.id,
+        models.OrganizationMember.status == "active"
+    ).first()
+
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has not been invited to HiringAI. Please contact your organization administrator."
+        )
+
+    org = db.query(models.Organization).filter(models.Organization.id == member.organization_id).first()
+    if not org or org.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your organization account is inactive or suspended. Please contact your administrator."
+        )
+
+    role_str = member.role
+    if role_str in (models.UserRole.HR_ADMIN, models.UserRole.SUPER_ADMIN):
+        role_str = "ORGANIZATION_ADMIN"
+
+    return {
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "role": role_str,
+        "organization_id": org.id,
+        "organization_name": org.name,
+        "organization_slug": org.slug
+    }
+

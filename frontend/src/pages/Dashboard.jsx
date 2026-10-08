@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Users, FileText, CheckCircle, BrainCircuit, Activity } from 'lucide-react';
 import CandidateTable from '../components/CandidateTable';
+import ConfirmationModal from '../components/ConfirmationModal';
 import { Link } from 'react-router-dom';
 import API_URL from '../apiConfig';
 
@@ -10,6 +11,17 @@ const Dashboard = () => {
     });
     const [allCandidates, setAllCandidates] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    const [confirmation, setConfirmation] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        confirmText: 'Confirm',
+        cancelText: 'Cancel',
+        isAlert: false,
+        onConfirm: null
+    });
 
     const fetchData = async (background = false) => {
         if (!background) setLoading(true);
@@ -38,35 +50,66 @@ const Dashboard = () => {
         }
     };
 
-    const handlePromote = async (candidateIds) => {
+    const handlePromote = (candidateIds) => {
         if (!candidateIds || candidateIds.length === 0) return;
 
-        if (!window.confirm(`Promote ${candidateIds.length} selected candidate(s) to their respective NEXT stages?`)) return;
+        setConfirmation({
+            isOpen: true,
+            title: 'Promote Candidates',
+            message: `Promote ${candidateIds.length} selected candidate(s) to their respective NEXT stages?`,
+            type: 'info',
+            confirmText: 'Promote',
+            cancelText: 'Cancel',
+            isAlert: false,
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/resume/candidates/bulk-update/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({
+                            candidate_ids: candidateIds,
+                            stage: 'NEXT'
+                        })
+                    });
 
-        try {
-            const res = await fetch(`${API_URL}/api/resume/candidates/bulk-update/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify({
-                    candidate_ids: candidateIds,
-                    stage: 'NEXT'
-                })
-            });
-
-            if (res.ok) {
-                alert('Candidates promoted successfully!');
-                fetchData();
-            } else {
-                const errorData = await res.json();
-                alert(`Failed to promote: ${errorData.detail || 'Unknown error'}`);
+                    if (res.ok) {
+                        setConfirmation({
+                            isOpen: true,
+                            title: 'Promotion Successful',
+                            message: `${candidateIds.length} candidate(s) promoted successfully to their respective next stages.`,
+                            type: 'success',
+                            confirmText: 'Awesome',
+                            isAlert: true,
+                            onConfirm: () => fetchData()
+                        });
+                        fetchData();
+                    } else {
+                        const errorData = await res.json();
+                        setConfirmation({
+                            isOpen: true,
+                            title: 'Promotion Failed',
+                            message: `Failed to promote: ${errorData.detail || 'Unknown error'}`,
+                            type: 'danger',
+                            confirmText: 'OK',
+                            isAlert: true
+                        });
+                    }
+                } catch (error) {
+                    console.error("Promotion failed:", error);
+                    setConfirmation({
+                        isOpen: true,
+                        title: 'Error',
+                        message: 'An error occurred during promotion. Please try again.',
+                        type: 'danger',
+                        confirmText: 'OK',
+                        isAlert: true
+                    });
+                }
             }
-        } catch (error) {
-            console.error("Promotion failed:", error);
-            alert('An error occurred during promotion.');
-        }
+        });
     };
 
     useEffect(() => {
@@ -158,28 +201,64 @@ const Dashboard = () => {
                     showAnalyticsAction={false}
                     showRecommendation={true}
                     onPromote={handlePromote}
-                    onDelete={async (ids) => {
+                    onDelete={(ids) => {
                         if (!ids || ids.length === 0) return;
-                        if (!window.confirm(`Permanently delete ${ids.length} selected candidate(s)? This cannot be undone.`)) return;
-
-                        try {
-                            setLoading(true);
-                            await Promise.all(ids.map(id =>
-                                fetch(`${API_URL}/api/resume/candidates/${id}/`, {
-                                    method: 'DELETE',
-                                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                                })
-                            ));
-                            alert('Candidates deleted successfully');
-                            fetchData();
-                        } catch (err) {
-                            console.error("Deletion failed", err);
-                            alert("Failed to delete candidates");
-                            setLoading(false);
-                        }
+                        setConfirmation({
+                            isOpen: true,
+                            title: 'Delete Candidates',
+                            message: `Permanently delete ${ids.length} selected candidate(s)? This action cannot be undone.`,
+                            type: 'danger',
+                            confirmText: 'Delete',
+                            cancelText: 'Cancel',
+                            isAlert: false,
+                            onConfirm: async () => {
+                                try {
+                                    setLoading(true);
+                                    await Promise.all(ids.map(id =>
+                                        fetch(`${API_URL}/api/resume/candidates/${id}/`, {
+                                            method: 'DELETE',
+                                            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                                        })
+                                    ));
+                                    setConfirmation({
+                                        isOpen: true,
+                                        title: 'Deleted Successfully',
+                                        message: `${ids.length} candidate(s) deleted successfully.`,
+                                        type: 'success',
+                                        confirmText: 'OK',
+                                        isAlert: true,
+                                        onConfirm: () => fetchData()
+                                    });
+                                    fetchData();
+                                } catch (err) {
+                                    console.error("Deletion failed", err);
+                                    setConfirmation({
+                                        isOpen: true,
+                                        title: 'Deletion Failed',
+                                        message: 'Failed to delete candidate(s). Please try again.',
+                                        type: 'danger',
+                                        confirmText: 'OK',
+                                        isAlert: true
+                                    });
+                                    setLoading(false);
+                                }
+                            }
+                        });
                     }}
                 />
             </div>
+
+            <ConfirmationModal
+                isOpen={confirmation.isOpen}
+                onClose={() => setConfirmation(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmation.onConfirm}
+                title={confirmation.title}
+                message={confirmation.message}
+                type={confirmation.type}
+                confirmText={confirmation.confirmText}
+                cancelText={confirmation.cancelText}
+                isAlert={confirmation.isAlert}
+            />
         </div>
     );
 };

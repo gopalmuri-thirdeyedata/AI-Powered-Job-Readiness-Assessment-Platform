@@ -650,17 +650,17 @@ const CandidateTable = ({
     const getStatusBadge = (candidate, stage) => {
         const s = getAssessmentStatus(candidate, stage);
         if (s === 'Completed' || s === 'Hired' || s === 'Offer Sent')
-            return <span className="bg-white text-green-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200">Completed</span>;
+            return <span className="inline-flex items-center whitespace-nowrap bg-white text-green-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200">Completed</span>;
         if (s === 'In Progress')
-            return <span className="bg-white text-green-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200">In Progress</span>;
+            return <span className="inline-flex items-center whitespace-nowrap bg-white text-green-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200">In Progress</span>;
         if (s === 'Assigned')
-            return <span className="bg-white text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-blue-200">Assigned</span>;
+            return <span className="inline-flex items-center whitespace-nowrap bg-white text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-blue-200">Assigned</span>;
         if (s === 'Applied')
-            return <span className="bg-white text-indigo-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-indigo-200">Applied</span>;
+            return <span className="inline-flex items-center whitespace-nowrap bg-white text-indigo-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-indigo-200">Applied</span>;
         if (s === 'Rejected')
-            return <span className="bg-white text-red-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-red-200">Rejected</span>;
+            return <span className="inline-flex items-center whitespace-nowrap bg-white text-red-700 px-2.5 py-0.5 rounded-full text-xs font-bold border border-red-200">Rejected</span>;
 
-        return <span className="bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full text-xs font-bold border border-gray-200">{s || 'Not Assigned'}</span>;
+        return <span className="inline-flex items-center whitespace-nowrap bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full text-xs font-bold border border-gray-200">{s || 'Not Assigned'}</span>;
     };
 
     // ... getStageBadgeStyles, toggleSelectAll, toggleSelect ...
@@ -903,9 +903,9 @@ const CandidateTable = ({
                             )}
                             {isAssessmentStage && (
                                 <>
-                                    <th className="px-6 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Status</th>
-                                    <th className="px-6 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Eligibility</th>
-                                    <th className="px-6 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Performance</th>
+                                    <th className="px-6 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider whitespace-nowrap">Status</th>
+                                    <th className="px-6 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider whitespace-nowrap">Eligibility</th>
+                                    <th className="px-6 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider whitespace-nowrap">Performance</th>
                                 </>
                             )}
                             {/* Recommendation Column only for Resume Screening or when explicitly asked */}
@@ -959,8 +959,8 @@ const CandidateTable = ({
                                         </td>
                                     )}
                                     {showStageColumn && (
-                                        <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold border ${getStageBadgeStyles(c.stage)}`}>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={`inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-lg text-xs font-bold border ${getStageBadgeStyles(c.stage)}`}>
                                                 {c.stage}
                                             </span>
                                         </td>
@@ -968,17 +968,17 @@ const CandidateTable = ({
 
                                     {isAssessmentStage && (
                                         <>
-                                            <td className="px-6 py-4">{getStatusBadge(c, currentStage)}</td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(c, currentStage)}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 {hasValidScore ? (
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border gap-1 ${eligibility.color}`}>
+                                                    <span className={`inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-xs font-bold border gap-1 ${eligibility.color}`}>
                                                         <eligibility.icon size={12} /> {eligibility.label}
                                                     </span>
                                                 ) : (
                                                     <span className="text-xs text-gray-400 font-medium">-</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 {hasValidScore ? (
                                                     ['Technical Interview', 'Offer Sent', 'Hired'].includes(c.stage) ? (
                                                         <button onClick={() => setViewInterview(c)} className="text-xs font-bold text-teal-600 hover:underline flex items-center gap-1">

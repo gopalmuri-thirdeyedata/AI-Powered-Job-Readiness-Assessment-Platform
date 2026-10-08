@@ -55,7 +55,7 @@ const TechnicalInterview = () => {
 
     const executePromote = async (candidateIds) => {
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/resume/candidates/bulk-update/', {
+            const res = await fetch(`${API_URL}/api/resume/candidates/bulk-update/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -68,15 +68,37 @@ const TechnicalInterview = () => {
             });
 
             if (res.ok) {
-                alert('Candidates promoted successfully!');
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Promotion Successful',
+                    message: `${candidateIds.length} candidate(s) promoted successfully.`,
+                    type: 'success',
+                    confirmText: 'Awesome',
+                    isAlert: true,
+                    onConfirm: () => fetchCandidates()
+                });
                 fetchCandidates();
             } else {
                 const errorData = await res.json();
-                alert(`Failed to promote: ${errorData.detail || 'Unknown error'}`);
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Promotion Failed',
+                    message: `Failed to promote: ${errorData.detail || 'Unknown error'}`,
+                    type: 'danger',
+                    confirmText: 'OK',
+                    isAlert: true
+                });
             }
         } catch (error) {
             console.error("Promotion failed:", error);
-            alert('An error occurred during promotion.');
+            setConfirmation({
+                isOpen: true,
+                title: 'Error',
+                message: 'An error occurred during promotion. Please try again.',
+                type: 'danger',
+                confirmText: 'OK',
+                isAlert: true
+            });
         }
     };
 
@@ -93,7 +115,7 @@ const TechnicalInterview = () => {
             return !(hasAptitude || hasCoding || hasInterview);
         });
 
-        let message = `Release offer to ${candidateIds.length} candidate(s)? This will trigger an official email notification.`;
+        let message = `Release offer to ${candidateIds.length} candidate(s)? This will trigger official offer emails.`;
         if (notDoneAnyRound.length > 0) {
             const names = notDoneAnyRound.map(c => c.name).join(', ');
             message = `WARNING: The following candidate(s) have NOT completed any test rounds (Aptitude, Coding, or Interview): ${names}.\n\n` + message;
@@ -103,17 +125,19 @@ const TechnicalInterview = () => {
 
         setConfirmation({
             isOpen: true,
-            title: 'Releasing Job Offers',
+            title: 'Release Job Offers',
             message: message,
-            type: (notDoneAnyRound.length > 0 || lowScore.length > 0) ? 'warning' : 'info',
+            type: (notDoneAnyRound.length > 0 || lowScore.length > 0) ? 'warning' : 'success',
             confirmText: 'Release Offers',
+            cancelText: 'Cancel',
+            isAlert: false,
             onConfirm: () => executeReleaseOffer(candidateIds)
         });
     };
 
     const executeReleaseOffer = async (candidateIds) => {
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/resume/candidates/bulk-update/', {
+            const res = await fetch(`${API_URL}/api/resume/candidates/bulk-update/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -121,41 +145,87 @@ const TechnicalInterview = () => {
                 },
                 body: JSON.stringify({
                     candidate_ids: Array.from(candidateIds),
-                    status: 'Offer Released' // This triggers the backend email logic
+                    status: 'Offer Released'
                 })
             });
 
             if (res.ok) {
-                alert('Offers released and emails sent successfully!');
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Offers Released',
+                    message: `Official offers and notification emails have been released to ${candidateIds.length} candidate(s).`,
+                    type: 'success',
+                    confirmText: 'Great',
+                    isAlert: true,
+                    onConfirm: () => fetchCandidates()
+                });
                 fetchCandidates();
             } else {
-                alert('Failed to release offers.');
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Offer Release Failed',
+                    message: 'Failed to release offers. Please try again.',
+                    type: 'danger',
+                    confirmText: 'OK',
+                    isAlert: true
+                });
             }
         } catch (error) {
             console.error("Offer release failed:", error);
-            alert('An error occurred during offer release.');
+            setConfirmation({
+                isOpen: true,
+                title: 'Error',
+                message: 'An error occurred during offer release.',
+                type: 'danger',
+                confirmText: 'OK',
+                isAlert: true
+            });
         }
     };
 
-    const handleDelete = async (candidateIds) => {
+    const handleDelete = (candidateIds) => {
         if (!candidateIds || candidateIds.length === 0) return;
-        if (!window.confirm(`Permanently delete ${candidateIds.length} selected candidate(s)? This cannot be undone.`)) return;
-
-        try {
-            setLoading(true);
-            await Promise.all(candidateIds.map(id =>
-                fetch(`${API_URL}/api/resume/candidates/${id}/`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                })
-            ));
-            alert('Candidates deleted successfully');
-            fetchCandidates();
-        } catch (err) {
-            console.error("Deletion failed", err);
-            alert("Failed to delete candidates");
-            setLoading(false);
-        }
+        setConfirmation({
+            isOpen: true,
+            title: 'Delete Candidates',
+            message: `Permanently delete ${candidateIds.length} selected candidate(s)? This action cannot be undone.`,
+            type: 'danger',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            isAlert: false,
+            onConfirm: async () => {
+                try {
+                    setLoading(true);
+                    await Promise.all(candidateIds.map(id =>
+                        fetch(`${API_URL}/api/resume/candidates/${id}/`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                        })
+                    ));
+                    setConfirmation({
+                        isOpen: true,
+                        title: 'Deleted Successfully',
+                        message: `${candidateIds.length} candidate(s) deleted successfully.`,
+                        type: 'success',
+                        confirmText: 'OK',
+                        isAlert: true,
+                        onConfirm: () => fetchCandidates()
+                    });
+                    fetchCandidates();
+                } catch (err) {
+                    console.error("Deletion failed", err);
+                    setConfirmation({
+                        isOpen: true,
+                        title: 'Deletion Failed',
+                        message: 'Failed to delete candidates. Please try again.',
+                        type: 'danger',
+                        confirmText: 'OK',
+                        isAlert: true
+                    });
+                    setLoading(false);
+                }
+            }
+        });
     };
 
     return (
@@ -187,6 +257,8 @@ const TechnicalInterview = () => {
                 message={confirmation.message}
                 type={confirmation.type}
                 confirmText={confirmation.confirmText}
+                cancelText={confirmation.cancelText}
+                isAlert={confirmation.isAlert}
             />
         </div>
     );

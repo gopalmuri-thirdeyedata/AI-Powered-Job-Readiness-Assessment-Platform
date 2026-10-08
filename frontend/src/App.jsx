@@ -1,14 +1,14 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-// import Dashboard from './pages/Dashboard';               // COMMENTED OUT
+import Dashboard from './pages/Dashboard';
 import ResumeScreening from './pages/ResumeScreening';
-// import CodingRound from './pages/CodingRound';           // COMMENTED OUT
-// import TechnicalInterview from './pages/TechnicalInterview'; // COMMENTED OUT
-// import AptitudeRound from './pages/AptitudeRound';       // COMMENTED OUT
-// import RecruitmentRoundsManager from './pages/RecruitmentRoundsManager'; // COMMENTED OUT
-// import Candidates from './pages/Candidates';             // COMMENTED OUT
+import CodingRound from './pages/CodingRound';
+import TechnicalInterview from './pages/TechnicalInterview';
+import AptitudeRound from './pages/AptitudeRound';
+import RecruitmentRoundsManager from './pages/RecruitmentRoundsManager';
+import Candidates from './pages/Candidates';
 import ScreenedCandidates from './pages/ScreenedCandidates';
-// import Analytics from './pages/Analytics';               // COMMENTED OUT
+import Analytics from './pages/Analytics';
 import AuthLayout from './layouts/AuthLayout';
 import DashboardLayout from './layouts/DashboardLayout';
 import CandidateLayout from './layouts/CandidateLayout';
@@ -18,11 +18,12 @@ import CandidateCodingAssessment from './pages/candidate/CandidateCodingAssessme
 import CandidateAptitudeAssessment from './pages/candidate/CandidateAptitudeAssessment';
 
 import VapiInterview from './pages/candidate/VapiInterview';
-// import VapiTest from './pages/VapiTest';                 // COMMENTED OUT
+import VapiTest from './pages/VapiTest';
 import CandidateStartPage from './pages/candidate/CandidateStartPage';
 
 import Home from './pages/Home';
 import GlobalSettings from './pages/GlobalSettings';
+import PlatformAdminDashboard from './pages/PlatformAdminDashboard';
 import ClerkAdminGuard from './components/ClerkAdminGuard';
 
 function App() {
@@ -38,18 +39,17 @@ function App() {
 
                     {/* Admin Dashboard Routes - Protected by Clerk */}
                     <Route element={<ClerkAdminGuard><DashboardLayout /></ClerkAdminGuard>}>
-                        {/* COMMENTED OUT: <Route path="/dashboard" element={<Dashboard />} /> */}
-                        {/* COMMENTED OUT: <Route path="/recruitment/rounds" element={<RecruitmentRoundsManager />} /> */}
+                        <Route path="/dashboard" element={<Dashboard />} />
+                        <Route path="/recruitment/rounds" element={<RecruitmentRoundsManager />} />
                         <Route path="/resume-screening" element={<ResumeScreening />} />
                         <Route path="/screened-candidates" element={<ScreenedCandidates />} />
-                        {/* COMMENTED OUT: <Route path="/coding-round" element={<CodingRound />} /> */}
-                        {/* COMMENTED OUT: <Route path="/aptitude-round" element={<AptitudeRound />} /> */}
-                        {/* COMMENTED OUT: <Route path="/technical-interview" element={<TechnicalInterview />} /> */}
-                        {/* COMMENTED OUT: <Route path="/candidates" element={<Candidates />} /> */}
-                        {/* COMMENTED OUT: <Route path="/analytics" element={<Analytics />} /> */}
+                        <Route path="/coding-round" element={<CodingRound />} />
+                        <Route path="/aptitude-round" element={<AptitudeRound />} />
+                        <Route path="/technical-interview" element={<TechnicalInterview />} />
+                        <Route path="/candidates" element={<Candidates />} />
+                        <Route path="/analytics" element={<Analytics />} />
                         <Route path="/settings" element={<GlobalSettings />} />
-                        {/* Default redirect to Resume Screening */}
-                        <Route path="/dashboard" element={<Navigate to="/resume-screening" replace />} />
+                        <Route path="/platform/organizations" element={<PlatformAdminDashboard />} />
                     </Route>
 
                     {/* Candidate Portal Routes - Isolated Environment */}
@@ -61,7 +61,8 @@ function App() {
                         <Route path="assessment/coding" element={<CandidateCodingAssessment />} />
                         <Route path="assessment/aptitude" element={<CandidateAptitudeAssessment />} />
                         <Route path="assessment/interview" element={<VapiInterview />} />
-                        {/* COMMENTED OUT: <Route path="test-vapi" element={<VapiTest />} /> */}
+                        <Route path="test-vapi" element={<VapiTest />} />
+                        {/* Future Assessment Routes will go here */}
                     </Route>
 
                     {/* Fallback */}

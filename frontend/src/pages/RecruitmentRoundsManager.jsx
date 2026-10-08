@@ -2,9 +2,12 @@ import React, { useState, useMemo } from 'react';
 import {
     BrainCircuit, Code2, Users, Send, CheckCircle,
     Layers, Clock, BarChart3, Mail, BookOpen, AlertCircle,
-    Search, UserPlus, ListFilter, Briefcase
+    Search, UserPlus, ListFilter, Briefcase, PenTool, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ConfirmationModal from '../components/ConfirmationModal';
+import ManualAptitudeBuilder from '../components/ManualAptitudeBuilder';
+import ManualCodingBuilder from '../components/ManualCodingBuilder';
 import API_URL from '../apiConfig';
 
 
@@ -214,217 +217,291 @@ const CandidateSelector = ({ roundParams, jobRole, onSelectionChange }) => {
 
 const AptitudeConfig = ({ config, onChange }) => (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="bg-white border-l-4 border-blue-500 p-4 rounded-r-lg shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                <BookOpen size={18} className="text-blue-600" /> Aptitude Assessment
-            </h3>
-            <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                Evaluate candidates on logical reasoning, quantitative analysis, and verbal ability. Questions are randomly generated based on selected difficulty.
-            </p>
+        <div className="bg-white border-l-4 border-blue-500 p-4 rounded-r-lg shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <BookOpen size={18} className="text-blue-600" /> Aptitude Assessment
+                </h3>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                    Evaluate candidates on logical reasoning, quantitative analysis, and verbal ability via AI or custom questions.
+                </p>
+            </div>
+
+            {/* AI vs Manual Segmented Toggle */}
+            <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                <button
+                    type="button"
+                    onClick={() => onChange('questionSource', 'ai')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        config.questionSource !== 'manual'
+                            ? 'bg-white text-blue-600 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                    <Sparkles size={14} /> AI Generated
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onChange('questionSource', 'manual')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        config.questionSource === 'manual'
+                            ? 'bg-white text-blue-600 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                    <PenTool size={14} /> Manual Questions
+                </button>
+            </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-5">
-                <FormHelper title="Assessment Topics" required>
-                    <div className="grid grid-cols-2 gap-2">
-                        {['Logical Reasoning', 'Quantitative Analysis', 'Verbal', 'Data Interpretation'].map(topic => (
-                            <label key={topic} className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-all ${(config.topics || []).includes(topic) ? 'bg-white border-blue-500 shadow-md ring-1 ring-blue-500/10' : 'bg-white border-gray-200 hover:border-blue-300'
-                                }`}>
-                                <input
-                                    type="checkbox"
-                                    checked={(config.topics || []).includes(topic)}
-                                    onChange={() => {
-                                        const current = config.topics || [];
-                                        const newTopics = current.includes(topic) ? current.filter(t => t !== topic) : [...current, topic];
-                                        onChange('topics', newTopics);
-                                    }}
-                                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                />
-                                <span className="text-sm font-medium text-gray-700">{topic}</span>
-                            </label>
-                        ))}
-                    </div>
-                </FormHelper>
-
-                <div className="grid grid-cols-2 gap-4">
-                    <FormHelper title="Duration (mins)" required>
-                        <div className="relative">
-                            <Clock className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                            <input
-                                type="number"
-                                value={config.duration}
-                                onChange={(e) => onChange('duration', e.target.value)}
-                                className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none transition-all font-medium text-gray-700"
-                            />
+        {config.questionSource === 'manual' ? (
+            <ManualAptitudeBuilder
+                questions={config.questions || []}
+                onChange={(qs) => onChange('questions', qs)}
+                duration={config.duration || 45}
+                onDurationChange={(d) => onChange('duration', d)}
+            />
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-5">
+                    <FormHelper title="Assessment Topics" required>
+                        <div className="grid grid-cols-2 gap-2">
+                            {['Logical Reasoning', 'Quantitative Analysis', 'Verbal', 'Data Interpretation'].map(topic => (
+                                <label key={topic} className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-all ${(config.topics || []).includes(topic) ? 'bg-white border-blue-500 shadow-md ring-1 ring-blue-500/10' : 'bg-white border-gray-200 hover:border-blue-300'
+                                    }`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={(config.topics || []).includes(topic)}
+                                        onChange={() => {
+                                            const current = config.topics || [];
+                                            const newTopics = current.includes(topic) ? current.filter(t => t !== topic) : [...current, topic];
+                                            onChange('topics', newTopics);
+                                        }}
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">{topic}</span>
+                                </label>
+                            ))}
                         </div>
                     </FormHelper>
-                    <FormHelper title="Questions" required>
-                        <div className="relative">
-                            <BarChart3 className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                            <input
-                                type="number"
-                                value={config.qCount}
-                                onChange={(e) => onChange('qCount', e.target.value)}
-                                className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none transition-all font-medium text-gray-700"
-                            />
-                        </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <FormHelper title="Duration (mins)" required>
+                            <div className="relative">
+                                <Clock className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                                <input
+                                    type="number"
+                                    value={config.duration}
+                                    onChange={(e) => onChange('duration', e.target.value)}
+                                    className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none transition-all font-medium text-gray-700"
+                                />
+                            </div>
+                        </FormHelper>
+                        <FormHelper title="Questions" required>
+                            <div className="relative">
+                                <BarChart3 className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                                <input
+                                    type="number"
+                                    value={config.qCount}
+                                    onChange={(e) => onChange('qCount', e.target.value)}
+                                    className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none transition-all font-medium text-gray-700"
+                                />
+                            </div>
+                        </FormHelper>
+                    </div>
+                </div>
+
+                <div className="space-y-5">
+                    <FormHelper title="Difficulty Level" required>
+                        <DifficultySelector selected={config.difficulty} onSelect={(val) => onChange('difficulty', val)} />
+                    </FormHelper>
+
+                    <FormHelper title="Instructions / AI Context (Optional)">
+                        <textarea
+                            value={config.description || ''}
+                            onChange={(e) => onChange('description', e.target.value)}
+                            placeholder="Provide specific instructions or focus areas for the AI generation..."
+                            className="w-full p-3 border border-gray-300 rounded-lg text-sm h-36 resize-none focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none transition-all"
+                        />
+                        <p className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1">
+                            <AlertCircle size={10} /> Visible to AI context only.
+                        </p>
                     </FormHelper>
                 </div>
             </div>
-
-            <div className="space-y-5">
-                <FormHelper title="Difficulty Level" required>
-                    <DifficultySelector selected={config.difficulty} onSelect={(val) => onChange('difficulty', val)} />
-                </FormHelper>
-
-                <FormHelper title="Instructions / AI Context (Optional)">
-                    <textarea
-                        value={config.description || ''}
-                        onChange={(e) => onChange('description', e.target.value)}
-                        placeholder="Provide specific instructions or focus areas for the AI generation..."
-                        className="w-full p-3 border border-gray-300 rounded-lg text-sm h-36 resize-none focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none transition-all"
-                    />
-                    <p className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1">
-                        <AlertCircle size={10} /> Visible to AI context only.
-                    </p>
-                </FormHelper>
-            </div>
-        </div>
+        )}
     </div>
 );
 
 const CodingConfig = ({ config, onChange }) => (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="bg-white border-l-4 border-green-500 p-4 rounded-r-lg shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                <Code2 size={18} className="text-green-600" /> Coding Challenge
-            </h3>
-            <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                Test algorithmic thinking and problem-solving skills. Candidates write code in a real-time environment with test cases.
-            </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-5">
-                <FormHelper title="Programming Topics" required>
-                    <div className="relative">
-                        <select
-                            multiple
-                            value={config.topics || []}
-                            onChange={(e) => {
-                                const selected = Array.from(e.target.selectedOptions, option => option.value);
-                                onChange('topics', selected);
-                            }}
-                            className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 h-40 focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none"
-                        >
-                            <option value="arrays">Arrays & Strings</option>
-                            <option value="linkedlist">Linked Lists</option>
-                            <option value="trees">Trees & Graphs</option>
-                            <option value="dp">Dynamic Programming</option>
-                            <option value="sorting">Sorting & Searching</option>
-                            <option value="greedy">Greedy Algorithms</option>
-                        </select>
-                        <p className="text-[10px] text-gray-400 mt-1 absolute right-2 bottom-2 bg-white/80 px-1 rounded pointer-events-none">Ctrl/Cmd to select multiple</p>
-                    </div>
-                </FormHelper>
-
-                <FormHelper title="Time Limit (mins)" required>
-                    <div className="relative">
-                        <Clock className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                        <input
-                            type="number"
-                            value={config.timeLimit}
-                            onChange={(e) => onChange('timeLimit', e.target.value)}
-                            className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none font-medium text-gray-700"
-                        />
-                    </div>
-                </FormHelper>
-
-                {/* NEW FIELD: Time Allocation Mode */}
-                <FormHelper title="Time Allocation">
-                    <div className="space-y-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="radio"
-                                name="timeMode"
-                                value="overall"
-                                checked={config.timeMode === 'overall' || !config.timeMode}
-                                onChange={(e) => onChange('timeMode', e.target.value)}
-                                className="text-green-500 focus:ring-green-400"
-                            />
-                            <span className="text-sm text-gray-700">Overall Time (Single timer)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="radio"
-                                name="timeMode"
-                                value="perQuestion"
-                                checked={config.timeMode === 'perQuestion'}
-                                onChange={(e) => onChange('timeMode', e.target.value)}
-                                className="text-green-500 focus:ring-green-400"
-                            />
-                            <span className="text-sm text-gray-700">Per-Question Time</span>
-                        </label>
-                    </div>
-                </FormHelper>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border-l-4 border-green-500 p-4 rounded-r-lg shadow-sm border border-gray-100">
+            <div>
+                <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <Code2 size={18} className="text-green-600" /> Coding Challenge
+                </h3>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                    Test algorithmic thinking and problem-solving skills. Candidates write code in a real-time environment with test cases.
+                </p>
             </div>
 
-            <div className="space-y-5">
-                <FormHelper title="Difficulty Level" required>
-                    <DifficultySelector selected={config.difficulty} onSelect={(val) => onChange('difficulty', val)} />
-                </FormHelper>
+            {/* Segmented Control: AI Generated vs Manual Problems */}
+            <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200 shrink-0 self-start sm:self-auto">
+                <button
+                    type="button"
+                    onClick={() => onChange('questionSource', 'ai')}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        (config.questionSource || 'ai') === 'ai'
+                            ? 'bg-white text-green-700 shadow-sm border border-gray-200/60'
+                            : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                    <Sparkles size={14} className="text-green-600" /> AI Generated
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onChange('questionSource', 'manual')}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        config.questionSource === 'manual'
+                            ? 'bg-white text-green-700 shadow-sm border border-gray-200/60'
+                            : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                    <PenTool size={14} className="text-green-600" /> Manual Problems
+                </button>
+            </div>
+        </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                    {/* NEW FIELD: Number of Questions */}
-                    <FormHelper title="Questions" required>
+        {config.questionSource === 'manual' ? (
+            <ManualCodingBuilder
+                questions={config.questions || []}
+                onChange={(qs) => onChange('questions', qs)}
+                timeLimit={config.timeLimit || 60}
+                onTimeLimitChange={(t) => onChange('timeLimit', t)}
+            />
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-5">
+                    <FormHelper title="Programming Topics" required>
                         <div className="relative">
-                            <ListFilter className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                            <select
+                                multiple
+                                value={config.topics || []}
+                                onChange={(e) => {
+                                    const selected = Array.from(e.target.selectedOptions, option => option.value);
+                                    onChange('topics', selected);
+                                }}
+                                className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 h-40 focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none"
+                            >
+                                <option value="arrays">Arrays & Strings</option>
+                                <option value="linkedlist">Linked Lists</option>
+                                <option value="trees">Trees & Graphs</option>
+                                <option value="dp">Dynamic Programming</option>
+                                <option value="sorting">Sorting & Searching</option>
+                                <option value="greedy">Greedy Algorithms</option>
+                            </select>
+                            <p className="text-[10px] text-gray-400 mt-1 absolute right-2 bottom-2 bg-white/80 px-1 rounded pointer-events-none">Ctrl/Cmd to select multiple</p>
+                        </div>
+                    </FormHelper>
+
+                    <FormHelper title="Time Limit (mins)" required>
+                        <div className="relative">
+                            <Clock className="absolute left-3 top-2.5 text-gray-400" size={16} />
                             <input
                                 type="number"
-                                min="1"
-                                max="10"
-                                value={config.questionCount === undefined ? '' : config.questionCount}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    onChange('questionCount', val === '' ? '' : parseInt(val));
-                                }}
+                                value={config.timeLimit}
+                                onChange={(e) => onChange('timeLimit', e.target.value)}
                                 className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none font-medium text-gray-700"
                             />
                         </div>
                     </FormHelper>
 
-                    {/* NEW FIELD: Test Case Intensity */}
-                    <FormHelper title="Test Cases">
-                        <div className="relative">
-                            <CheckCircle className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                            <input
-                                type="number"
-                                min="1"
-                                max="20"
-                                value={config.testIntensity === undefined ? '' : (config.testIntensity === 'low' ? 3 : config.testIntensity === 'medium' ? 5 : config.testIntensity === 'high' ? 8 : config.testIntensity)}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    onChange('testIntensity', val === '' ? '' : parseInt(val));
-                                }}
-                                className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none font-medium text-gray-700"
-                            />
+                    {/* NEW FIELD: Time Allocation Mode */}
+                    <FormHelper title="Time Allocation">
+                        <div className="space-y-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="timeMode"
+                                    value="overall"
+                                    checked={config.timeMode === 'overall' || !config.timeMode}
+                                    onChange={(e) => onChange('timeMode', e.target.value)}
+                                    className="text-green-500 focus:ring-green-400"
+                                />
+                                <span className="text-sm text-gray-700">Overall Time (Single timer)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="timeMode"
+                                    value="perQuestion"
+                                    checked={config.timeMode === 'perQuestion'}
+                                    onChange={(e) => onChange('timeMode', e.target.value)}
+                                    className="text-green-500 focus:ring-green-400"
+                                />
+                                <span className="text-sm text-gray-700">Per-Question Time</span>
+                            </label>
                         </div>
                     </FormHelper>
                 </div>
 
-                <FormHelper title="Challenge Description / Notes (Optional)">
-                    <textarea
-                        value={config.description || ''}
-                        onChange={(e) => onChange('description', e.target.value)}
-                        placeholder="e.g. Focus on edge cases and memory optimization..."
-                        className="w-full p-3 border border-gray-300 rounded-lg text-sm h-24 resize-none focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none"
-                    />
-                    <p className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1">
-                        <AlertCircle size={10} /> Provides context to the AI generator.
-                    </p>
-                </FormHelper>
+                <div className="space-y-5">
+                    <FormHelper title="Difficulty Level" required>
+                        <DifficultySelector selected={config.difficulty} onSelect={(val) => onChange('difficulty', val)} />
+                    </FormHelper>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {/* NEW FIELD: Number of Questions */}
+                        <FormHelper title="Questions" required>
+                            <div className="relative">
+                                <ListFilter className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="10"
+                                    value={config.questionCount === undefined ? '' : config.questionCount}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        onChange('questionCount', val === '' ? '' : parseInt(val));
+                                    }}
+                                    className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none font-medium text-gray-700"
+                                />
+                            </div>
+                        </FormHelper>
+
+                        {/* NEW FIELD: Test Case Intensity */}
+                        <FormHelper title="Test Cases">
+                            <div className="relative">
+                                <CheckCircle className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    value={config.testIntensity === undefined ? '' : (config.testIntensity === 'low' ? 3 : config.testIntensity === 'medium' ? 5 : config.testIntensity === 'high' ? 8 : config.testIntensity)}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        onChange('testIntensity', val === '' ? '' : parseInt(val));
+                                    }}
+                                    className="w-full pl-9 p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none font-medium text-gray-700"
+                                />
+                            </div>
+                        </FormHelper>
+                    </div>
+
+                    <FormHelper title="Challenge Description / Notes (Optional)">
+                        <textarea
+                            value={config.description || ''}
+                            onChange={(e) => onChange('description', e.target.value)}
+                            placeholder="e.g. Focus on edge cases and memory optimization..."
+                            className="w-full p-3 border border-gray-300 rounded-lg text-sm h-24 resize-none focus:ring-2 focus:ring-green-100 focus:border-green-400 outline-none"
+                        />
+                        <p className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1">
+                            <AlertCircle size={10} /> Provides context to the AI generator.
+                        </p>
+                    </FormHelper>
+                </div>
             </div>
-        </div>
+        )}
     </div>
 );
 
@@ -507,7 +584,15 @@ const RecruitmentRoundsManager = () => {
     }, []);
 
     // Initialized 'description' field for all configs
-    const [aptitudeConfig, setAptitudeConfig] = useState({ difficulty: 'Medium', topics: [], duration: 45, qCount: 30, description: '' });
+    const [aptitudeConfig, setAptitudeConfig] = useState({
+        difficulty: 'Medium',
+        topics: [],
+        duration: 45,
+        qCount: 30,
+        description: '',
+        questionSource: 'ai',
+        questions: []
+    });
     const [codingConfig, setCodingConfig] = useState({
         difficulty: 'Medium',
         topics: [],
@@ -515,7 +600,9 @@ const RecruitmentRoundsManager = () => {
         description: '',
         questionCount: 2,
         testIntensity: 5,
-        timeMode: 'overall'
+        timeMode: 'overall',
+        questionSource: 'ai',
+        questions: []
     });
     const [interviewConfig, setInterviewConfig] = useState({ difficulty: 'Medium', instructions: '', duration: 30 });
 
@@ -527,12 +614,30 @@ const RecruitmentRoundsManager = () => {
 
     const validateConfig = () => {
         if (activeTab === 'aptitude') {
-            if (!aptitudeConfig.topics || aptitudeConfig.topics.length === 0) return "Please select at least one topic for Aptitude Assessment.";
-            if (!aptitudeConfig.duration || aptitudeConfig.duration <= 0) return "Please set a valid duration.";
+            if (aptitudeConfig.questionSource === 'manual') {
+                if (!aptitudeConfig.questions || aptitudeConfig.questions.length === 0) {
+                    return "Please add at least one question in the Manual Questions builder.";
+                }
+                if (!aptitudeConfig.duration || aptitudeConfig.duration <= 0) {
+                    return "Please set a valid duration.";
+                }
+            } else {
+                if (!aptitudeConfig.topics || aptitudeConfig.topics.length === 0) return "Please select at least one topic for Aptitude Assessment.";
+                if (!aptitudeConfig.duration || aptitudeConfig.duration <= 0) return "Please set a valid duration.";
+            }
         }
         if (activeTab === 'coding') {
-            if (!codingConfig.topics || codingConfig.topics.length === 0) return "Please select at least one topic for Challenge.";
-            if (!codingConfig.timeLimit || codingConfig.timeLimit <= 0) return "Please set a valid time limit.";
+            if (codingConfig.questionSource === 'manual') {
+                if (!codingConfig.questions || codingConfig.questions.length === 0) {
+                    return "Please add at least one problem in the Manual Problems builder.";
+                }
+                if (!codingConfig.timeLimit || codingConfig.timeLimit <= 0) {
+                    return "Please set a valid time limit.";
+                }
+            } else {
+                if (!codingConfig.topics || codingConfig.topics.length === 0) return "Please select at least one topic for Challenge.";
+                if (!codingConfig.timeLimit || codingConfig.timeLimit <= 0) return "Please set a valid time limit.";
+            }
         }
         if (activeTab === 'interview') {
             if (!interviewConfig.duration || interviewConfig.duration <= 0) return "Please set a valid duration.";
@@ -551,29 +656,34 @@ const RecruitmentRoundsManager = () => {
     // E.g. To send Aptitude Test, candidate must be in 'Aptitude Round' stage.
     const [sourceStage, setSourceStage] = useState('aptitude');
 
+    const [confirmation, setConfirmation] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        confirmText: 'Confirm',
+        cancelText: 'Cancel',
+        isAlert: false,
+        onConfirm: null
+    });
+
     React.useEffect(() => {
-        setSourceStage(activeTab); // Sync source stage with active tab (Simplification: Aptitude tab manages Aptitude candidates)
+        setSourceStage(activeTab);
     }, [activeTab]);
 
-    const handleSendLink = async () => {
-        if (entryMode === 'manual' && !candidateEmail) { alert("Please enter a candidate email."); return; }
-        if (entryMode === 'fetch' && selectedCandidates.length === 0) { alert("Please select at least one candidate."); return; }
-
-        const configError = validateConfig();
-        if (configError) { alert(configError); return; }
-
-        // Confirmation
-        const count = entryMode === 'manual' ? 1 : selectedCandidates.length;
-        const roleText = selectedRole ? ` for ${selectedRole}` : '';
-        if (!window.confirm(`Send ${activeTab} assessment to ${count} candidate(s)${roleText}?`)) return;
-
+    const executeSendLink = async () => {
         setIsSending(true);
 
         let candidatesPayload = entryMode === 'manual' ? [{ email: candidateEmail }] : selectedCandidates.map(c => ({ email: c.email, name: c.name }));
         const baseConfig = activeTab === 'aptitude' ? aptitudeConfig : activeTab === 'coding' ? codingConfig : interviewConfig;
 
-        // Ensure role is injected into a FRESH copy of the config
         const finalConfig = { ...baseConfig };
+        if (activeTab === 'aptitude') {
+            finalConfig.question_source = aptitudeConfig.questionSource || 'ai';
+        }
+        if (activeTab === 'coding') {
+            finalConfig.question_source = codingConfig.questionSource || 'ai';
+        }
         if (selectedRole) {
             finalConfig.role = selectedRole;
         }
@@ -594,22 +704,84 @@ const RecruitmentRoundsManager = () => {
 
             if (response.ok) {
                 const data = await response.json();
-                alert(`Details: \n${data.message}`); // Show detailed backend message
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Assessment Dispatched',
+                    message: data.message || `Assessment invitations sent successfully.`,
+                    type: 'success',
+                    confirmText: 'Great',
+                    isAlert: true
+                });
 
                 if (entryMode === 'manual') setCandidateEmail('');
                 else setSelectedCandidates([]);
 
-                // Trigger refresh if we had a way (CandidateSelector has internal state, forcing re-mount or ref is needed. 
-                // Simple hack: Toggle entry mode or just let user re-select role to refresh).
-                // Ideally passing a refresh trigger.
-
             } else throw new Error("Failed to send");
         } catch (err) {
             console.error(err);
-            alert("Error sending links. Please try again.");
+            setConfirmation({
+                isOpen: true,
+                title: 'Dispatch Failed',
+                message: 'Error sending assessment links. Please try again.',
+                type: 'danger',
+                confirmText: 'OK',
+                isAlert: true
+            });
         } finally {
             setIsSending(false);
         }
+    };
+
+    const handleSendLink = async () => {
+        if (entryMode === 'manual' && !candidateEmail) {
+            setConfirmation({
+                isOpen: true,
+                title: 'Email Required',
+                message: 'Please enter a candidate email address.',
+                type: 'warning',
+                confirmText: 'OK',
+                isAlert: true
+            });
+            return;
+        }
+        if (entryMode === 'fetch' && selectedCandidates.length === 0) {
+            setConfirmation({
+                isOpen: true,
+                title: 'No Candidates Selected',
+                message: 'Please select at least one candidate from the list.',
+                type: 'warning',
+                confirmText: 'OK',
+                isAlert: true
+            });
+            return;
+        }
+
+        const configError = validateConfig();
+        if (configError) {
+            setConfirmation({
+                isOpen: true,
+                title: 'Configuration Warning',
+                message: configError,
+                type: 'warning',
+                confirmText: 'OK',
+                isAlert: true
+            });
+            return;
+        }
+
+        const count = entryMode === 'manual' ? 1 : selectedCandidates.length;
+        const roleText = selectedRole ? ` for ${selectedRole}` : '';
+
+        setConfirmation({
+            isOpen: true,
+            title: 'Dispatch Assessments',
+            message: `Send ${activeTab.toUpperCase()} assessment invitation to ${count} candidate(s)${roleText}?\nAn email with their unique test link will be sent immediately.`,
+            type: 'info',
+            confirmText: 'Dispatch Links',
+            cancelText: 'Cancel',
+            isAlert: false,
+            onConfirm: () => executeSendLink()
+        });
     };
 
     const tabs = [
@@ -617,6 +789,8 @@ const RecruitmentRoundsManager = () => {
         { id: 'coding', label: 'Coding Round', icon: Code2, color: 'text-green-600' },
         { id: 'interview', label: 'Technical Interview', icon: Users, color: 'text-purple-600' },
     ];
+
+    const isWideManualCoding = activeTab === 'coding' && codingConfig.questionSource === 'manual';
 
     return (
         <div className="space-y-8 max-w-[1600px] mx-auto pb-12 px-4 sm:px-6 lg:px-8">
@@ -627,52 +801,53 @@ const RecruitmentRoundsManager = () => {
                 <p className="text-black mt-2 text-sm font-medium">Configure and dispatch assessments to move candidates through the hiring pipeline.</p>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+            {/* Grid Container */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 lg:gap-8 items-start">
 
-                {/* LEFT: Configuration Panel */}
-                <div className="xl:col-span-7 flex flex-col gap-0 shadow-md rounded-2xl border border-gray-200 bg-white overflow-hidden min-h-[640px]">
-                    <div className="flex bg-gray-50/50 border-b border-gray-200">
-                        {tabs.map((tab) => {
-                            const Icon = tab.icon;
-                            const isActive = activeTab === tab.id;
-                            return (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all relative ${isActive
-                                        ? `bg-white border-green-600 text-[#5d8c2c]`
-                                        : 'bg-transparent border-transparent text-gray-900 hover:bg-gray-100'
-                                        }`}
-                                >
-                                    <Icon size={18} className={isActive ? 'text-green-600' : 'text-gray-900'} />
-                                    {tab.label}
-                                    {isActive && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-green-600 shadow-[0_-2px_6px_rgba(93,140,44,0.4)]" />}
-                                </button>
-                            );
-                        })}
-                    </div>
+                        {/* LEFT: Configuration Panel */}
+                        <div className={`${isWideManualCoding ? 'xl:col-span-8 2xl:col-span-9' : 'xl:col-span-7'} flex flex-col gap-0 shadow-md rounded-2xl border border-gray-200 bg-white overflow-hidden min-h-[500px]`}>
+                            <div className="flex bg-gray-50/50 border-b border-gray-200 overflow-x-auto no-scrollbar">
+                                {tabs.map((tab) => {
+                                    const Icon = tab.icon;
+                                    const isActive = activeTab === tab.id;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => setActiveTab(tab.id)}
+                                            className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3.5 px-3 text-xs sm:text-sm font-semibold transition-all relative whitespace-nowrap ${isActive
+                                                ? `bg-white border-green-600 text-[#5d8c2c]`
+                                                : 'bg-transparent border-transparent text-gray-700 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            <Icon size={16} className={isActive ? 'text-green-600' : 'text-gray-500'} />
+                                            {tab.label}
+                                            {isActive && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-green-600 shadow-[0_-2px_6px_rgba(93,140,44,0.4)]" />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                    <div className="p-8 flex-1 bg-white">
-                        <AnimatePresence mode="wait">
-                            {activeTab === 'aptitude' && <AptitudeConfig key="aptitude" config={aptitudeConfig} onChange={(k, v) => handleConfigChange('aptitude', k, v)} />}
-                            {activeTab === 'coding' && <CodingConfig key="coding" config={codingConfig} onChange={(k, v) => handleConfigChange('coding', k, v)} />}
-                            {activeTab === 'interview' && <InterviewConfig key="interview" config={interviewConfig} onChange={(k, v) => handleConfigChange('interview', k, v)} />}
-                        </AnimatePresence>
-                    </div>
-                </div>
-
-                {/* RIGHT: Candidate Selection */}
-                <div className="xl:col-span-5 flex flex-col h-full sticky top-6">
-                    <div className="bg-white border border-gray-200 rounded-2xl shadow-md overflow-hidden flex flex-col h-[640px]">
-                        <div className="p-5 border-b border-gray-200 bg-gray-50/30 flex justify-between items-center">
-                            <h3 className="font-semibold text-[#5d8c2c] flex items-center gap-2">
-                                <UserPlus size={18} className="text-green-600" /> Dispatch Center
-                            </h3>
-                            <div className="flex bg-gray-200/50 p-1 rounded-lg">
-                                <button onClick={() => setEntryMode('manual')} className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${entryMode === 'manual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Manual</button>
-                                <button onClick={() => setEntryMode('fetch')} className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${entryMode === 'fetch' ? 'bg-white text-[#5d8c2c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Auto-Fetch</button>
+                            <div className={`${isWideManualCoding ? 'p-3 sm:p-5 md:p-6' : 'p-4 sm:p-6 md:p-8'} flex-1 bg-white`}>
+                                <AnimatePresence mode="wait">
+                                    {activeTab === 'aptitude' && <AptitudeConfig key="aptitude" config={aptitudeConfig} onChange={(k, v) => handleConfigChange('aptitude', k, v)} />}
+                                    {activeTab === 'coding' && <CodingConfig key="coding" config={codingConfig} onChange={(k, v) => handleConfigChange('coding', k, v)} />}
+                                    {activeTab === 'interview' && <InterviewConfig key="interview" config={interviewConfig} onChange={(k, v) => handleConfigChange('interview', k, v)} />}
+                                </AnimatePresence>
                             </div>
                         </div>
+
+                        {/* RIGHT: Candidate Selection / Dispatch Center */}
+                        <div className={`${isWideManualCoding ? 'xl:col-span-4 2xl:col-span-3' : 'xl:col-span-5'} flex flex-col xl:sticky xl:top-6`}>
+                            <div className={`bg-white border border-gray-200 rounded-2xl shadow-md overflow-hidden flex flex-col ${isWideManualCoding ? 'min-h-[440px]' : 'min-h-[520px] xl:h-[640px]'}`}>
+                                <div className="p-4 sm:p-5 border-b border-gray-200 bg-gray-50/30 flex justify-between items-center">
+                                    <h3 className="font-semibold text-[#5d8c2c] flex items-center gap-2 text-sm sm:text-base">
+                                        <UserPlus size={18} className="text-green-600" /> Dispatch Center
+                                    </h3>
+                                    <div className="flex bg-gray-200/50 p-1 rounded-lg">
+                                        <button onClick={() => setEntryMode('manual')} className={`px-3 sm:px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${entryMode === 'manual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Manual</button>
+                                        <button onClick={() => setEntryMode('fetch')} className={`px-3 sm:px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${entryMode === 'fetch' ? 'bg-white text-[#5d8c2c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Auto-Fetch</button>
+                                    </div>
+                                </div>
 
                         <div className="p-6 flex-1 flex flex-col overflow-hidden">
                             {entryMode === 'manual' ? (
@@ -753,11 +928,22 @@ const RecruitmentRoundsManager = () => {
                             >
                                 {isSending ? <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Sending...</span> : <><Send size={16} /> Dispatch Assessment</>}
                             </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-            </div>
+            <ConfirmationModal
+                isOpen={confirmation.isOpen}
+                onClose={() => setConfirmation(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmation.onConfirm}
+                title={confirmation.title}
+                message={confirmation.message}
+                type={confirmation.type}
+                confirmText={confirmation.confirmText}
+                cancelText={confirmation.cancelText}
+                isAlert={confirmation.isAlert}
+            />
         </div>
     );
 };

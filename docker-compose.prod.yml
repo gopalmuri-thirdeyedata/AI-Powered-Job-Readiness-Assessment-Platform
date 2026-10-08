@@ -1,0 +1,118 @@
+# ==============================================================================
+# HIRINGAI PRODUCTION DOCKER COMPOSE ORCHESTRATION
+# ==============================================================================
+version: '3.8'
+
+services:
+  # MySQL Database Server
+  db:
+    image: mysql:8.0
+    container_name: hiringai_mysql_prod
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-hiringai}
+      MYSQL_USER: ${DB_USER:-hiringai_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_prod_data:/var/lib/mysql
+    networks:
+      - hiringai_internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Note: Ports are NOT published to the host/internet for security.
+    # Access is restricted to the internal Docker network.
+
+  # Redis In-Memory Cache
+  redis:
+    image: redis:7-alpine
+    container_name: hiringai_redis_prod
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - hiringai_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # FastAPI ASGI Backend Application
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hiringai_backend_prod
+    restart: always
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - backend_media:/app/media
+    networks:
+      - hiringai_internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Frontend Single Page Application (Nginx static)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+        VITE_VAPI_PUBLIC_KEY: ${VITE_VAPI_PUBLIC_KEY}
+    container_name: hiringai_frontend_prod
+    restart: always
+    networks:
+      - hiringai_internal
+    depends_on:
+      - backend
+
+  # Edge Nginx Reverse Proxy with SSL Termination
+  reverse_proxy:
+    image: nginx:alpine
+    container_name: hiringai_nginx_prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    networks:
+      - hiringai_internal
+    depends_on:
+      - backend
+      - frontend
+
+networks:
+  hiringai_internal:
+    driver: bridge
+
+volumes:
+  mysql_prod_data:
+  redis_prod_data:
+  backend_media:
+  certbot_certs:
+  certbot_www:

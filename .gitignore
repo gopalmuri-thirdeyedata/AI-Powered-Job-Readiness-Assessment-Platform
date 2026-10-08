@@ -294,3 +294,7 @@ frontend/build/
 
 # logo / base64 text files
 logo_base64.txt
+
+# Agent configurations
+.agents/
+

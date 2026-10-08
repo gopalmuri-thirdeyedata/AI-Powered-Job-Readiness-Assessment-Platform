@@ -4,7 +4,9 @@ import { Clock, CheckCircle, AlertCircle, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useProctoring from '../../hooks/useProctoring';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
-import useFullscreen from '../../hooks/useFullscreen';
+import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
+import FullscreenGateModal from '../../components/FullscreenGateModal';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import API_URL from '../../apiConfig';
 
 const CandidateAptitudeAssessment = () => {
@@ -13,6 +15,19 @@ const CandidateAptitudeAssessment = () => {
     const [questions, setQuestions] = useState([]);
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [answers, setAnswers] = useState({});
+
+    // Centered Alert Modal State
+    const [alertModal, setAlertModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'warning',
+        onConfirm: null
+    });
+
+    const showAlert = (title, message, type = 'warning', onConfirm = null) => {
+        setAlertModal({ isOpen: true, title, message, type, onConfirm });
+    };
 
     // Config Extraction (Fail-safe)
     const getDuration = () => {
@@ -37,6 +52,7 @@ const CandidateAptitudeAssessment = () => {
     const boxTimerRef = useRef(null);
     const warningTimerRef = useRef(null);
     const totalViolationsRef = useRef(0); // Unified ref — always current (no stale closure)
+    const lastViolationTimeRef = useRef(0); // Cooldown to guarantee strikes increment 1-by-1
     const terminalFiredRef = useRef(false); // Prevent double-submit
     const handleSubmitRef = useRef(null);   // Always points to latest handleSubmit
     const MAX_VIOLATIONS = 3;
@@ -64,10 +80,16 @@ const CandidateAptitudeAssessment = () => {
         return `⚠️ Violation detected: ${reason}`;
     };
 
+
     // ── UNIFIED violation handler ──────────────────────────────────────────────
     // Called by BOTH useProctoring (tab switch) and useFaceProctoring (camera)
     const handleAnyViolation = useCallback((reason) => {
         if (terminalFiredRef.current) return; // Already submitted — ignore
+
+        // Debounce violation strikes: minimum 3000ms cooldown between strikes
+        const now = Date.now();
+        if (now - lastViolationTimeRef.current < 3000) return;
+        lastViolationTimeRef.current = now;
 
         totalViolationsRef.current += 1;
         const count = totalViolationsRef.current;
@@ -117,13 +139,22 @@ const CandidateAptitudeAssessment = () => {
     }, []);
 
     // Fullscreen enforcement
-    const { reEnter: reEnterFullscreen } = useFullscreen({
+    const handleFullscreenTimeout = useCallback(() => {
+        handleAnyViolation('Fullscreen exit exceeded 10-second recovery limit');
+    }, [handleAnyViolation]);
+
+    const {
+        isFullscreen,
+        isGateOpen,
+        isRecoveryOpen,
+        recoveryTimeLeft,
+        error: fullscreenError,
+        enterFullscreen,
+        returnToFullscreen
+    } = useAssessmentFullscreen({
         enabled: !loading && !submitted && securityConfig.fullscreenProctoring,
-        onExit: () => {
-            handleAnyViolation('Fullscreen exited — please stay in fullscreen during the assessment');
-            // Try to pull them back into fullscreen after a short delay
-            setTimeout(reEnterFullscreen, 2000);
-        }
+        isCompleted: submitted,
+        onRecoveryTimeout: handleFullscreenTimeout
     });
 
     // Tab/keyboard proctoring — pass unified handler, disable internal terminal
@@ -222,8 +253,14 @@ const CandidateAptitudeAssessment = () => {
                 setTimeLeft(config.duration * 60);
             }
 
-            if (config.generated_questions && config.generated_questions.length > 0) {
-                setQuestions(config.generated_questions);
+            const qList = (config.generated_questions && config.generated_questions.length > 0)
+                ? config.generated_questions
+                : (config.questions && config.questions.length > 0)
+                    ? config.questions
+                    : null;
+
+            if (qList && qList.length > 0) {
+                setQuestions(qList);
                 setLoading(false);
                 return;
             }
@@ -237,7 +274,8 @@ const CandidateAptitudeAssessment = () => {
 
     // Timer Logic
     useEffect(() => {
-        if (!loading && !submitted && timeLeft > 0) {
+        // Only tick down if test is active and not blocked by entry gate or recovery modal
+        if (!loading && !submitted && timeLeft > 0 && !isGateOpen && !isRecoveryOpen) {
             const timerId = setInterval(() => {
                 setTimeLeft((prev) => prev - 1);
             }, 1000);
@@ -245,7 +283,7 @@ const CandidateAptitudeAssessment = () => {
         } else if (timeLeft === 0 && !submitted) {
             handleSubmit();
         }
-    }, [loading, timeLeft, submitted]);
+    }, [loading, timeLeft, submitted, isGateOpen, isRecoveryOpen]);
 
     const handleSubmit = async (forcedStatus = null) => {
         // Prevent double submission
@@ -253,8 +291,11 @@ const CandidateAptitudeAssessment = () => {
 
         const token = localStorage.getItem('candidateToken');
         if (!token) {
-            if (!forcedStatus) alert("Session expired. Please login again.");
-            navigate('/portal/login');
+            if (!forcedStatus) {
+                showAlert('Session Expired', 'Session expired. Please login again.', 'warning', () => navigate('/portal/login'));
+            } else {
+                navigate('/portal/login');
+            }
             return;
         }
 
@@ -289,8 +330,7 @@ const CandidateAptitudeAssessment = () => {
                 }
             } else if (response.status === 401) {
                 if (!forcedStatus) {
-                    alert('Your session has expired. Please log in again to continue.');
-                    navigate('/portal/login');
+                    showAlert('Session Expired', 'Your session has expired. Please log in again to continue.', 'warning', () => navigate('/portal/login'));
                 }
             } else if (response.status === 400) {
                 // 400 = "Assessment already submitted" — treat as success
@@ -300,13 +340,13 @@ const CandidateAptitudeAssessment = () => {
                 if (forcedStatus) {
                     console.error('[Malpractice Submit] Backend returned:', response.status);
                 } else {
-                    alert("Failed to submit assessment. Please try again.");
+                    showAlert('Submission Failed', 'Failed to submit assessment. Please try again.', 'danger');
                 }
             }
         } catch (error) {
             console.error("Submission error:", error);
             if (!forcedStatus) {
-                alert("Network error. Please check connection.");
+                showAlert('Network Error', 'Network error. Please check connection.', 'danger');
             }
         }
     };
@@ -437,6 +477,14 @@ const CandidateAptitudeAssessment = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
+            {/* Fullscreen Gate & Recovery Modal */}
+            <FullscreenGateModal
+                isOpen={!loading && !submitted && securityConfig.fullscreenProctoring && (isGateOpen || isRecoveryOpen)}
+                mode={isRecoveryOpen ? 'recovery' : 'entry'}
+                timeLeft={recoveryTimeLeft}
+                error={fullscreenError}
+                onAction={isRecoveryOpen ? returnToFullscreen : enterFullscreen}
+            />
 
             {/* ── Camera Widget — top-right ── */}
             <div style={{ position: 'fixed', top: '68px', right: '14px', zIndex: 40 }}>
@@ -595,65 +643,133 @@ const CandidateAptitudeAssessment = () => {
             </AnimatePresence>
 
             {/* Top Bar */}
-            <div className="bg-white shadow-sm border-b border-gray-200 px-8 py-4 sticky top-0 z-10">
-                <div className="max-w-5xl mx-auto flex justify-between items-center">
+            <div className="bg-white shadow-sm border-b border-gray-200 px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-10">
+                <div className="max-w-5xl mx-auto flex justify-between items-center gap-2">
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">Aptitude Assessment</h1>
+                        <h1 className="text-lg sm:text-xl font-bold text-gray-900">Aptitude Assessment</h1>
                         <p className="text-xs text-gray-500">Question {currentQuestion + 1} of {questions.length}</p>
                     </div>
-                    <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono font-bold ${timeLeft < 300 ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
-                        <Clock size={20} />
+                    <div className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg font-mono font-bold text-sm sm:text-base ${timeLeft < 300 ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                        <Clock size={18} />
                         {formatTime(timeLeft)}
                     </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 max-w-5xl mx-auto w-full p-6 md:p-8 flex flex-col">
+            <div className="flex-1 max-w-5xl mx-auto w-full p-3 sm:p-6 md:p-8 flex flex-col">
                 <motion.div
                     key={currentQuestion}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.3 }}
-                    className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 flex-1 flex flex-col"
+                    className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 md:p-8 flex-1 flex flex-col"
                 >
-                    <div className="mb-6">
+                    <div className="mb-6 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2 py-0.5 rounded uppercase">
+                                {questions[currentQuestion]?.type === 'true_false' ? 'True / False' : questions[currentQuestion]?.type === 'short_answer' ? 'Short Answer' : 'Multiple Choice'}
+                            </span>
+                            {questions[currentQuestion]?.marks && (
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2 py-0.5 rounded">
+                                    {questions[currentQuestion].marks} {questions[currentQuestion].marks === 1 ? 'Mark' : 'Marks'}
+                                </span>
+                            )}
+                            {questions[currentQuestion]?.difficulty && (
+                                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-xs font-semibold px-2 py-0.5 rounded">
+                                    {questions[currentQuestion].difficulty}
+                                </span>
+                            )}
+                        </div>
                         <h3 className="text-lg font-medium text-gray-900 leading-relaxed">
                             {questions[currentQuestion]?.question || "Question loading error..."}
                         </h3>
                     </div>
 
-                    <div className="space-y-3 mb-8">
-                        {(questions[currentQuestion]?.options || []).map((option, idx) => {
-                            const questionId = questions[currentQuestion]?.id;
-                            const isSelected = answers[questionId] === idx;
+                    {/* Options / Input by Type */}
+                    {questions[currentQuestion]?.type === 'short_answer' ? (
+                        <div className="mb-8 space-y-2">
+                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-600">
+                                Your Answer
+                            </label>
+                            <input
+                                type="text"
+                                value={answers[questions[currentQuestion]?.id] !== undefined ? answers[questions[currentQuestion]?.id] : ''}
+                                onChange={(e) => handleAnswer(e.target.value)}
+                                placeholder="Type your answer here..."
+                                className="w-full p-4 border-2 border-gray-300 rounded-xl text-base text-gray-900 focus:border-blue-600 focus:bg-blue-50/20 outline-none transition-all font-mono"
+                            />
+                            <p className="text-xs text-gray-500">
+                                Enter your answer. Evaluation is case-insensitive.
+                            </p>
+                        </div>
+                    ) : questions[currentQuestion]?.type === 'true_false' ? (
+                        <div className="space-y-3 mb-8">
+                            {[
+                                { label: 'True', val: true },
+                                { label: 'False', val: false }
+                            ].map(({ label, val }) => {
+                                const questionId = questions[currentQuestion]?.id;
+                                const isSelected = answers[questionId] === val;
+                                return (
+                                    <label
+                                        key={label}
+                                        className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
+                                            ? 'border-blue-600 bg-blue-50'
+                                            : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                                            }`}
+                                    >
+                                        <div className={`w-5 h-5 rounded-full border-2 mr-4 flex items-center justify-center ${isSelected ? 'border-blue-600' : 'border-gray-300'
+                                            }`}>
+                                            {isSelected && <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />}
+                                        </div>
+                                        <input
+                                            type="radio"
+                                            name={`question-${questionId}`}
+                                            className="hidden"
+                                            checked={isSelected}
+                                            onChange={() => handleAnswer(val)}
+                                        />
+                                        <span className={`text-base font-medium ${isSelected ? 'text-blue-900 font-bold' : 'text-gray-700'}`}>
+                                            {label}
+                                        </span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="space-y-3 mb-8">
+                            {(questions[currentQuestion]?.options || []).map((option, idx) => {
+                                const questionId = questions[currentQuestion]?.id;
+                                const isSelected = answers[questionId] === idx;
 
-                            return (
-                                <label
-                                    key={idx}
-                                    className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
-                                        ? 'border-blue-600 bg-blue-50'
-                                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                                        }`}
-                                >
-                                    <div className={`w-5 h-5 rounded-full border-2 mr-4 flex items-center justify-center ${isSelected ? 'border-blue-600' : 'border-gray-300'
-                                        }`}>
-                                        {isSelected && <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />}
-                                    </div>
-                                    <input
-                                        type="radio"
-                                        name={`question-${questionId}`}
-                                        className="hidden"
-                                        checked={isSelected}
-                                        onChange={() => handleAnswer(idx)}
-                                    />
-                                    <span className={`text-base ${isSelected ? 'text-blue-900 font-medium' : 'text-gray-700'}`}>
-                                        {option}
-                                    </span>
-                                </label>
-                            );
-                        })}
-                    </div>
+                                return (
+                                    <label
+                                        key={idx}
+                                        className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
+                                            ? 'border-blue-600 bg-blue-50'
+                                            : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                                            }`}
+                                    >
+                                        <div className={`w-5 h-5 rounded-full border-2 mr-4 flex items-center justify-center ${isSelected ? 'border-blue-600' : 'border-gray-300'
+                                            }`}>
+                                            {isSelected && <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />}
+                                        </div>
+                                        <input
+                                            type="radio"
+                                            name={`question-${questionId}`}
+                                            className="hidden"
+                                            checked={isSelected}
+                                            onChange={() => handleAnswer(idx)}
+                                        />
+                                        <span className={`text-base ${isSelected ? 'text-blue-900 font-medium' : 'text-gray-700'}`}>
+                                            {option}
+                                        </span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    )}
 
                     <div className="mt-auto pt-6 border-t border-gray-100 flex justify-between">
                         <button
@@ -696,6 +812,18 @@ const CandidateAptitudeAssessment = () => {
                     <span>{Math.round(((currentQuestion + 1) / questions.length) * 100)}%</span>
                 </div>
             </div>
+
+            {/* Centered In-App Alert Modal */}
+            <ConfirmationModal
+                isOpen={alertModal.isOpen}
+                onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={alertModal.onConfirm}
+                title={alertModal.title}
+                message={alertModal.message}
+                type={alertModal.type}
+                confirmText="OK"
+                isAlert={true}
+            />
         </div>
     );
 };

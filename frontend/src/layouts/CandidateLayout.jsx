@@ -23,14 +23,14 @@ const CandidateLayout = () => {
         <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
             {/* Minimal Header - Hide for assessments and start page */}
             {!isAssessment && (
-                <header className="bg-white border-b border-gray-200 py-4 px-6 md:px-12 flex items-center justify-between shadow-sm z-10">
-                    <div className="flex items-center gap-5">
-                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-8 w-auto object-contain" />
-                        <div className="hidden sm:block w-[1.5px] h-8 bg-gray-400" />
-                        <span className="text-xl font-bold text-[#5d8c2c] tracking-tight mt-3.5">HiringAI</span>
+                <header className="bg-white border-b border-gray-200 py-3 sm:py-4 px-4 sm:px-6 md:px-12 flex items-center justify-between shadow-sm z-10 gap-2">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 sm:h-8 w-auto object-contain" />
+                        <div className="hidden sm:block w-[1.5px] h-7 bg-gray-300" />
+                        <span className="text-lg sm:text-xl font-bold text-[#5d8c2c] tracking-tight">HiringAI</span>
                     </div>
-                    <div className="text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                        Secure Assessment Environment
+                    <div className="text-[11px] sm:text-xs font-medium text-gray-500 bg-gray-100 px-2.5 sm:px-3 py-1 rounded-full whitespace-nowrap">
+                        <span className="hidden xs:inline">Secure </span>Assessment
                     </div>
                 </header>
             )}
@@ -58,8 +58,10 @@ const CandidateLayout = () => {
 
             {/* Simple Footer - Hide for assessments */}
             {!isAssessment && (
-                <footer className="py-4 text-center text-xs text-gray-400 bg-white border-t border-gray-100">
-                    &copy; {new Date().getFullYear()} HiringAI. All rights reserved.
+                <footer className="py-4 text-center text-xs text-gray-400 bg-white border-t border-gray-100 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                    <span>&copy; {new Date().getFullYear()} HiringAI. All rights reserved.</span>
+                    <span className="text-gray-300 select-none">·</span>
+                    <span className="text-gray-500 font-medium text-[11px]">Developed by Gopal Muri · ThirdEye Data</span>
                 </footer>
             )}
         </div>

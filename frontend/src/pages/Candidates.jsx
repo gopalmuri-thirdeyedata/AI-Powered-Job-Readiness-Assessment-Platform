@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CandidateTable from '../components/CandidateTable';
+import ConfirmationModal from '../components/ConfirmationModal';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -283,8 +284,8 @@ const CandidateRow = ({ candidate, delay, onOpenMenu }) => {
                     <span className="text-gray-700 font-medium">{role}</span>
                 </div>
             </td>
-            <td className="px-6 py-4">
-                <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold border-2 shadow-sm ${status === 'Hired' || status === 'Qualified' ? 'bg-green-50 border-green-200 text-green-700' :
+            <td className="px-6 py-4 whitespace-nowrap">
+                <span className={`inline-flex items-center whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border-2 shadow-sm ${status === 'Hired' || status === 'Qualified' ? 'bg-green-50 border-green-200 text-green-700' :
                     status === 'Rejected' ? 'bg-red-50 border-red-200 text-red-700' :
                         status === 'In Progress' ? 'bg-blue-50 border-blue-200 text-blue-700' :
                             'bg-green-50 border-green-200 text-green-700'
@@ -479,6 +480,18 @@ const Candidates = () => {
         position: { top: 0, left: 0 }
     });
 
+    // Confirmation & Alert Modal State
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'danger',
+        confirmText: 'Confirm',
+        cancelText: 'Cancel',
+        isAlert: false,
+        onConfirm: null
+    });
+
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleOpenMenu = (e, candidate) => {
@@ -486,7 +499,6 @@ const Candidates = () => {
         const rect = e.currentTarget.getBoundingClientRect();
 
         // Calculate smart position
-        // Default: Bottom-Left aligned relative to button (so menu expands to the left)
         const menuWidth = 224; // w-56 is 14rem = 224px
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight;
@@ -496,13 +508,13 @@ const Candidates = () => {
 
         // Check overflow bottom
         if (top + 300 > screenHeight) {
-            top = rect.top - 8 - 300; // Flip upwards if space is tight (approx height)
-            if (top < 10) top = rect.bottom + 8; // Reset if top is also tight
+            top = rect.top - 8 - 300;
+            if (top < 10) top = rect.bottom + 8;
         }
 
         // Check overflow left
         if (left < 10) {
-            left = rect.left; // Align left edge if right edge pushes it offscreen
+            left = rect.left;
         }
 
         setMenuState({
@@ -518,25 +530,48 @@ const Candidates = () => {
 
     const handleAction = async (action, candidate) => {
         if (action === 'delete') {
-            if (!window.confirm(`Are you sure you want to permanently delete candidate "${candidate.name}"?`)) return;
+            setConfirmModal({
+                isOpen: true,
+                title: 'Delete Candidate',
+                message: `Are you sure you want to permanently delete candidate "${candidate.name}"?\nThis cannot be undone.`,
+                type: 'danger',
+                confirmText: 'Delete',
+                cancelText: 'Cancel',
+                isAlert: false,
+                onConfirm: async () => {
+                    try {
+                        const response = await fetch(`${API_URL}/api/resume/candidates/${candidate.id}/`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            }
+                        });
 
-            try {
-                const response = await fetch(`${API_URL}/api/resume/candidates/${candidate.id}/`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        if (response.ok) {
+                            setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+                        } else {
+                            setConfirmModal({
+                                isOpen: true,
+                                title: 'Deletion Failed',
+                                message: 'Failed to delete candidate. Please try again.',
+                                type: 'danger',
+                                confirmText: 'OK',
+                                isAlert: true
+                            });
+                        }
+                    } catch (err) {
+                        console.error("Error deleting candidate:", err);
+                        setConfirmModal({
+                            isOpen: true,
+                            title: 'Error',
+                            message: 'Error connecting to server.',
+                            type: 'danger',
+                            confirmText: 'OK',
+                            isAlert: true
+                        });
                     }
-                });
-
-                if (response.ok) {
-                    setCandidates(prev => prev.filter(c => c.id !== candidate.id));
-                } else {
-                    alert("Failed to delete candidate.");
                 }
-            } catch (err) {
-                console.error("Error deleting candidate:", err);
-                alert("Error connecting to server.");
-            }
+            });
         } else if (action === 'view-resume') {
             if (candidate.resume_file) {
                 let resumeUrl = candidate.resume_file;
@@ -630,12 +665,61 @@ const Candidates = () => {
                     enableStageFilter={true}
                     enableScoreFilter={true}
                     showAnalyticsAction={true}
-                    onPromote={async (ids, stage) => {
+                    onPromote={(ids, stage) => {
                         if (!ids || ids.length === 0) return;
 
                         // Check if promoting to Offer Sent or if any candidate will be auto-promoted to Offer Sent
                         const selected = candidates.filter(c => ids.includes(c.id));
                         const willReceiveOffer = stage === 'Offer Sent' || (stage === 'NEXT' && selected.some(c => c.stage === 'Technical Interview' || c.stage === 'HR Round'));
+
+                        const doPromote = async () => {
+                            try {
+                                const res = await fetch(`${API_URL}/api/resume/candidates/bulk-update/`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                    },
+                                    body: JSON.stringify({
+                                        candidate_ids: ids,
+                                        stage: stage || 'NEXT'
+                                    })
+                                });
+
+                                if (res.ok) {
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: 'Promotion Successful',
+                                        message: `${ids.length} candidate(s) promoted successfully to ${stage === 'NEXT' ? 'their respective next stages' : stage}.`,
+                                        type: 'success',
+                                        confirmText: 'Awesome',
+                                        isAlert: true,
+                                        onConfirm: () => fetchCandidates()
+                                    });
+                                    fetchCandidates();
+                                } else {
+                                    const errorData = await res.json();
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: 'Promotion Failed',
+                                        message: `Failed to promote: ${errorData.detail || 'Unknown error'}`,
+                                        type: 'danger',
+                                        confirmText: 'OK',
+                                        isAlert: true
+                                    });
+                                }
+                            } catch (error) {
+                                console.error("Promotion failed:", error);
+                                setConfirmModal({
+                                    isOpen: true,
+                                    title: 'Error',
+                                    message: 'An error occurred during promotion. Please try again.',
+                                    type: 'danger',
+                                    confirmText: 'OK',
+                                    isAlert: true
+                                });
+                            }
+                        };
 
                         if (willReceiveOffer) {
                             const notDoneAnyRound = selected.filter(c => {
@@ -647,58 +731,74 @@ const Candidates = () => {
 
                             if (notDoneAnyRound.length > 0) {
                                 const names = notDoneAnyRound.map(c => c.name).join(', ');
-                                if (!window.confirm(`WARNING: The following candidate(s) have NOT completed any test rounds (Aptitude, Coding, or Interview):\n${names}\n\nAre you sure you want to proceed with sending them the offer letter?`)) {
-                                    return;
+                                setConfirmModal({
+                                    isOpen: true,
+                                    title: 'Missing Assessment Warning',
+                                    message: `The following candidate(s) have NOT completed test rounds (Aptitude, Coding, or Interview):\n${names}\n\nDo you want to proceed with sending them the offer letter?`,
+                                    type: 'warning',
+                                    confirmText: 'Proceed Anyway',
+                                    cancelText: 'Cancel',
+                                    isAlert: false,
+                                    onConfirm: doPromote
+                                });
+                                return;
+                            }
+                        }
+
+                        setConfirmModal({
+                            isOpen: true,
+                            title: 'Promote Candidates',
+                            message: `Promote ${ids.length} selected candidate(s) to ${stage === 'NEXT' ? 'their respective NEXT stages' : stage}?`,
+                            type: 'info',
+                            confirmText: 'Promote',
+                            cancelText: 'Cancel',
+                            isAlert: false,
+                            onConfirm: doPromote
+                        });
+                    }}
+                    onDelete={(ids) => {
+                        if (!ids || ids.length === 0) return;
+                        setConfirmModal({
+                            isOpen: true,
+                            title: 'Delete Candidates',
+                            message: `Permanently delete ${ids.length} selected candidate(s)? This action cannot be undone.`,
+                            type: 'danger',
+                            confirmText: 'Delete',
+                            cancelText: 'Cancel',
+                            isAlert: false,
+                            onConfirm: async () => {
+                                try {
+                                    setLoading(true);
+                                    await Promise.all(ids.map(id =>
+                                        fetch(`${API_URL}/api/resume/candidates/${id}/`, {
+                                            method: 'DELETE',
+                                            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                                        })
+                                    ));
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: 'Deleted Successfully',
+                                        message: `${ids.length} candidate(s) deleted successfully.`,
+                                        type: 'success',
+                                        confirmText: 'OK',
+                                        isAlert: true,
+                                        onConfirm: () => fetchCandidates()
+                                    });
+                                    fetchCandidates();
+                                } catch (err) {
+                                    console.error("Deletion failed", err);
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: 'Deletion Failed',
+                                        message: 'Failed to delete candidate(s). Please try again.',
+                                        type: 'danger',
+                                        confirmText: 'OK',
+                                        isAlert: true
+                                    });
+                                    setLoading(false);
                                 }
                             }
-                        }
-
-                        if (!window.confirm(`Promote ${ids.length} selected candidate(s) to ${stage === 'NEXT' ? 'their respective NEXT stages' : stage}?`)) return;
-
-                        try {
-                            const res = await fetch(`${API_URL}/api/resume/candidates/bulk-update/`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                                },
-                                body: JSON.stringify({
-                                    candidate_ids: ids,
-                                    stage: stage || 'NEXT'
-                                })
-                            });
-
-                            if (res.ok) {
-                                alert('Candidates promoted successfully!');
-                                fetchCandidates();
-                            } else {
-                                const errorData = await res.json();
-                                alert(`Failed to promote: ${errorData.detail || 'Unknown error'}`);
-                            }
-                        } catch (error) {
-                            console.error("Promotion failed:", error);
-                            alert('An error occurred during promotion.');
-                        }
-                    }}
-                    onDelete={async (ids) => {
-                        if (!ids || ids.length === 0) return;
-                        if (!window.confirm(`Permanently delete ${ids.length} selected candidate(s)? This cannot be undone.`)) return;
-
-                        try {
-                            setLoading(true);
-                            await Promise.all(ids.map(id =>
-                                fetch(`${API_URL}/api/resume/candidates/${id}/`, {
-                                    method: 'DELETE',
-                                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                                })
-                            ));
-                            alert('Candidates deleted successfully');
-                            fetchCandidates();
-                        } catch (err) {
-                            console.error("Deletion failed", err);
-                            alert("Failed to delete candidates");
-                            setLoading(false);
-                        }
+                        });
                     }}
                 />
             </div>
@@ -722,6 +822,19 @@ const Candidates = () => {
                 onAdd={(newCandidate) => {
                     setCandidates(prev => [newCandidate, ...prev]);
                 }}
+            />
+
+            {/* Centered Modern Confirmation & Alert Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+                isAlert={confirmModal.isAlert}
             />
         </div>
     );

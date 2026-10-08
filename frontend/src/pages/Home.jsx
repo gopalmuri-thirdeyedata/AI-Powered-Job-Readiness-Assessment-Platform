@@ -30,7 +30,6 @@ const Home = () => {
     const navigate = useNavigate();
     const { user } = useClerk();
     const [isClerkOpen, setIsClerkOpen] = React.useState(false);
-    const [clerkMode, setClerkMode] = React.useState('sign-in');
 
     // Auto-redirect to dashboard if user is signed in
     React.useEffect(() => {
@@ -39,14 +38,8 @@ const Home = () => {
         }
     }, [user, navigate]);
 
-    // Open Clerk modal
+    // Open Clerk sign-in modal
     const openClerkSignIn = () => {
-        setClerkMode('sign-in');
-        setIsClerkOpen(true);
-    };
-
-    const openClerkSignUp = () => {
-        setClerkMode('sign-up');
         setIsClerkOpen(true);
     };
 
@@ -56,7 +49,6 @@ const Home = () => {
             <ClerkAuthModal
                 isOpen={isClerkOpen}
                 onClose={() => setIsClerkOpen(false)}
-                mode={clerkMode}
             />
 
             {/* Navigation */}
@@ -75,10 +67,10 @@ const Home = () => {
                         <a href="#how-it-works" className="text-base font-semibold text-black hover:text-primary transition-colors">How It Works</a>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                        <button onClick={openClerkSignIn} className="px-6 py-4 border border-black text-black text-base font-semibold rounded-none hover:bg-primary hover:text-white transition-all">Sign In</button>
-                        <button onClick={openClerkSignUp} className="px-6 py-4 bg-primary text-white text-base font-normal rounded-none hover:bg-green-700 transition-all shadow-sm">
-                            Get Started
+                    <div className="flex items-center gap-4">
+                        <button onClick={openClerkSignIn} className="px-6 py-3 border border-black text-black text-base font-semibold rounded-none hover:bg-primary hover:text-white transition-all">Sign In</button>
+                        <button onClick={openClerkSignIn} className="px-6 py-3 bg-primary text-white text-base font-medium rounded-none hover:bg-green-700 transition-all shadow-sm">
+                            Access Portal
                         </button>
                     </div>
                 </div>
@@ -111,8 +103,8 @@ const Home = () => {
                         </motion.p>
 
                         <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                            <button onClick={openClerkSignUp} className="px-12 py-5 bg-[#00AEEF] text-white text-lg font-semibold rounded-lg hover:brightness-110 transition-all shadow-lg flex items-center justify-center gap-2 group">
-                                Start Free Trial <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                            <button onClick={openClerkSignIn} className="px-12 py-5 bg-[#00AEEF] text-white text-lg font-semibold rounded-lg hover:brightness-110 transition-all shadow-lg flex items-center justify-center gap-2 group">
+                                Sign In to Organization <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                             </button>
                         </motion.div>
                     </motion.div>
@@ -303,8 +295,8 @@ const Home = () => {
                     <h2 className="text-3xl lg:text-4xl font-medium text-black mb-12 leading-tight uppercase tracking-tight">
                         Ready to transform your <br /> hiring process?
                     </h2>
-                    <button onClick={openClerkSignUp} className="inline-flex items-center gap-2 px-8 py-3 bg-[#00AEEF] text-white text-lg font-semibold rounded-lg hover:brightness-110 transition-all shadow-xl transform hover:-translate-y-1">
-                        Start Free Trial <ChevronRight className="w-5 h-5" />
+                    <button onClick={openClerkSignIn} className="inline-flex items-center gap-2 px-8 py-3 bg-[#00AEEF] text-white text-lg font-semibold rounded-lg hover:brightness-110 transition-all shadow-xl transform hover:-translate-y-1">
+                        Sign In to Organization <ChevronRight className="w-5 h-5" />
                     </button>
                     <p className="mt-8 text-sm text-black font-medium">
                     </p>
@@ -358,7 +350,11 @@ const Home = () => {
                 </div>
 
                 <div className="max-w-7xl mx-auto pt-10 mt-16 border-t border-green-200 flex flex-col md:flex-row justify-between items-center text-xs text-black font-normal uppercase tracking-[0.2em] relative z-10">
-                    <div>&copy; 2026 HiringAI Inc. All rights reserved.</div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>&copy; 2026 HiringAI Inc. All rights reserved.</span>
+                        <span className="text-gray-400 font-light select-none">·</span>
+                        <span className="normal-case tracking-normal text-[11px] text-gray-600 font-medium">Developed by Gopal Muri · ThirdEye Data</span>
+                    </div>
                     <div className="flex gap-10 mt-6 md:mt-0">
                         <span className="hover:text-primary cursor-pointer transition-colors">Privacy Policy</span>
                         <span className="hover:text-primary cursor-pointer transition-colors">Terms of Service</span>

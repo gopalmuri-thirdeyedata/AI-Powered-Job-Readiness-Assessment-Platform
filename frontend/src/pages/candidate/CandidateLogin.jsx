@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, ShieldCheck, UserCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import API_URL from '../../apiConfig';
+import ConfirmationModal from '../../components/ConfirmationModal';
 
 const CandidateLogin = () => {
     const navigate = useNavigate();
@@ -11,6 +12,24 @@ const CandidateLogin = () => {
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [autoChecking, setAutoChecking] = useState(true); // Show spinner while checking token
+
+    // Centered Alert Modal State
+    const [alertModal, setAlertModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'danger',
+        onConfirm: null
+    });
+    const showAlert = (title, message, type = 'danger', onConfirm = null) => {
+        setAlertModal({
+            isOpen: true,
+            title,
+            message,
+            type,
+            onConfirm
+        });
+    };
 
     // ── Smart session check on mount ──
     useEffect(() => {
@@ -31,7 +50,7 @@ const CandidateLogin = () => {
                 localStorage.removeItem('candidateToken');
                 localStorage.removeItem('currentAssessment');
                 localStorage.removeItem('aptitudeQuestions');
-                alert('Your assessment has already been submitted. Thank you!');
+                showAlert('Assessment Completed', 'Your assessment has already been submitted. Thank you for participating!', 'info');
                 setAutoChecking(false);
                 return;
             }
@@ -89,7 +108,7 @@ const CandidateLogin = () => {
                 localStorage.removeItem('candidateToken');
                 localStorage.removeItem('currentAssessment');
                 localStorage.removeItem('aptitudeQuestions');
-                alert("Test Already Submitted. You cannot attempt this assessment again.");
+                showAlert('Assessment Completed', 'This assessment has already been submitted. You cannot attempt it again.', 'warning');
                 setIsLoading(false);
                 return;
             }
@@ -99,7 +118,7 @@ const CandidateLogin = () => {
 
         } catch (error) {
             console.error("Magic Login Failed:", error);
-            alert("Magic Link Login Failed: " + error.message);
+            showAlert('Magic Link Login Failed', error.message || 'Unable to log in with magic link.', 'danger');
             // Clear URL param to prevent loop/confusion
             window.history.replaceState({}, document.title, window.location.pathname);
         } finally {
@@ -153,7 +172,7 @@ const CandidateLogin = () => {
             const latest = await asmResponse.json();
 
             if (!latest) {
-                alert("No assessment found for this account.");
+                showAlert('No Assessment Found', 'No assessment found for this account. Please contact your administrator.', 'warning');
                 setIsLoading(false);
                 return;
             }
@@ -161,7 +180,7 @@ const CandidateLogin = () => {
                 localStorage.removeItem('candidateToken');
                 localStorage.removeItem('currentAssessment');
                 localStorage.removeItem('aptitudeQuestions');
-                alert("Test Already Submitted. You cannot attempt this assessment again.");
+                showAlert('Assessment Completed', 'All assessments have been completed. Thank you for participating!', 'info');
                 setIsLoading(false);
                 return;
             }
@@ -173,7 +192,7 @@ const CandidateLogin = () => {
 
         } catch (error) {
             console.error(error);
-            alert("Login Failed: " + error.message);
+            showAlert('Login Failed', error.message || 'Login Failed', 'danger');
         } finally {
             setIsLoading(false);
         }
@@ -282,6 +301,18 @@ const CandidateLogin = () => {
                     </p>
                 </div>
             </motion.div>
+
+            {/* Centered In-App Alert Modal */}
+            <ConfirmationModal
+                isOpen={alertModal.isOpen}
+                onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={alertModal.onConfirm}
+                title={alertModal.title}
+                message={alertModal.message}
+                type={alertModal.type}
+                confirmText="OK"
+                isAlert={true}
+            />
         </div>
     );
 };

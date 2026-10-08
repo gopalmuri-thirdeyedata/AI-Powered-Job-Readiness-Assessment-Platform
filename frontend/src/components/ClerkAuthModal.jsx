@@ -1,74 +1,333 @@
-import { SignIn, SignUp, useClerk } from '@clerk/clerk-react';
-import { X, CheckCircle } from 'lucide-react';
+import { SignIn, useClerk } from '@clerk/clerk-react';
+import { X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import API_URL from '../apiConfig';
 
-export default function ClerkAuthModal({ isOpen, onClose, mode = 'sign-in' }) {
+export default function ClerkAuthModal({ isOpen, onClose }) {
     const { user } = useClerk();
     const navigate = useNavigate();
     const wasSignedInRef = useRef(!!user);
+    const userTypedRef = useRef(false);
+    const modalRef = useRef(null);
+
+    const [emailError, setEmailError] = useState(null);
+    const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+    const verifiedEmailsRef = useRef(new Set());
+    const pendingCheckRef = useRef(false);
 
     // Only redirect on NEW sign-in, not when modal opens with existing session
     useEffect(() => {
         if (user && !wasSignedInRef.current && isOpen) {
-            // User just signed in (wasn't signed in before)
             onClose();
             navigate('/dashboard');
         }
         wasSignedInRef.current = !!user;
     }, [user, isOpen, onClose, navigate]);
 
+    // Aggressively remove Clerk "Last used" badges and clear browser autofill until user interacts
+    useEffect(() => {
+        if (!isOpen) {
+            userTypedRef.current = false;
+            return;
+        }
+
+        userTypedRef.current = false;
+
+        const onUserInteraction = (e) => {
+            if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) {
+                userTypedRef.current = true;
+            }
+        };
+
+        const container = modalRef.current || document.body;
+        container.addEventListener('input', onUserInteraction, { capture: true });
+        container.addEventListener('keydown', onUserInteraction, { capture: true });
+        container.addEventListener('mousedown', onUserInteraction, { capture: true });
+
+        const cleanupBadgesAndAutofill = () => {
+            // 1. Physically remove any DOM element containing "Last used" text
+            const walker = document.createTreeWalker(
+                container,
+                NodeFilter.SHOW_ELEMENT,
+                null,
+                false
+            );
+            const toRemove = [];
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                if (
+                    node.childNodes.length === 1 &&
+                    node.childNodes[0].nodeType === Node.TEXT_NODE &&
+                    node.textContent.trim().toLowerCase() === 'last used'
+                ) {
+                    toRemove.push(node);
+                }
+            }
+            toRemove.forEach((el) => {
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.remove();
+            });
+
+            // 2. Also remove any elements matching badge selectors
+            container.querySelectorAll('.cl-badge, .cl-badge__lastUsed, [class*="cl-badge"], [class*="lastUsed"]').forEach((el) => {
+                el.style.setProperty('display', 'none', 'important');
+                el.remove();
+            });
+
+            // 3. Clear autofill on inputs if the user has not started typing
+            if (!userTypedRef.current) {
+                const inputs = container.querySelectorAll(
+                    '.cl-formFieldInput, input[name="identifier"], input[type="email"], input[type="password"]'
+                );
+                inputs.forEach((input) => {
+                    input.setAttribute('autocomplete', 'new-password');
+                    input.setAttribute('data-lpignore', 'true');
+                    input.setAttribute('data-form-type', 'other');
+
+                    // If Chrome injected a value before the user touched it, clear it
+                    if (input.value && document.activeElement !== input) {
+                        input.value = '';
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            }
+        };
+
+        cleanupBadgesAndAutofill();
+        const intervalId = setInterval(cleanupBadgesAndAutofill, 50);
+        const timeoutId = setTimeout(() => clearInterval(intervalId), 3000);
+
+        const observer = new MutationObserver(cleanupBadgesAndAutofill);
+        observer.observe(container, { childList: true, subtree: true });
+
+        return () => {
+            clearInterval(intervalId);
+            clearTimeout(timeoutId);
+            observer.disconnect();
+            container.removeEventListener('input', onUserInteraction, { capture: true });
+            container.removeEventListener('keydown', onUserInteraction, { capture: true });
+            container.removeEventListener('mousedown', onUserInteraction, { capture: true });
+        };
+    }, [isOpen]);
+
+    // Pre-authentication check: intercept email entry and verify against HiringAI before sending OTP
+    useEffect(() => {
+        if (!isOpen) {
+            setEmailError(null);
+            setIsCheckingEmail(false);
+            return;
+        }
+
+        const container = modalRef.current;
+        if (!container) return;
+
+        const checkEmailAllowed = async (email) => {
+            try {
+                const res = await fetch(`${API_URL}/api/auth/check-email/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                if (!res.ok) {
+                    return { allowed: false, detail: "Error verifying email authorization." };
+                }
+                return await res.json();
+            } catch (err) {
+                console.error("Email pre-check error:", err);
+                return { allowed: false, detail: "Unable to verify email invitation status." };
+            }
+        };
+
+        const handleEmailValidation = async (e) => {
+            const identifierInput = container.querySelector('input[name="identifier"], input[type="email"]');
+            // If we're not on the email identifier step (e.g. OTP code screen), do not intercept
+            const isOtpStep = !!container.querySelector('.cl-otpCodeFieldInputs, input[name="code"]');
+            if (!identifierInput || isOtpStep) return;
+
+            const email = (identifierInput.value || '').trim().toLowerCase();
+            if (!email || !email.includes('@')) {
+                // Let Clerk do its native format/required validation
+                return;
+            }
+
+            // If already verified, allow event to propagate to Clerk
+            if (verifiedEmailsRef.current.has(email)) {
+                return;
+            }
+
+            // Intercept and prevent Clerk from triggering OTP send!
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+
+            if (pendingCheckRef.current) return;
+            pendingCheckRef.current = true;
+            setIsCheckingEmail(true);
+            setEmailError(null);
+
+            const result = await checkEmailAllowed(email);
+            pendingCheckRef.current = false;
+            setIsCheckingEmail(false);
+
+            if (!result.allowed) {
+                setEmailError(result.detail || "This email has not been invited to HiringAI.");
+                identifierInput.focus();
+                identifierInput.style.borderColor = '#ef4444';
+            } else {
+                setEmailError(null);
+                identifierInput.style.borderColor = '';
+                verifiedEmailsRef.current.add(email);
+
+                // Re-trigger the submission so Clerk proceeds to send OTP / password
+                const submitBtn = container.querySelector('.cl-formButtonPrimary, button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.click();
+                }
+            }
+        };
+
+        const onCaptureClick = (e) => {
+            const submitBtn = e.target && e.target.closest && e.target.closest('.cl-formButtonPrimary, button[type="submit"]');
+            const isSocial = e.target && e.target.closest && e.target.closest('.cl-socialButtonsBlockButton');
+            if (submitBtn && !isSocial) {
+                handleEmailValidation(e);
+            }
+        };
+
+        const onCaptureKeyDown = (e) => {
+            if (e.key === 'Enter') {
+                const target = e.target;
+                if (target && (target.name === 'identifier' || target.type === 'email')) {
+                    handleEmailValidation(e);
+                }
+            }
+        };
+
+        const onCaptureSubmit = (e) => {
+            handleEmailValidation(e);
+        };
+
+        const onInputChange = (e) => {
+            const target = e.target;
+            if (target && (target.name === 'identifier' || target.type === 'email')) {
+                setEmailError(null);
+                target.style.borderColor = '';
+            }
+        };
+
+        const onBlur = async (e) => {
+            const target = e.target;
+            if (target && (target.name === 'identifier' || target.type === 'email')) {
+                const email = (target.value || '').trim().toLowerCase();
+                if (email && email.includes('@') && !verifiedEmailsRef.current.has(email) && !pendingCheckRef.current) {
+                    setIsCheckingEmail(true);
+                    pendingCheckRef.current = true;
+                    const result = await checkEmailAllowed(email);
+                    pendingCheckRef.current = false;
+                    setIsCheckingEmail(false);
+                    if (!result.allowed) {
+                        setEmailError(result.detail || "This email has not been invited to HiringAI.");
+                        target.style.borderColor = '#ef4444';
+                    } else {
+                        verifiedEmailsRef.current.add(email);
+                        setEmailError(null);
+                        target.style.borderColor = '';
+                    }
+                }
+            }
+        };
+
+        container.addEventListener('click', onCaptureClick, { capture: true });
+        container.addEventListener('keydown', onCaptureKeyDown, { capture: true });
+        container.addEventListener('submit', onCaptureSubmit, { capture: true });
+        container.addEventListener('input', onInputChange, { capture: true });
+        container.addEventListener('focusout', onBlur, { capture: true });
+
+        return () => {
+            container.removeEventListener('click', onCaptureClick, { capture: true });
+            container.removeEventListener('keydown', onCaptureKeyDown, { capture: true });
+            container.removeEventListener('submit', onCaptureSubmit, { capture: true });
+            container.removeEventListener('input', onInputChange, { capture: true });
+            container.removeEventListener('focusout', onBlur, { capture: true });
+        };
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
-    // Custom appearance settings for Clerk
+    // Custom appearance settings for Clerk - polished modern SaaS styling
     const clerkAppearance = {
         variables: {
             colorPrimary: "#16A34A",
-            borderRadius: "0px",
-            colorText: "#000000",
-            colorTextSecondary: "#555555"
+            borderRadius: "0.75rem",
+            colorText: "#111827",
+            colorTextSecondary: "#6B7280",
+            colorInputText: "#111827",
+            colorInputBackground: "#FFFFFF",
+            colorInputBorder: "#D1D5DB",
+            fontFamily: "inherit"
         },
         elements: {
-            rootBox: "mx-auto font-normal",
-            card: "shadow-none rounded-none border border-green-100",
-            formButtonPrimary: "rounded-none hover:bg-green-700 transition-all font-normal",
-            formFieldInput: "rounded-none border-green-100 focus:border-green-500",
-            socialButtonsBlockButton: "rounded-none border-green-100",
-            footerActionLink: "text-green-600 font-normal hover:text-green-700",
-            identityPreviewText: "font-normal",
-            formFieldLabel: "font-normal text-black",
-            headerTitle: "font-normal text-green-600 text-2xl",
-            headerSubtitle: "font-normal text-black",
+            rootBox: "w-full mx-auto",
+            cardBox: "w-full shadow-none",
+            card: "shadow-none border-0 bg-transparent w-full pt-1 pb-3 px-6 sm:px-7",
+            header: "text-center pb-0.5 pt-0.5",
+            headerTitle: "text-lg sm:text-xl font-bold text-gray-900 tracking-tight",
+            headerSubtitle: "text-xs sm:text-sm text-gray-500 mt-0.5 font-normal",
+            socialButtonsBlockButton: "h-10 border border-gray-200 bg-white hover:bg-gray-50/80 rounded-xl shadow-2xs hover:shadow-xs transition-all text-gray-700 font-medium text-sm",
+            socialButtonsBlockButtonText: "font-medium text-gray-700 text-sm",
+            socialButtonsProviderIcon: "w-5 h-5 mr-2",
+            dividerRow: "my-2 sm:my-2.5",
+            dividerText: "text-xs text-gray-400 font-medium",
+            dividerLine: "bg-gray-200",
+            badge: "!hidden",
+            socialButtonsBlockButtonBadge: "!hidden",
+            socialButtonsBadge: "!hidden",
+            formFieldLabel: "text-xs font-semibold text-gray-700 mb-1",
+            formFieldInput: "h-10 px-3.5 text-sm bg-white border border-gray-300 rounded-xl focus:border-green-600 focus:ring-2 focus:ring-green-600/20 transition-all text-gray-900 shadow-2xs hover:border-gray-400 [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:#111827]",
+            formFieldAction: "text-xs font-semibold text-green-600 hover:text-green-700 transition-colors",
+            formButtonPrimary: "h-10 bg-primary hover:bg-green-700 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all text-sm active:scale-[0.99]",
+            footerAction: "hidden", // Completely hide public signup prompts as this is invite-only
+            footerActionLink: "hidden",
+            footer: "pt-2 border-t border-gray-100",
+            identityPreviewText: "text-sm font-medium text-gray-900",
+            identityPreviewEditButton: "text-xs text-green-600 hover:text-green-700 font-semibold",
+            formResendCodeLink: "text-xs text-green-600 hover:text-green-700 font-medium",
+            otpCodeFieldInput: "border-gray-300 focus:border-green-600 focus:ring-2 focus:ring-green-600/20 rounded-xl"
         }
     };
 
     // If user is already signed in, show a message instead of sign-in form
     if (user) {
         return (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <div
-                    className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                    className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
                     onClick={onClose}
                 />
 
-                <div className="relative z-10 w-full max-w-md mx-4">
-                    <button
-                        onClick={onClose}
-                        className="absolute -top-12 right-0 text-white/90 hover:text-white transition-colors"
-                    >
-                        <X className="w-6 h-6" />
-                    </button>
-
-                    <div className="bg-white rounded-none shadow-[0_0_60px_rgba(0,0,0,0.5)] p-8 text-center border border-green-200">
-                        <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-                        <h2 className="text-2xl font-normal text-green-600 mb-2">Already Signed In</h2>
-                        <p className="text-black mb-6 font-normal">You're already authenticated as <span className="font-normal text-green-600">{user.primaryEmailAddress?.emailAddress}</span></p>
+                <div className="relative z-10 w-full max-w-[460px] mx-auto">
+                    <div className="relative bg-white rounded-2xl shadow-2xl p-8 text-center border border-gray-100">
+                        <button
+                            onClick={onClose}
+                            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                            title="Close"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <CheckCircle className="w-14 h-14 text-green-600 mx-auto mb-4" />
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Already Signed In</h2>
+                        <p className="text-gray-600 mb-6 text-sm">
+                            You're already authenticated as <span className="font-semibold text-gray-900">{user.primaryEmailAddress?.emailAddress}</span>
+                        </p>
                         <button
                             onClick={() => {
                                 onClose();
                                 navigate('/dashboard');
                             }}
-                            className="w-full px-6 py-3 bg-primary text-white font-normal rounded-none hover:bg-green-700 transition-colors shadow-lg shadow-green-600/10"
+                            className="w-full py-3 bg-primary text-white font-semibold rounded-xl hover:bg-green-700 transition-all shadow-md cursor-pointer"
                         >
                             Go to Dashboard
                         </button>
@@ -82,35 +341,148 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'sign-in' }) {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
             {/* Lighter backdrop */}
             <div
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
             />
 
-            {/* Modal content */}
-            <div className="relative z-10 w-auto max-w-full">
-                {/* Close button - Positioned more tightly */}
+            {/* Modal card container */}
+            <div ref={modalRef} className="relative z-10 w-full max-w-[460px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                {/* Close button */}
                 <button
                     onClick={onClose}
-                    className="absolute -top-10 -right-2 md:-right-10 p-2 text-white/80 hover:text-white transition-colors"
+                    className="absolute top-4 right-4 z-20 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
                     title="Close"
+                    aria-label="Close modal"
                 >
-                    <X className="w-6 h-6" />
+                    <X className="w-5 h-5" />
                 </button>
 
-                {/* Card container with clean shadow */}
-                <div className="rounded-none shadow-2xl bg-white">
-                    {mode === 'sign-in' ? (
-                        <SignIn
-                            appearance={clerkAppearance}
-                            routing="virtual"
+                {/* Brand Header */}
+                <div className="pt-4.5 pb-0 flex flex-col items-center justify-center">
+                    <div className="flex items-center gap-1.5 h-8">
+                        <img 
+                            src="/logo_main.png" 
+                            alt="ThirdEye Data" 
+                            className="h-7 w-auto object-contain shrink-0" 
                         />
-                    ) : (
-                        <SignUp
-                            appearance={clerkAppearance}
-                            routing="virtual"
-                        />
-                    )}
+                        <span className="text-[15px] font-bold text-[#5d8c2c] tracking-tight leading-none translate-y-[4.5px]">
+                            HiringAI
+                        </span>
+                    </div>
                 </div>
+
+                {/* Pre-auth Email Authorization Error Banner */}
+                {emailError && (
+                    <div className="mx-6 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-left text-xs shadow-xs animate-in fade-in slide-in-from-top-1 duration-150">
+                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="font-semibold text-red-800 leading-snug">{emailError}</p>
+                            <p className="text-red-600/80 mt-0.5 leading-tight">
+                                Corporate invitation required. Please contact your administrator.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Email Verification In Progress */}
+                {isCheckingEmail && (
+                    <div className="mx-6 mt-2.5 flex items-center justify-center gap-2 text-xs text-green-700 font-medium py-1 animate-pulse">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-green-600" />
+                        <span>Checking invitation status...</span>
+                    </div>
+                )}
+
+                {/* Scoped CSS to eliminate Clerk "Last used" badge, force visible input borders, and reset autofill */}
+                <style>{`
+                    /* Completely hide any Clerk Last Used badges/pills */
+                    .cl-badge,
+                    .cl-badge__lastUsed,
+                    .cl-socialButtonsBlockButtonBadge,
+                    .cl-socialButtonsBadge,
+                    [class*="cl-badge"],
+                    [class*="lastUsed"],
+                    [data-localization-key*="lastUsed"] {
+                        display: none !important;
+                        visibility: hidden !important;
+                        opacity: 0 !important;
+                        pointer-events: none !important;
+                    }
+
+                    /* Email & Password Input Boxes */
+                    .cl-formFieldInput:not(.cl-otpCodeFieldInput),
+                    input[name="identifier"],
+                    input[name="password"] {
+                        border: 1.5px solid #d1d5db !important;
+                        border-radius: 0.75rem !important;
+                        background-color: #ffffff !important;
+                        color: #111827 !important;
+                    }
+
+                    .cl-formFieldInput:not(.cl-otpCodeFieldInput):hover,
+                    input[name="identifier"]:hover,
+                    input[name="password"]:hover {
+                        border-color: #9ca3af !important;
+                    }
+
+                    .cl-formFieldInput:not(.cl-otpCodeFieldInput):focus,
+                    input[name="identifier"]:focus,
+                    input[name="password"]:focus {
+                        border-color: #16a34a !important;
+                        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+                        outline: none !important;
+                    }
+
+                    /* Clean, properly proportioned OTP Code inputs */
+                    .cl-otpCodeFieldInputs {
+                        display: flex !important;
+                        justify-content: center !important;
+                        gap: 0.5rem !important;
+                        margin: 0.5rem 0 !important;
+                    }
+
+                    .cl-otpCodeFieldInput {
+                        border: 1.5px solid #d1d5db !important;
+                        border-radius: 0.5rem !important;
+                        background-color: #ffffff !important;
+                        color: #111827 !important;
+                        font-weight: 600 !important;
+                        font-size: 1.25rem !important;
+                        text-align: center !important;
+                        width: 2.75rem !important;
+                        height: 3.25rem !important;
+                    }
+
+                    .cl-otpCodeFieldInput:focus {
+                        border-color: #16a34a !important;
+                        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+                        outline: none !important;
+                    }
+
+                    /* Remove browser autofill pale blue/yellow background */
+                    input:-webkit-autofill,
+                    input:-webkit-autofill:hover,
+                    input:-webkit-autofill:focus,
+                    input:-webkit-autofill:active {
+                        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+                        box-shadow: 0 0 0 1000px #ffffff inset !important;
+                        -webkit-text-fill-color: #111827 !important;
+                        caret-color: #111827 !important;
+                        transition: background-color 5000s ease-in-out 0s !important;
+                    }
+                `}</style>
+
+                {/* Dummy inputs to absorb browser autofill */}
+                <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, zIndex: -1, overflow: 'hidden' }} aria-hidden="true">
+                    <input type="text" name="fakeusernameremembered" tabIndex={-1} autoComplete="off" />
+                    <input type="password" name="fakepasswordremembered" tabIndex={-1} autoComplete="off" />
+                </div>
+
+                {/* Clerk SignIn form */}
+                <SignIn
+                    appearance={clerkAppearance}
+                    routing="virtual"
+                    initialValues={{ emailAddress: "" }}
+                />
             </div>
         </div>
     );

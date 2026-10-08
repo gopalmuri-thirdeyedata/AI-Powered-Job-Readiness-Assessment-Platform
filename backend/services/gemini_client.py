@@ -13,48 +13,77 @@ def get_gemini_api_key():
     return os.getenv("GEMINI_API_KEY")
 
 def has_gemini_key() -> bool:
-    """Checks if Gemini API key is present."""
-    return get_gemini_api_key() is not None and len(get_gemini_api_key().strip()) > 0
+    """Checks if valid Gemini API key is present."""
+    k = get_gemini_api_key()
+    return bool(k and k.strip() and not k.startswith("YOUR_GEMINI"))
 
-# Legacy aliases so existing code that checks groq_client.has_groq_key() still works
-has_groq_key = has_gemini_key
+def has_groq_key() -> bool:
+    from . import groq_client
+    return has_gemini_key() or groq_client.has_groq_key()
 
-def call_gemini(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, json_mode: bool = True) -> dict:
-    """
-    Calls Google Gemini 2.5 Flash API and returns parsed JSON response.
-    """
-    import google.generativeai as genai
+def _call_groq_fallback(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, json_mode: bool = True) -> dict:
+    from . import groq_client
+    GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+    data = {
+        "model": "llama-3.1-8b-instant",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": temperature
+    }
+    if json_mode:
+        data["response_format"] = {"type": "json_object"}
     
-    api_key = get_gemini_api_key()
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not configured in environment.")
-    
-    genai.configure(api_key=api_key)
-    
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash-preview-05-20",
-        system_instruction=system_prompt,
-        generation_config=genai.GenerationConfig(
-            temperature=temperature,
-            response_mime_type="application/json" if json_mode else "text/plain",
-        )
-    )
-    
-    response = model.generate_content(prompt)
-    
-    content = response.text.strip()
+    response = groq_client.execute_groq_request(GROQ_API_URL, data, timeout=30)
+    content = response.json()['choices'][0]['message']['content'].strip()
     
     if json_mode:
-        # Clean markdown code blocks if present
         if content.startswith("```"):
             content = content.split("\n", 1)[1] if "\n" in content else content[3:]
         if content.endswith("```"):
             content = content[:-3].strip()
         content = content.replace("```json", "").replace("```", "").strip()
-        
         return json.loads(content)
-    
     return {"text": content}
+
+def call_gemini(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, json_mode: bool = True) -> dict:
+    """
+    Calls Google Gemini 2.5 Flash API with automatic fallback to Groq.
+    """
+    if has_gemini_key():
+        try:
+            import google.generativeai as genai
+            
+            api_key = get_gemini_api_key()
+            genai.configure(api_key=api_key)
+            
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash-preview-05-20",
+                system_instruction=system_prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=temperature,
+                    response_mime_type="application/json" if json_mode else "text/plain",
+                )
+            )
+            
+            response = model.generate_content(prompt)
+            content = response.text.strip()
+            
+            if json_mode:
+                if content.startswith("```"):
+                    content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+                if content.endswith("```"):
+                    content = content[:-3].strip()
+                content = content.replace("```json", "").replace("```", "").strip()
+                return json.loads(content)
+            
+            return {"text": content}
+        except Exception as e:
+            print(f"Gemini call failed ({e}), falling back to Groq...")
+    
+    # Fallback to Groq
+    return _call_groq_fallback(prompt, system_prompt, temperature, json_mode)
 
 def call_gemini_text(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1) -> str:
     """

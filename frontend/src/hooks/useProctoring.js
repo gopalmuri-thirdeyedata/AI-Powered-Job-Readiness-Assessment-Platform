@@ -16,9 +16,9 @@ const useProctoring = ({ onViolation, onTerminalViolation, maxViolations = 3, en
     const triggerViolation = useCallback((reason) => {
         if (!enabled || terminalLockedRef.current) return;
         
-        // Debounce rapid fire events (e.g. alerts triggering more blur events)
+        // Debounce rapid fire events (e.g. blur followed by visibilitychange on tab switch)
         const now = Date.now();
-        if (now - lastEventTimeRef.current < 500) return;
+        if (now - lastEventTimeRef.current < 3000) return;
         lastEventTimeRef.current = now;
 
         setViolations(prev => {
@@ -46,7 +46,10 @@ const useProctoring = ({ onViolation, onTerminalViolation, maxViolations = 3, en
         };
 
         const handleBlur = () => {
-            triggerViolation('Lost Window Focus');
+            // Only fire focus loss if tab isn't already hidden (avoids dual strike with visibilitychange)
+            if (document.visibilityState !== 'hidden') {
+                triggerViolation('Lost Window Focus');
+            }
         };
 
         // 2. Disable Context Menu (Right Click)

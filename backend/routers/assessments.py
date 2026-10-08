@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
-from typing import List, Optional
+from typing import List, Optional, Union, Dict, Any
 import string
 import random
 import os
@@ -9,12 +9,150 @@ import copy
 from datetime import datetime
 import schemas, models, utils, database
 from .auth import get_current_user
-from services import ai_generator, email_templates, piston_service
+from services import ai_generator, email_templates, piston_service, aptitude_evaluation, coding_evaluation
 
 router = APIRouter(
     prefix="/api/assessments",
     tags=["assessments"]
 )
+
+def sanitize_assessment_for_candidate(assessment: Union[models.Assessment, Dict[str, Any]]) -> Optional[schemas.AssessmentResponse]:
+    """
+    Security Sanitizer: Strips all answer keys, confidential solutions, and hidden test cases
+    before returning assessment payloads to candidate-facing endpoints.
+    Operates on deep copies to guarantee database state is never mutated.
+    """
+    if assessment is None:
+        return None
+
+    if isinstance(assessment, dict):
+        raw_config = assessment.get("config") or {}
+        a_id = assessment.get("id", 0)
+        a_type = assessment.get("type", "")
+        a_status = assessment.get("status", "pending")
+        a_score = float(assessment.get("score") or 0.0)
+        a_analysis_data = assessment.get("analysis_data")
+        a_email = assessment.get("candidate_email", "")
+        a_created_at = assessment.get("created_at") or datetime.now()
+        a_started_at = assessment.get("started_at")
+        a_source = assessment.get("question_source", "ai")
+    else:
+        raw_config = assessment.config or {}
+        a_id = assessment.id
+        a_type = assessment.type
+        a_status = assessment.status
+        a_score = float(assessment.score or 0.0)
+        a_analysis_data = assessment.analysis_data
+        a_email = assessment.candidate_email
+        a_created_at = assessment.created_at or datetime.now()
+        a_started_at = assessment.started_at
+        a_source = getattr(assessment, "question_source", "ai") or "ai"
+
+    # Isolate from ORM to prevent accidental persistence
+    config = copy.deepcopy(raw_config)
+    
+    # Strip top-level confidential keys
+    config.pop("answer_key", None)
+    config.pop("solution", None)
+    config.pop("solution_code", None)
+    config.pop("evaluation_details", None)
+    config.pop("submission_data", None)
+
+    for q_list_key in ["generated_questions", "questions"]:
+        if q_list_key in config and isinstance(config[q_list_key], list):
+            sanitized_list = []
+            for item in config[q_list_key]:
+                if not isinstance(item, dict):
+                    sanitized_list.append(item)
+                    continue
+                q = copy.deepcopy(item)
+                
+                # Aptitude secrets removal
+                q.pop("correct", None)
+                q.pop("correct_answer", None)
+                q.pop("correct_option", None)
+                q.pop("answer", None)
+                q.pop("explanation", None)
+                
+                # Coding secrets removal
+                q.pop("solution", None)
+                q.pop("solution_code", None)
+                q.pop("hidden_test_cases", None)
+                q.pop("hidden_tests", None)
+                
+                # Coding test case secrets removal
+                if "testCases" in q and isinstance(q["testCases"], list):
+                    public_test_cases = []
+                    for tc in q["testCases"]:
+                        if isinstance(tc, dict):
+                            # Exclude hidden test cases completely from candidate view
+                            if tc.get("is_hidden") is True or tc.get("hidden") is True:
+                                continue
+                            clean_tc = copy.deepcopy(tc)
+                            clean_tc["is_hidden"] = False
+                            clean_tc.pop("hidden", None)
+                            clean_tc.pop("explanation", None)
+                            public_test_cases.append(clean_tc)
+                        else:
+                            public_test_cases.append(tc)
+                    q["testCases"] = public_test_cases
+
+                sanitized_list.append(q)
+            config[q_list_key] = sanitized_list
+
+    # For coding assessments, strictly sanitize analysis_data so hidden test counts and results are NEVER exposed to candidate
+    if a_type == "coding" and a_analysis_data:
+        cand_analysis = {}
+        if isinstance(a_analysis_data, dict):
+            if "time_taken_seconds" in a_analysis_data:
+                cand_analysis["time_taken_seconds"] = a_analysis_data["time_taken_seconds"]
+            # Expose ONLY public test results if present
+            if "public_passed" in a_analysis_data and "public_total" in a_analysis_data:
+                cand_analysis["public_passed"] = a_analysis_data["public_passed"]
+                cand_analysis["public_total"] = a_analysis_data["public_total"]
+            elif "passed" in a_analysis_data and "total" in a_analysis_data and not a_analysis_data.get("has_hidden_tests"):
+                # Legacy AI assessment where 100% of test cases were public
+                cand_analysis["public_passed"] = a_analysis_data["passed"]
+                cand_analysis["public_total"] = a_analysis_data["total"]
+
+            if a_analysis_data.get("has_hidden_tests"):
+                cand_analysis["has_hidden_tests"] = True
+                cand_analysis["hidden_status"] = "Private evaluation"
+        a_analysis_data = cand_analysis if cand_analysis else None
+
+    return schemas.AssessmentResponse(
+        id=a_id,
+        type=a_type,
+        config=config,
+        status=a_status,
+        score=a_score,
+        analysis_data=a_analysis_data,
+        candidate_email=a_email,
+        created_at=a_created_at,
+        started_at=a_started_at,
+        question_source=a_source,
+        evaluation_details=None
+    )
+
+def _get_tenant_org_id(current_user: models.User, db: Session) -> Optional[int]:
+    """Resolves current organization ID for multi-tenant data isolation."""
+    if getattr(current_user, "role", None) == models.UserRole.PLATFORM_ADMIN:
+        return getattr(current_user, "organization_id", None)
+    
+    member = None
+    if hasattr(current_user, "id") and current_user.id:
+        member = db.query(models.OrganizationMember).filter(
+            models.OrganizationMember.user_id == current_user.id,
+            models.OrganizationMember.status == "active"
+        ).first()
+
+    if member:
+        return member.organization_id
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Active organization membership required."
+    )
 
 @router.post("/assign/", response_model=schemas.AssignResponse)
 def assign_assessment(
@@ -23,16 +161,68 @@ def assign_assessment(
     current_user: models.User = Depends(get_current_user)
 ):
     # Admin sends list of candidates
+    user_role = getattr(current_user, "role", None)
+    email = getattr(current_user, "email", "")
+    if user_role == models.UserRole.CANDIDATE or (email and email.endswith("@hiringai.internal")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted: Candidate accounts are not permitted to assign assessments."
+        )
+    org_id = _get_tenant_org_id(current_user, db)
     candidate_list = request.candidates
     round_type = request.type
     config = request.config
     deadline = request.deadline
+    question_src = getattr(request, "question_source", None) or config.get("question_source", "ai")
     
+    # --- MANUAL APTITUDE VALIDATION & SETUP ---
+    if round_type == "aptitude" and question_src == "manual":
+        manual_qs = config.get("questions") or config.get("generated_questions")
+        if not manual_qs:
+            raise HTTPException(status_code=400, detail="Manual aptitude assessment requires at least one question in 'questions'.")
+        try:
+            validated_qs = aptitude_evaluation.validate_manual_aptitude_questions(manual_qs)
+            config["questions"] = validated_qs
+            config["generated_questions"] = validated_qs
+            config["answer_key"] = {str(q["id"]): q["correct_answer"] for q in validated_qs}
+            config["question_source"] = "manual"
+        except ValueError as val_err:
+            raise HTTPException(status_code=400, detail=str(val_err))
+
+    # --- MANUAL CODING VALIDATION & SETUP ---
+    elif round_type == "coding" and question_src == "manual":
+        manual_qs = config.get("questions") or config.get("generated_questions")
+        if not manual_qs:
+            raise HTTPException(status_code=400, detail="Manual coding assessment requires at least one problem in 'questions'.")
+        try:
+            validated_qs = coding_evaluation.validate_manual_coding_questions(manual_qs)
+            config["questions"] = validated_qs
+            config["generated_questions"] = validated_qs
+            config["question_source"] = "manual"
+        except ValueError as val_err:
+            raise HTTPException(status_code=400, detail=str(val_err))
+
+    # If manual questions were supplied under 'questions' for other rounds, mirror them
+    elif question_src == "manual" and config.get("questions") and not config.get("generated_questions"):
+        config["generated_questions"] = copy.deepcopy(config["questions"])
+
+    # Phase 5: Connect final recruiter-selected skills to AI assessment configuration if job_description_id is provided
+    jd_id = config.get("job_description_id")
+    if jd_id:
+        jd_q = db.query(models.JobDescription).filter(models.JobDescription.id == jd_id)
+        if org_id:
+            jd_q = jd_q.filter(models.JobDescription.organization_id == org_id)
+        jd_record = jd_q.first()
+        if jd_record:
+            recruiter_skills = (jd_record.required_skills or []) + (jd_record.preferred_skills or [])
+            if recruiter_skills and not config.get("topics"):
+                config["topics"] = recruiter_skills
+
     # --- PRE-GENERATE QUESTIONS (Optimization) ---
     # Generate ONCE per batch assignment to save time and ensure consistency
     try:
-        # Skip generation for Interview type (VAPI handles it dynamically)
-        if round_type != "interview" and not config.get("generated_questions"):
+        # Skip generation for Interview type (VAPI handles it dynamically) and Manual authoring
+        if round_type != "interview" and question_src != "manual" and not config.get("generated_questions"):
             generated_qs = ai_generator.generate_questions(round_type, config)
             if generated_qs:
                 config["generated_questions"] = generated_qs
@@ -52,15 +242,19 @@ def assign_assessment(
         
         
         # 1. Get or Create Candidate Record
-        candidate = db.query(models.Candidate).filter(models.Candidate.email == email).first()
+        cand_q = db.query(models.Candidate).filter(models.Candidate.email == email)
+        if org_id:
+            cand_q = cand_q.filter(models.Candidate.organization_id == org_id)
+        candidate = cand_q.first()
         if not candidate:
             candidate = models.Candidate(
                 name=candidate_entry.get('name', 'Candidate'),
                 email=email,
-                section="Imports", # Placeholder
+                role=config.get('role') or config.get('topic') or "Candidate",
                 stage=round_type,
                 status=models.CandidateStatus.Applied,
-                created_by=current_user.id
+                created_by=current_user.id,
+                organization_id=org_id
             )
             db.add(candidate)
             db.flush() # Get ID
@@ -84,11 +278,14 @@ def assign_assessment(
                 email=shadow_email,
                 hashed_password=hashed,
                 role=models.UserRole.CANDIDATE.value, # Fix: Use .value
-                is_active=True
+                is_active=True,
+                organization_id=org_id
             )
             db.add(shadow_user)
         else:
             shadow_user.hashed_password = hashed
+            if org_id and not shadow_user.organization_id:
+                shadow_user.organization_id = org_id
         
         db.flush() 
         db.refresh(shadow_user)
@@ -107,10 +304,12 @@ def assign_assessment(
         
         target_stage = STAGE_MAPPING.get(round_type, models.CandidateStage.Resume_Screening)
 
-        candidate_record = db.query(models.Candidate).filter(models.Candidate.email == email).first()
+        candidate_record = cand_q.first()
         if candidate_record:
             candidate_record.stage = target_stage
             candidate_record.created_by = current_user.id
+            if org_id:
+                candidate_record.organization_id = org_id
             
             # Reset results for a fresh start in this stage
             candidate_record.status = models.CandidateStatus.In_Progress
@@ -125,7 +324,8 @@ def assign_assessment(
                 user_id=current_user.id, 
                 action="invited",
                 target=candidate_record.name,
-                details=f"Invited to {friendly_round} Assessment"
+                details=f"Invited to {friendly_round} Assessment",
+                organization_id=org_id
             )
             db.add(log)
 
@@ -135,7 +335,9 @@ def assign_assessment(
             type=round_type,
             config=copy.deepcopy(config),
             status=models.AssessmentStatus.pending,
-            user_id=user.id
+            user_id=user.id,
+            question_source=question_src,
+            organization_id=org_id
         )
         db.add(assessment)
         
@@ -196,7 +398,7 @@ def get_my_pending_assessments(
         models.Assessment.status == models.AssessmentStatus.pending
     ).order_by(models.Assessment.created_at.desc()).all()
     
-    return assessments
+    return [sanitize_assessment_for_candidate(a) for a in assessments]
 
 @router.get("/my-status/", response_model=Optional[schemas.AssessmentResponse])
 def get_my_latest_assessment(
@@ -210,9 +412,10 @@ def get_my_latest_assessment(
         ).order_by(models.Assessment.created_at.desc()).first()
         
         if assessment:
+            q_src = getattr(assessment, "question_source", "ai") or assessment.config.get("question_source", "ai")
             # Check if questions need to be generated (Lazy Generation)
-            # Optimization: Skip for 'interview' as it uses VAPI dynamic generation
-            if not assessment.config.get("generated_questions") and assessment.type != "interview":
+            # Optimization: Skip for 'interview' (VAPI dynamic) and 'manual' (admin authored)
+            if not assessment.config.get("generated_questions") and assessment.type != "interview" and q_src != "manual":
                 questions = ai_generator.generate_questions(assessment.type, assessment.config)
                 
                 if questions:
@@ -223,7 +426,9 @@ def get_my_latest_assessment(
                     db.commit()
                     db.refresh(assessment)
 
-        return assessment
+            return sanitize_assessment_for_candidate(assessment)
+
+        return None
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -429,7 +634,7 @@ def send_completion_emails(candidate_email: str, candidate_name: str, target_rol
                 
                 # If recipient email is a dummy (e.g. hr@company.com), fallback to the synced admin email (gopalmuri1919@gmail.com)
                 if hr_email == "hr@company.com" or not hr_email:
-                    hr_email = "gopalmuri1919@gmail.com"
+                    hr_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
 
                 if hr_email:
                     hr_subject = f"Candidate Assessment Submitted: {candidate_name}"
@@ -469,64 +674,60 @@ def submit_assessment(
     
     # --- SCORING LOGIC ---
     calculated_score = 0.0
-    # Initialize defaults to prevent UnboundLocalError
     correct_count = 0
     total_questions = 0
     passed = 0
     total = 0
+    apt_eval_res = None
     
-    if assessment.type == "aptitude" and payload.answers:
-        # Dynamic Answer Key from Generated Questions
-        generated_questions = assessment.config.get("generated_questions", [])
-        
-        if generated_questions:
-            # Map Question ID -> Correct Option Index
-            # Questions from AI have 'id' (int) and 'correct' (int index)
-            answer_key = {str(q['id']): q['correct'] for q in generated_questions}
-            total_questions = len(generated_questions)
-        else:
-            # Fallback (Should not happen if generated correctly)
-            answer_key = {}
-            total_questions = 0
-
-        correct_count = 0
-        
-        for q_idx, ans_idx in payload.answers.items():
-            key_exists = str(q_idx) in answer_key
-            if key_exists:
-                expected = answer_key[str(q_idx)]
-                try:
-                    expected_int = int(expected) if not isinstance(expected, int) else expected
-                    ans_int = int(ans_idx) if not isinstance(ans_idx, int) else ans_idx
-                    is_correct = expected_int == ans_int
-                except (ValueError, TypeError):
-                    is_correct = expected == ans_idx
-                
-                if is_correct:
-                    correct_count += 1
-        
-        # Scale to 10
-        if total_questions > 0:
-            calculated_score = (correct_count / total_questions) * 10.0
+    if assessment.type == "aptitude":
+        generated_questions = assessment.config.get("generated_questions") or assessment.config.get("questions") or []
+        apt_eval_res = aptitude_evaluation.evaluate_aptitude_submission(generated_questions, payload.answers or {})
+        calculated_score = apt_eval_res["score"]
+        correct_count = apt_eval_res["correct_count"]
+        total_questions = apt_eval_res["total_questions"]
+        assessment.evaluation_details = apt_eval_res["breakdown"]
+        assessment.submission_data = payload.answers or {}
             
     elif assessment.type == "coding":
-        # Dynamic Scoring based on Test Cases Passed
-        # Payload comes from frontend: { result: { passed: N, total: M } }
-        if payload.result:
-            passed = payload.result.get("passed", 0)
-            
-            # Robust Total Calculation: Use actual count from DB config
-            generated_qs = assessment.config.get("generated_questions", [])
-            actual_total = sum(len(q.get('testCases', [])) for q in generated_qs)
-            
-            # Fallback to payload total if DB config is empty
-            total = actual_total if actual_total > 0 else payload.result.get("total", 5)
-            
-            if total > 0:
-                calculated_score = (passed / total) * 10.0
+        generated_qs = assessment.config.get("generated_questions") or assessment.config.get("questions") or []
+        q_src = getattr(assessment, "question_source", "ai") or assessment.config.get("question_source", "ai")
+        
+        has_submitted_code = (payload.code is not None) or (
+            payload.answers and isinstance(payload.answers, dict) and (
+                "code" in payload.answers or "codeByQuestion" in payload.answers
+            )
+        )
+        
+        if q_src == "manual" or has_submitted_code:
+            eval_res = coding_evaluation.execute_and_evaluate_coding_submission(
+                questions=generated_qs,
+                payload_code=payload.code,
+                answers=payload.answers,
+                fallback_result=payload.result,
+                language=payload.language
+            )
+            calculated_score = eval_res["score"]
+            passed = eval_res["passed_test_cases"]
+            total = eval_res["total_test_cases"]
+            assessment.evaluation_details = eval_res["evaluation_details"]
+            assessment.submission_data = {
+                "code": payload.code,
+                "answers": payload.answers,
+                "language": payload.language
+            }
+            coding_eval_res = eval_res
         else:
-            # Fallback if no result passed (e.g. didn't run code)
-            calculated_score = 0.0
+            # Backward compatibility: legacy submission with only payload.result
+            if payload.result:
+                passed = payload.result.get("passed", 0)
+                actual_total = sum(len(q.get('testCases', [])) for q in generated_qs)
+                total = actual_total if actual_total > 0 else payload.result.get("total", 5)
+                if total > 0:
+                    calculated_score = (passed / total) * 10.0
+            else:
+                calculated_score = 0.0
+            coding_eval_res = None
     
     assessment.status = models.AssessmentStatus.completed
     assessment.score = calculated_score
@@ -555,21 +756,31 @@ def submit_assessment(
     
     # Store detailed analysis
     if assessment.type == "aptitude":
-        assessment.analysis_data = {
-            "correct": correct_count,
-            "total": total_questions,
-            "incorrect": total_questions - correct_count, # Assuming all others are incorrect/unanswered
-            "score_percentage": (calculated_score / 10) * 100 if total_questions > 0 else 0,
-            "time_taken_seconds": time_taken_seconds
-        }
+        if apt_eval_res:
+            assessment.analysis_data = copy.deepcopy(apt_eval_res["analysis_data"])
+            assessment.analysis_data["time_taken_seconds"] = time_taken_seconds
+        else:
+            assessment.analysis_data = {
+                "correct": 0,
+                "total": 0,
+                "incorrect": 0,
+                "marks_earned": 0,
+                "total_marks": 0,
+                "score_percentage": 0.0,
+                "time_taken_seconds": time_taken_seconds
+            }
     elif assessment.type == "coding":
-        assessment.analysis_data = {
-            "passed": passed,
-            "total": total,
-            "failed": total - passed,
-             "score_percentage": (calculated_score / 10) * 100 if total > 0 else 0,
-            "time_taken_seconds": time_taken_seconds
-        }
+        if coding_eval_res:
+            assessment.analysis_data = copy.deepcopy(coding_eval_res["analysis_data"])
+            assessment.analysis_data["time_taken_seconds"] = time_taken_seconds
+        else:
+            assessment.analysis_data = {
+                "public_passed": passed,
+                "public_total": total,
+                "has_hidden_tests": False,
+                "score_percentage": (calculated_score / 10) * 100 if total > 0 else 0,
+                "time_taken_seconds": time_taken_seconds
+            }
     
     # 2. SYNC: Update Candidate record and Log Activity
     candidate = db.query(models.Candidate).filter(models.Candidate.email == assessment.candidate_email).first()
@@ -619,5 +830,5 @@ def submit_assessment(
     db.commit()
     db.refresh(assessment)
     
-    return assessment
+    return sanitize_assessment_for_candidate(assessment)
 

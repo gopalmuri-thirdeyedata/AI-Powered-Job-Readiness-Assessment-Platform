@@ -217,9 +217,9 @@ const InstructionsPage = () => {
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
                 {/* Header */}
                 <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-8 text-white">
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                         <div>
-                            <h1 className="text-2xl font-bold flex items-center gap-2">
+                            <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
                                 Welcome, {candidateName}
                             </h1>
                             <button
@@ -232,15 +232,15 @@ const InstructionsPage = () => {
                                 You have been invited to participate in the following assessment round. Please review the details below.
                             </p>
                         </div>
-                        <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg text-center">
+                        <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-xl text-center self-start sm:self-auto">
                             <p className="text-xs text-blue-100 uppercase font-bold tracking-wider">Current Stage</p>
-                            <p className="text-xl font-bold text-white mt-1">{roundDetails.type}</p>
+                            <p className="text-lg sm:text-xl font-bold text-white mt-1">{roundDetails.type}</p>
                         </div>
                     </div>
                 </div>
 
                 {/* Body */}
-                <div className="p-8 space-y-8">
+                <div className="p-4 sm:p-8 space-y-6 sm:space-y-8">
                     {/* Round Details */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">

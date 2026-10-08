@@ -43,6 +43,13 @@ def has_groq_key() -> bool:
     """
     return len(get_groq_api_keys()) > 0
 
+def get_groq_model() -> str:
+    """
+    Returns active Groq model configured in environment, defaulting to openai/gpt-oss-120b.
+    """
+    load_dotenv(override=True)
+    return os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
 def execute_groq_request(url: str, payload: dict, timeout: int = 30) -> requests.Response:
     """
     Performs an HTTP POST request to Groq API with robust fallback key rotation.
@@ -52,6 +59,11 @@ def execute_groq_request(url: str, payload: dict, timeout: int = 30) -> requests
     if not keys:
         raise RuntimeError("No Groq API keys configured in the environment.")
         
+    # Map unavailable/legacy model names to currently supported Groq model
+    active_model = get_groq_model()
+    if payload.get("model") in [None, "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "llama3-8b-8192"]:
+        payload["model"] = active_model
+
     last_exception = None
     
     for idx, api_key in enumerate(keys):
@@ -64,15 +76,22 @@ def execute_groq_request(url: str, payload: dict, timeout: int = 30) -> requests
             
             # Check for Rate Limit (429) or Server Errors to trigger fallback
             if response.status_code == 429:
-                print(f"⚠️ Groq API Key {idx+1} rate limited. Attempting fallback key...")
+                print(f"[WARNING] Groq API Key {idx+1} rate limited. Attempting fallback key...")
                 continue
+            if response.status_code == 404 and "model" in response.text.lower():
+                # Model not supported under this key, fallback to alternative verified model
+                alt_model = "qwen/qwen3.8-27b" if payload.get("model") != "qwen/qwen3.8-27b" else "openai/gpt-oss-20b"
+                payload["model"] = alt_model
+                response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+                if response.status_code == 200:
+                    return response
             if response.status_code != 200:
-                print(f"⚠️ Groq API Error {response.status_code} with key {idx+1}: {response.text}. Attempting fallback key...")
+                print(f"[WARNING] Groq API Error {response.status_code} with key {idx+1}: {response.text}. Attempting fallback key...")
                 continue
                 
             return response
         except Exception as e:
-            print(f"❌ Groq Request failed with API Key {idx+1}: {e}")
+            print(f"[ERROR] Groq Request failed with API Key {idx+1}: {e}")
             last_exception = e
             
     if last_exception:
@@ -97,7 +116,7 @@ def call_groq_sdk(fn, *args, **kwargs):
             return fn(client, *args, **kwargs)
         except Exception as e:
             # Check for rate-limiting or other API anomalies
-            print(f"❌ Groq SDK call failed with API Key {idx+1}: {e}")
+            print(f"[ERROR] Groq SDK call failed with API Key {idx+1}: {e}")
             last_exception = e
             
     if last_exception:

@@ -8,7 +8,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import useProctoring from '../../hooks/useProctoring';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
-import useFullscreen from '../../hooks/useFullscreen';
+import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
+import FullscreenGateModal from '../../components/FullscreenGateModal';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import API_URL from '../../apiConfig';
 
 // Language Configuration (Restricted to Python and Java)
@@ -45,11 +47,25 @@ const CandidateCodingAssessment = () => {
     const [configuredTestCount, setConfiguredTestCount] = useState(5); // Default intensity
     const [submitted, setSubmitted] = useState(false);
 
+    // Centered Alert Modal State
+    const [alertModal, setAlertModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'warning',
+        onConfirm: null
+    });
+    const showAlert = (title, message, type = 'warning', onConfirm = null) => {
+        setAlertModal({ isOpen: true, title, message, type, onConfirm });
+    };
+
     const [showWarning, setShowWarning] = useState(false);
     const [warningMessage, setWarningMessage] = useState('');
     const [showTerminalOverlay, setShowTerminalOverlay] = useState(false);
     const [terminalMessage, setTerminalMessage] = useState('');
-    const [faceViolationCount, setFaceViolationCount] = useState(0);
+    const totalViolationsRef = useRef(0);
+    const [violationCount, setViolationCount] = useState(0);
+    const lastViolationTimeRef = useRef(0);
 
     const [boxes, setBoxes] = useState([]);
     const boxTimerRef = useRef(null);
@@ -81,32 +97,61 @@ const CandidateCodingAssessment = () => {
             .catch(err => console.error("Failed to load security settings", err));
     }, []);
 
-    // Combined handlers shared by tab-switch + face detection
-    const handleViolation = (reason) => {
-        setWarningMessage(`Malpractice Detected: ${reason}. This attempt has been logged.`);
-        setShowWarning(true);
-        setTimeout(() => setShowWarning(false), 5000);
-    };
     const handleTerminalViolation = (reason) => {
         handleSubmit(`Malpractice - ${reason}`);
         setTerminalMessage(`Maximum violations reached (${reason}). Your assessment has been submitted automatically.`);
         setShowTerminalOverlay(true);
     };
 
+    // Unified violation handler with 3000ms debounce cooldown
+    const handleViolation = (reason) => {
+        if (submitted) return;
+
+        const now = Date.now();
+        if (now - lastViolationTimeRef.current < 3000) return;
+        lastViolationTimeRef.current = now;
+
+        totalViolationsRef.current += 1;
+        const count = totalViolationsRef.current;
+        setViolationCount(count);
+
+        setWarningMessage(`Malpractice Detected: ${reason}. This attempt has been logged.`);
+        setShowWarning(true);
+        setTimeout(() => setShowWarning(false), 5000);
+
+        if (count >= 3) {
+            handleTerminalViolation(reason);
+        }
+    };
+    const handleAnyViolation = handleViolation;
+
     const { violations } = useProctoring({
         enabled: !submitted,
-        maxViolations: 3,
+        maxViolations: 999,
         onViolation: handleViolation,
-        onTerminalViolation: handleTerminalViolation
+        onTerminalViolation: () => {}
     });
 
     // Fullscreen enforcement
-    const { reEnter: reEnterFullscreen } = useFullscreen({
-        enabled: !submitted && securityConfig.fullscreenProctoring,
-        onExit: () => {
-            handleViolation('Fullscreen exited — please stay in fullscreen during the assessment');
-            setTimeout(reEnterFullscreen, 2000);
+    const handleFullscreenTimeout = () => {
+        handleViolation('Fullscreen exit exceeded 10-second recovery limit');
+        if (totalViolationsRef.current >= 3) {
+            handleTerminalViolation('Fullscreen exit exceeded 10-second recovery limit');
         }
+    };
+
+    const {
+        isFullscreen,
+        isGateOpen,
+        isRecoveryOpen,
+        recoveryTimeLeft,
+        error: fullscreenError,
+        enterFullscreen,
+        returnToFullscreen
+    } = useAssessmentFullscreen({
+        enabled: !submitted && securityConfig.fullscreenProctoring,
+        isCompleted: submitted,
+        onRecoveryTimeout: handleFullscreenTimeout
     });
 
     // Silent background face detection
@@ -146,14 +191,7 @@ const CandidateCodingAssessment = () => {
             if (boxTimerRef.current) clearTimeout(boxTimerRef.current);
             boxTimerRef.current = setTimeout(() => setBoxes([]), 4000);
         },
-        onViolation: (reason) => {
-            setFaceViolationCount(prev => {
-                const next = prev + 1;
-                handleViolation(reason);
-                if (violations + next >= 3) handleTerminalViolation(reason);
-                return next;
-            });
-        }
+        onViolation: handleAnyViolation
     });
 
     // Bind camera stream and keep playing through fullscreen transitions
@@ -231,7 +269,10 @@ const CandidateCodingAssessment = () => {
                                     id: q.id,
                                     title: q.title || 'Coding Challenge',
                                     description: q.description || 'Solve this problem.',
+                                    input_format: q.input_format || '',
+                                    output_format: q.output_format || '',
                                     difficulty: q.difficulty || 'Medium',
+                                    marks: q.marks || 10,
                                     examples: (q.examples && q.examples.length > 0) ? q.examples : [{ input: 'Example input', output: 'Example output', explanation: 'No examples provided' }],
                                     testCases: tcList,
                                     defaultTestCases: tcList,
@@ -315,7 +356,8 @@ const CandidateCodingAssessment = () => {
 
     // Timer Logic
     useEffect(() => {
-        if (!submitted && timeLeft > 0) {
+        // Only tick down if test is active and not blocked by entry gate or recovery modal
+        if (!submitted && timeLeft > 0 && !isGateOpen && !isRecoveryOpen) {
             const timer = setInterval(() => {
                 setTimeLeft(prev => (prev > 0 ? prev - 1 : 0));
             }, 1000);
@@ -323,7 +365,7 @@ const CandidateCodingAssessment = () => {
         } else if (timeLeft === 0 && !submitted) {
             handleSubmit();
         }
-    }, [timeLeft, submitted]);
+    }, [timeLeft, submitted, isGateOpen, isRecoveryOpen]);
 
     // Update test cases when question changes
     useEffect(() => {
@@ -513,8 +555,11 @@ const CandidateCodingAssessment = () => {
 
         const token = localStorage.getItem('candidateToken');
         if (!token) {
-            if (!forcedStatus) alert("Session expired. Please login again.");
-            navigate('/portal/login');
+            if (!forcedStatus) {
+                showAlert('Session Expired', 'Session expired. Please login again.', 'warning', () => navigate('/portal/login'));
+            } else {
+                navigate('/portal/login');
+            }
             return;
         }
 
@@ -546,7 +591,13 @@ const CandidateCodingAssessment = () => {
                 },
                 body: JSON.stringify({
                     result: finalResults,
-                    status: forcedStatus
+                    status: forcedStatus,
+                    code: codeByQuestion,
+                    language: selectedLanguage,
+                    answers: {
+                        codeByQuestion,
+                        selectedLanguage
+                    }
                 })
             });
 
@@ -558,21 +609,20 @@ const CandidateCodingAssessment = () => {
                 }
             } else if (response.status === 401) {
                 if (!forcedStatus) {
-                    alert('Your session has expired. Please log in again to continue.');
-                    navigate('/portal/login');
+                    showAlert('Session Expired', 'Your session has expired. Please log in again to continue.', 'warning', () => navigate('/portal/login'));
                 }
             } else if (response.status === 400) {
                 console.warn('[Submit] Assessment was already submitted — ignoring duplicate.');
                 setSubmitted(true);
             } else {
                 if (!forcedStatus) {
-                    alert("Failed to submit assessment. Please try again.");
+                    showAlert('Submission Failed', 'Failed to submit assessment. Please try again.', 'danger');
                 }
             }
         } catch (e) {
             console.error("Submission failed:", e);
             if (!forcedStatus) {
-                alert("Network error. Please check connection.");
+                showAlert('Network Error', 'Network error. Please check connection.', 'danger');
             }
         }
     };
@@ -611,6 +661,14 @@ const CandidateCodingAssessment = () => {
 
     return (
         <div className="h-screen flex flex-col bg-gray-950 text-gray-300 overflow-hidden font-sans selection:bg-blue-500/30">
+            {/* Fullscreen Gate & Recovery Modal */}
+            <FullscreenGateModal
+                isOpen={!submitted && securityConfig.fullscreenProctoring && (isGateOpen || isRecoveryOpen)}
+                mode={isRecoveryOpen ? 'recovery' : 'entry'}
+                timeLeft={recoveryTimeLeft}
+                error={fullscreenError}
+                onAction={isRecoveryOpen ? returnToFullscreen : enterFullscreen}
+            />
 
             {/* ── Corner Camera Preview Widget (bottom-right, above console) ── */}
             <div className="fixed bottom-6 right-4 z-40 group">
@@ -708,8 +766,14 @@ const CandidateCodingAssessment = () => {
                             <AlertTriangle size={28} className="flex-shrink-0 animate-pulse" />
                             <div className="flex-1">
                                 <p className="font-bold text-lg">{warningMessage}</p>
-                                <p className="text-sm text-red-100 mt-1">Warning: {violations}/3 - Further violations will result in automatic submission.</p>
+                                <p className="text-sm text-red-100 mt-1">Warning: {violationCount}/3 - Further violations will result in automatic submission.</p>
                             </div>
+                            {violationCount < 3 && (
+                                <button
+                                    onClick={() => setShowWarning(false)}
+                                    className="text-white/60 hover:text-white text-xl ml-2 leading-none flex-shrink-0"
+                                >✕</button>
+                            )}
                         </div>
                     </motion.div>
                 )}
@@ -840,9 +904,25 @@ const CandidateCodingAssessment = () => {
                                 <h3 className="text-xl font-bold text-white mb-4">{currentQuestion.title}</h3>
 
                                 {activeLeftTab === 'description' && (
-                                    <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-                                        {currentQuestion.description}
-                                    </p>
+                                    <div className="space-y-4">
+                                        <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                            {currentQuestion.description}
+                                        </p>
+
+                                        {currentQuestion.input_format && (
+                                            <div className="pt-2 border-t border-gray-800">
+                                                <h4 className="text-xs font-bold text-gray-200 uppercase tracking-wider mb-1">Input Format</h4>
+                                                <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{currentQuestion.input_format}</p>
+                                            </div>
+                                        )}
+
+                                        {currentQuestion.output_format && (
+                                            <div className="pt-2 border-t border-gray-800">
+                                                <h4 className="text-xs font-bold text-gray-200 uppercase tracking-wider mb-1">Output Format</h4>
+                                                <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{currentQuestion.output_format}</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
 
                                 {activeLeftTab === 'examples' && (
@@ -1166,6 +1246,18 @@ const CandidateCodingAssessment = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Centered In-App Alert Modal */}
+            <ConfirmationModal
+                isOpen={alertModal.isOpen}
+                onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={alertModal.onConfirm}
+                title={alertModal.title}
+                message={alertModal.message}
+                type={alertModal.type}
+                confirmText="OK"
+                isAlert={true}
+            />
         </div>
     );
 };

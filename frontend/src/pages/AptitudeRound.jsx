@@ -71,47 +71,93 @@ const AptitudeRound = () => {
             });
 
             if (res.ok) {
-                alert('Candidates promoted successfully!');
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Promotion Successful',
+                    message: `${candidateIds.length} candidate(s) promoted successfully to ${stage === 'NEXT' ? 'their next stage' : stage}.`,
+                    type: 'success',
+                    confirmText: 'Awesome',
+                    isAlert: true,
+                    onConfirm: () => fetchCandidates()
+                });
                 fetchCandidates();
             } else {
                 const errorData = await res.json();
-                alert(`Failed to promote: ${errorData.detail || 'Unknown error'}`);
+                setConfirmation({
+                    isOpen: true,
+                    title: 'Promotion Failed',
+                    message: `Failed to promote: ${errorData.detail || 'Unknown error'}`,
+                    type: 'danger',
+                    confirmText: 'OK',
+                    isAlert: true
+                });
             }
         } catch (error) {
             console.error("Promotion failed:", error);
-            alert('An error occurred during promotion.');
+            setConfirmation({
+                isOpen: true,
+                title: 'Error',
+                message: 'An error occurred during promotion. Please try again.',
+                type: 'danger',
+                confirmText: 'OK',
+                isAlert: true
+            });
         }
     };
 
-    const handleDelete = async (candidateIds) => {
+    const handleDelete = (candidateIds) => {
         if (!candidateIds || candidateIds.length === 0) return;
-        if (!window.confirm(`Permanently delete ${candidateIds.length} selected candidate(s)? This cannot be undone.`)) return;
-
-        try {
-            setLoading(true);
-            await Promise.all(candidateIds.map(id =>
-                fetch(`${API_URL}/api/resume/candidates/${id}/`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                })
-            ));
-            alert('Candidates deleted successfully');
-            fetchCandidates();
-        } catch (err) {
-            console.error("Deletion failed", err);
-            alert("Failed to delete candidates");
-            setLoading(false);
-        }
+        setConfirmation({
+            isOpen: true,
+            title: 'Delete Candidates',
+            message: `Permanently delete ${candidateIds.length} selected candidate(s)? This action cannot be undone.`,
+            type: 'danger',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            isAlert: false,
+            onConfirm: async () => {
+                try {
+                    setLoading(true);
+                    await Promise.all(candidateIds.map(id =>
+                        fetch(`${API_URL}/api/resume/candidates/${id}/`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                        })
+                    ));
+                    setConfirmation({
+                        isOpen: true,
+                        title: 'Deleted Successfully',
+                        message: `${candidateIds.length} candidate(s) deleted successfully.`,
+                        type: 'success',
+                        confirmText: 'OK',
+                        isAlert: true,
+                        onConfirm: () => fetchCandidates()
+                    });
+                    fetchCandidates();
+                } catch (err) {
+                    console.error("Deletion failed", err);
+                    setConfirmation({
+                        isOpen: true,
+                        title: 'Deletion Failed',
+                        message: 'Failed to delete candidates. Please try again.',
+                        type: 'danger',
+                        confirmText: 'OK',
+                        isAlert: true
+                    });
+                    setLoading(false);
+                }
+            }
+        });
     };
 
     return (
         <div className="min-h-screen bg-gray-50 pb-12">
             <div className="w-full space-y-6">
                 {/* Header Section */}
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-                    <div className="flex justify-between items-start">
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <div className="flex-1">
-                            <h1 className="text-3xl font-semibold text-[#5d8c2c] tracking-tight flex items-center gap-3">
+                            <h1 className="text-2xl sm:text-3xl font-semibold text-[#5d8c2c] tracking-tight flex items-center gap-3">
                                 <div className="p-2.5 bg-white rounded-xl border border-gray-200">
                                     <BrainCircuit className="text-green-600" size={28} />
                                 </div>
@@ -148,6 +194,8 @@ const AptitudeRound = () => {
                     message={confirmation.message}
                     type={confirmation.type}
                     confirmText={confirmation.confirmText}
+                    cancelText={confirmation.cancelText}
+                    isAlert={confirmation.isAlert}
                 />
             </div>
         </div>
