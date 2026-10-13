@@ -124,11 +124,42 @@ function App() {
                             <Route path="test-vapi" element={<VapiTest />} />
                         </Route>
 
-                        {/* Student Routes - Redirected directly to RoleReady Assessment Workflow */}
+                        {/* Student Routes - Active Assessment & Placement Hub */}
                         <Route path="/student/login" element={<Navigate to="/?auth=student" replace />} />
-                        <Route path="/student/dashboard" element={<Navigate to="/assessment/setup" replace />} />
-                        <Route path="/student" element={<Navigate to="/assessment/setup" replace />} />
-                        <Route path="/student/*" element={<Navigate to="/assessment/setup" replace />} />
+                        <Route path="/student" element={<Navigate to="/student/dashboard" replace />} />
+                        <Route path="/student/dashboard" element={<StudentLayout />}>
+                            <Route index element={<StudentDashboard />} />
+                        </Route>
+                        <Route path="/student/performance" element={<StudentLayout />}>
+                            <Route index element={<StudentDashboard />} />
+                        </Route>
+
+                        {/* Student career modules: served at /student/<module> (sidebar and dashboard links) and
+                            kept at /student/hub/<module> for compatibility. Same components, same auth guard
+                            (StudentLayout). */}
+                        <Route path="/student/hub" element={<StudentLayout />}>
+                            <Route index element={<StudentDashboard />} />
+                            <Route path="skill-gap" element={<StudentSkillGap />} />
+                            <Route path="roadmap" element={<StudentRoadmap />} />
+                            <Route path="practice" element={<StudentPractice />} />
+                            <Route path="interview" element={<StudentMockInterview />} />
+                            <Route path="simulation" element={<StudentPlacementSimulation />} />
+                            <Route path="drives" element={<StudentDrives />} />
+                            <Route path="projects" element={<StudentProjects />} />
+                            <Route path="resume" element={<StudentResumeUpload />} />
+                            <Route path="profile" element={<StudentProfile />} />
+                        </Route>
+                        <Route element={<StudentLayout />}>
+                            <Route path="/student/skill-gap" element={<StudentSkillGap />} />
+                            <Route path="/student/roadmap" element={<StudentRoadmap />} />
+                            <Route path="/student/practice" element={<StudentPractice />} />
+                            <Route path="/student/interview" element={<StudentMockInterview />} />
+                            <Route path="/student/simulation" element={<StudentPlacementSimulation />} />
+                            <Route path="/student/drives" element={<StudentDrives />} />
+                            <Route path="/student/projects" element={<StudentProjects />} />
+                            <Route path="/student/resume" element={<StudentResumeUpload />} />
+                            <Route path="/student/profile" element={<StudentProfile />} />
+                        </Route>
 
                         {/* College Placement Administration Routes */}
                         <Route path="/college" element={<CollegeLayout />}>

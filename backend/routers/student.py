@@ -41,6 +41,7 @@ from services.copilot_service import (
 )
 from services import college_service
 from services import onboarding_service
+from services import student_performance_service
 
 router = APIRouter(
     prefix="/api/student",
@@ -2063,6 +2064,91 @@ def complete_onboarding_endpoint(
         onboarding_step=updated_profile.onboarding_step,
         created_at=updated_profile.created_at
     )
+
+
+# ==============================================================================
+# PHASE 11: STUDENT PERFORMANCE DASHBOARD & ASSESSMENT HISTORY API
+# ==============================================================================
+
+@router.get("/performance/dashboard", response_model=schemas.StudentPerformanceDashboardResponse)
+def get_student_performance_dashboard_endpoint(
+    profile: models.StudentProfile = Depends(get_current_student_profile),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Returns unified student performance metrics:
+    - Overview & active test alerts
+    - Summary Cards (Total Completed, True Average, Best Performance, In Progress)
+    - Chronological Performance Trends (Recharts ready)
+    - Evaluated Skills Proficiency vs Resume Estimates
+    - Actionable Recommended Next Steps
+    - Real Activity Stream
+    """
+    return student_performance_service.get_student_performance_dashboard(
+        db=db,
+        profile=profile,
+        current_user=current_user
+    )
+
+
+@router.get("/performance/history", response_model=schemas.StudentAssessmentHistoryResponse)
+def get_student_assessment_history_endpoint(
+    category: Optional[str] = "ALL",
+    status: Optional[str] = "ALL",
+    sort_by: Optional[str] = "date_desc",
+    page: int = 1,
+    page_size: int = 10,
+    profile: models.StudentProfile = Depends(get_current_student_profile),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Returns filtered, sorted, paginated assessment history for the authenticated student.
+    Enforces student-level ownership and tenant isolation.
+    """
+    return student_performance_service.get_student_assessment_history(
+        db=db,
+        profile=profile,
+        current_user=current_user,
+        category=category,
+        status=status,
+        sort_by=sort_by,
+        page=page,
+        page_size=page_size
+    )
+
+
+@router.get("/performance/assessment/{assessment_type}/{assessment_id}", response_model=schemas.StudentAssessmentDetailResponse)
+def get_student_assessment_detail_endpoint(
+    assessment_type: str,
+    assessment_id: str,
+    profile: models.StudentProfile = Depends(get_current_student_profile),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Returns sanitized detailed assessment results for an authorized student.
+    Strictly strips hidden test cases, server secret keys, and internal evaluation prompts.
+    """
+    try:
+        return student_performance_service.get_student_assessment_detail(
+            db=db,
+            profile=profile,
+            assessment_type=assessment_type,
+            assessment_id=assessment_id
+        )
+    except KeyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
 
 
 

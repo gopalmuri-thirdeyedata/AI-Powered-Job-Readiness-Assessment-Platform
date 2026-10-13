@@ -144,8 +144,8 @@ const StudentProfile = () => {
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-                <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
-                <p className="text-slate-400 text-sm">Loading career profile...</p>
+                <RefreshCw className="w-8 h-8 text-emerald-500 dark:text-emerald-400 animate-spin" />
+                <p className="text-slate-500 dark:text-slate-400 text-sm">Loading career profile...</p>
             </div>
         );
     }
@@ -153,23 +153,23 @@ const StudentProfile = () => {
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300">
             {/* Header */}
-            <div className="border-b border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="border-b border-slate-200 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
                         Student Career Profile
                     </h1>
-                    <p className="text-sm text-slate-400 mt-1">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                         Configure your target role, dream company, education details, and key technical skills.
                     </p>
                 </div>
                 {profile && (
-                    <div className="bg-slate-800/80 border border-slate-700/60 px-4 py-2 rounded-xl flex items-center gap-3">
-                        <Award className="w-5 h-5 text-emerald-400" />
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3 shadow-xs">
+                        <Award className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                         <div>
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 block">
                                 Readiness Indicator
                             </span>
-                            <span className="text-lg font-bold text-white">
+                            <span className="text-lg font-bold text-slate-900 dark:text-white">
                                 {Math.round(profile.readiness_score || 0)} / 100
                             </span>
                         </div>
@@ -181,8 +181,8 @@ const StudentProfile = () => {
                 <div
                     className={`p-4 rounded-xl text-sm flex items-center gap-3 ${
                         saveStatus.type === 'success'
-                            ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
-                            : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
                     }`}
                 >
                     {saveStatus.type === 'success' ? (
@@ -196,13 +196,13 @@ const StudentProfile = () => {
 
             <form onSubmit={handleSave} className="space-y-6">
                 {/* 1. Basic Info */}
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm space-y-4">
-                    <h2 className="text-base font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-700/60">
-                        <User className="w-4 h-4 text-emerald-400" /> Personal & Account Information
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                        <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Personal & Account Information
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                                 Full Name
                             </label>
                             <input
@@ -210,45 +210,45 @@ const StudentProfile = () => {
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder="e.g. Alex Kumar"
-                                className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                                 Email Address
                             </label>
                             <input
                                 type="email"
                                 value={profile?.email || ''}
                                 disabled
-                                className="w-full bg-slate-900/40 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-400 cursor-not-allowed"
+                                className="w-full bg-slate-100 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400 cursor-not-allowed"
                             />
                         </div>
                     </div>
                 </div>
 
                 {/* 2. Target Role & Company */}
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm space-y-4">
-                    <h2 className="text-base font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-700/60">
-                        <Target className="w-4 h-4 text-emerald-400" /> Career Targets
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                        <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Career Targets
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Target Role */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                                 Target Role
                             </label>
                             <select
                                 value={targetRole}
                                 onChange={(e) => setTargetRole(e.target.value)}
-                                className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             >
                                 {COMMON_ROLES.map((r) => (
-                                    <option key={r} value={r} className="bg-slate-900 text-white">
+                                    <option key={r} value={r} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                                         {r}
                                     </option>
                                 ))}
-                                <option value="Other" className="bg-slate-900 text-white">
+                                <option value="Other" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                                     Other (Specify below)
                                 </option>
                             </select>
@@ -259,15 +259,15 @@ const StudentProfile = () => {
                                     value={customRole}
                                     onChange={(e) => setCustomRole(e.target.value)}
                                     placeholder="Enter your custom target role"
-                                    className="w-full mt-2.5 bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                    className="w-full mt-2.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                                 />
                             )}
                         </div>
 
                         {/* Target Company */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                                Target Company <span className="text-slate-500 font-normal lowercase">(optional)</span>
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                                Target Company <span className="text-slate-400 font-normal lowercase">(optional)</span>
                             </label>
                             <div className="relative">
                                 <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -276,10 +276,10 @@ const StudentProfile = () => {
                                     value={targetCompany}
                                     onChange={(e) => setTargetCompany(e.target.value)}
                                     placeholder="e.g. Google, Microsoft, Startup (Optional)"
-                                    className="w-full bg-slate-900/60 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                    className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                                 />
                             </div>
-                            <p className="text-[11px] text-slate-500 mt-1">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                                 Leave blank if you are open to multiple organizations.
                             </p>
                         </div>
@@ -287,13 +287,13 @@ const StudentProfile = () => {
                 </div>
 
                 {/* 3. Education Details */}
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm space-y-4">
-                    <h2 className="text-base font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-700/60">
-                        <GraduationCap className="w-4 h-4 text-emerald-400" /> Education & Graduation
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                        <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Education & Graduation
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="sm:col-span-1">
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                                 Degree & Branch
                             </label>
                             <input
@@ -301,11 +301,11 @@ const StudentProfile = () => {
                                 value={education}
                                 onChange={(e) => setEducation(e.target.value)}
                                 placeholder="e.g. B.Tech Computer Science"
-                                className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                                 Graduation Year
                             </label>
                             <input
@@ -315,11 +315,11 @@ const StudentProfile = () => {
                                 value={graduationYear}
                                 onChange={(e) => setGraduationYear(e.target.value)}
                                 placeholder="e.g. 2026"
-                                className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                                 CGPA / Percentage
                             </label>
                             <input
@@ -330,18 +330,18 @@ const StudentProfile = () => {
                                 value={cgpa}
                                 onChange={(e) => setCgpa(e.target.value)}
                                 placeholder="e.g. 8.5"
-                                className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                     </div>
                 </div>
 
                 {/* 4. Current Skills */}
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm space-y-4">
-                    <h2 className="text-base font-bold text-white flex items-center gap-2 pb-2 border-b border-slate-700/60">
-                        <Code className="w-4 h-4 text-emerald-400" /> Current Skills
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                        <Code className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Current Skills
                     </h2>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                         Add the programming languages, frameworks, and tools in your current repertoire.
                     </p>
 
@@ -357,12 +357,12 @@ const StudentProfile = () => {
                                 }
                             }}
                             placeholder="Add a skill (e.g. React, Python, Docker) and press Add"
-                            className="flex-1 bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                            className="flex-1 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                         />
                         <button
                             type="button"
                             onClick={handleAddSkill}
-                            className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-sm font-semibold flex items-center gap-1 transition-colors"
+                            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold flex items-center gap-1 transition-colors"
                         >
                             <Plus className="w-4 h-4" /> Add
                         </button>
@@ -370,18 +370,18 @@ const StudentProfile = () => {
 
                     <div className="flex flex-wrap gap-2 pt-2">
                         {skills.length === 0 ? (
-                            <span className="text-xs text-slate-500 italic">No skills added yet.</span>
+                            <span className="text-xs text-slate-400 dark:text-slate-500 italic">No skills added yet.</span>
                         ) : (
                             skills.map((skill, idx) => (
                                 <span
                                     key={idx}
-                                    className="px-3 py-1.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium flex items-center gap-1.5"
+                                    className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 rounded-lg text-xs font-medium flex items-center gap-1.5"
                                 >
                                     <span>{skill}</span>
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveSkill(skill)}
-                                        className="text-slate-400 hover:text-rose-400 p-0.5 rounded transition-colors"
+                                        className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 p-0.5 rounded transition-colors"
                                     >
                                         <X className="w-3 h-3" />
                                     </button>
@@ -396,7 +396,7 @@ const StudentProfile = () => {
                     <button
                         type="submit"
                         disabled={isSaving}
-                        className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-sm transition-all"
+                        className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-xs transition-all"
                     >
                         {isSaving ? (
                             <>

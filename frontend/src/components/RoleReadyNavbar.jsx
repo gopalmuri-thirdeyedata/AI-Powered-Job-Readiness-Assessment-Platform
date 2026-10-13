@@ -11,12 +11,11 @@ import { useTheme } from '../context/ThemeContext';
  * - 80px (h-20) height matching PrepWin homepage
  * - Centered max-w-7xl inner container with balanced horizontal padding
  * - ThirdEye logo & PrepWin wordmark vertically aligned on one baseline
- * - Responsive light/dark theme toggle utilizing design tokens
- * - Direct Student Dashboard return button for seamless navigation
+ * - Direct Student Dashboard entry point
  * - Clean user profile identity and sign-out action
  * - Cohesive border and surface treatment in both light (#FFFFFF) and dark (#0B1220 / #111B2E) themes
  */
-const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true }) => {
+const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, showHome = false }) => {
     const navigate = useNavigate();
     const { user } = useUser();
     const clerk = useClerk();
@@ -76,6 +75,17 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true })
 
                 {/* ── Right: Theme Toggle & User Actions ── */}
                 <div className="hidden md:flex items-center gap-3 shrink-0">
+                    {/* Direct Student Dashboard Link */}
+                    <Link
+                        to="/student/dashboard"
+                        id="nav-student-dashboard-btn"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
+                        title="Open Student Dashboard & Career Hub"
+                    >
+                        <LayoutDashboard className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Dashboard</span>
+                    </Link>
+
                     {/* Theme Toggle Button */}
                     <button
                         type="button"
@@ -143,6 +153,26 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true })
             {/* ── Mobile Dropdown Drawer ── */}
             {mobileMenuOpen && (
                 <div className="md:hidden absolute top-20 left-0 right-0 bg-[var(--rr-surface)] border-b border-[var(--rr-border)] shadow-xl px-5 py-4 animate-in slide-in-from-top-2 duration-200 z-50">
+                    <div className="flex flex-col gap-2">
+                        {showDashboard && (
+                            <Link
+                                to="/student/dashboard"
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="px-3.5 py-2.5 rounded-xl text-sm font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center gap-2"
+                            >
+                                <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>Student Dashboard</span>
+                            </Link>
+                        )}
+                        {showHome && (
+                            <Link
+                                to="/"
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="px-3.5 py-2.5 rounded-xl text-sm font-medium text-[var(--rr-text)] hover:bg-[var(--rr-bg)]"
+                            >
+                                PrepWin Home
+                            </Link>
+                        )}
                         {user ? (
                             <>
                                 <div className="px-3.5 py-2 rounded-xl bg-[var(--rr-card)] border border-[var(--rr-border)] flex items-center gap-2.5 my-1">

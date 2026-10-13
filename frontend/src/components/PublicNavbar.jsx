@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Sun, Moon, GraduationCap, ShieldCheck, ChevronRight } from 'lucide-react';
+import { Menu, X, Sun, Moon, GraduationCap, ShieldCheck, ChevronRight, LayoutDashboard } from 'lucide-react';
 import { useClerk, useUser } from '@clerk/clerk-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -12,6 +12,8 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
     const [scrolled, setScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+    const hasStudentSession = Boolean(user || localStorage.getItem('studentToken'));
+
     useEffect(() => {
         const handleScroll = () => {
             setScrolled(window.scrollY > 10);
@@ -22,8 +24,8 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
 
     const handleStudentClick = () => {
         setMobileMenuOpen(false);
-        if (user) {
-            navigate('/assessment/setup');
+        if (hasStudentSession) {
+            navigate('/student/dashboard');
         } else if (onOpenStudentSignIn) {
             onOpenStudentSignIn();
         } else {
@@ -96,15 +98,26 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
                         {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                     </button>
 
-                    {/* Entry Point 1: Student Sign In */}
-                    <button
-                        type="button"
-                        onClick={handleStudentClick}
-                        className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                    >
-                        <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Student Sign In</span>
-                    </button>
+                    {/* Entry Point 1: Student Sign In or Student Dashboard */}
+                    {hasStudentSession ? (
+                        <Link
+                            to="/student/dashboard"
+                            id="public-nav-student-dashboard"
+                            className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
+                        >
+                            <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Student Dashboard</span>
+                        </Link>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={handleStudentClick}
+                            className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        >
+                            <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Student Sign In</span>
+                        </button>
+                    )}
 
                     {/* Entry Point 2: Admin Sign In */}
                     <button
@@ -151,17 +164,31 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
                             <ChevronRight className="w-4 h-4 text-slate-400" />
                         </a>
                         <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                        <button
-                            type="button"
-                            onClick={handleStudentClick}
-                            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between cursor-pointer"
-                        >
-                            <span className="flex items-center gap-2">
-                                <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                <span>Student Sign In</span>
-                            </span>
-                            <ChevronRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        </button>
+                        {hasStudentSession ? (
+                            <Link
+                                to="/student/dashboard"
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between cursor-pointer"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    <span>Student Dashboard</span>
+                                </span>
+                                <ChevronRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            </Link>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleStudentClick}
+                                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between cursor-pointer"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    <span>Student Sign In</span>
+                                </span>
+                                <ChevronRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={handleAdminClick}

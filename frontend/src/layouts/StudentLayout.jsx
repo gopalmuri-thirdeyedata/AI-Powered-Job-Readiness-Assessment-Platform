@@ -22,32 +22,30 @@ import {
     Moon,
     TrendingUp
 } from 'lucide-react';
+import { useUser, useClerk } from '@clerk/clerk-react';
 import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import { useTheme } from '../context/ThemeContext';
+import API_URL from '../apiConfig';
 
-// Primary Assessment & Dashboard Navigation (The 5 Core Sections)
-export const primaryNavItems = [
-    { label: 'Dashboard',       path: '/student/dashboard',   icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'My Assessments',  path: '/student/assessments', icon: ClipboardList,   accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
-    { label: 'Results',         path: '/student/results',     icon: Award,           accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
-    { label: 'Progress',        path: '/student/progress',    icon: TrendingUp,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Profile',         path: '/student/profile',     icon: User,            accent: '#94A3B8', glow: 'rgba(148,163,184,0.15)'},
-];
-
-// Secondary Career Preparation Modules
-export const secondaryNavItems = [
-    { label: 'Skill Gap',            path: '/student/skill-gap',  icon: Target,          accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Roadmap',              path: '/student/roadmap',    icon: Compass,         accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
-    { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'Mock Interview',       path: '/student/interview',  icon: MessageSquare,   accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
+// Navigation definition with per-item accent colors
+export const navItems = [
+    { label: 'Dashboard',       path: '/student/dashboard',  icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
+    { label: 'Role Assessment', path: '/assessment/setup',   icon: Sparkles,        accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
+    { label: 'Skill Gap',       path: '/student/skill-gap',  icon: Target,          accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
+    { label: 'Roadmap',         path: '/student/roadmap',    icon: Compass,         accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
+    { label: 'Practice',        path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
+    { label: 'Mock Interview',      path: '/student/interview',  icon: MessageSquare,   accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
     { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#F43F5E', glow: 'rgba(244,63,94,0.2)'   },
-    { label: 'Campus Drives',        path: '/student/drives',     icon: Building2,       accent: '#3B82F6', glow: 'rgba(59,130,246,0.2)'  },
-    { label: 'Projects',             path: '/student/projects',   icon: FolderGit2,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Resume',               path: '/student/resume',     icon: FileText,        accent: '#A855F7', glow: 'rgba(168,85,247,0.2)'  },
+    { label: 'Campus Drives',       path: '/student/drives',     icon: Building2,       accent: '#3B82F6', glow: 'rgba(59,130,246,0.2)'  },
+    { label: 'Projects',        path: '/student/projects',   icon: FolderGit2,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
+    { label: 'Resume',          path: '/student/resume',     icon: FileText,        accent: '#A855F7', glow: 'rgba(168,85,247,0.2)'  },
+    { label: 'Profile',         path: '/student/profile',    icon: User,            accent: '#94A3B8', glow: 'rgba(148,163,184,0.15)'},
 ];
 
-const allNavItems = [...primaryNavItems, ...secondaryNavItems];
+export const allNavItems = navItems;
+export const primaryNavItems = navItems.slice(0, 5);
+export const secondaryNavItems = navItems.slice(5);
 
 /* ─── Sidebar NavItem ─────────────────────────────── */
 const NavItem = ({ item, collapsed, onClick }) => {
@@ -63,11 +61,11 @@ const NavItem = ({ item, collapsed, onClick }) => {
             className={`group relative flex items-center rounded-xl transition-all duration-200 select-none ${
                 collapsed
                     ? 'justify-center w-10 h-10 mx-auto my-0.5'
-                    : 'gap-3 px-3.5 py-2.5 mx-2 mb-0.5'
+                    : 'gap-3 px-3.5 py-2.5 mx-2.5 mb-1'
             } ${
                 active
                     ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-semibold shadow-xs border border-emerald-200/80 dark:border-emerald-500/20'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
             }`}
         >
             {/* Active left bar indicator */}
@@ -104,25 +102,79 @@ const StudentLayout = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { theme, toggleTheme } = useTheme();
+    const { user, isLoaded: isClerkLoaded } = useUser();
+    const clerk = useClerk();
     const [profile, setProfile] = useState(null);
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const token = localStorage.getItem('studentToken') || localStorage.getItem('token');
-        if (!token && location.pathname !== '/student/login') {
-            navigate('/student/login');
-            return;
-        }
-        if (location.pathname !== '/student/login') {
-            studentApi.getProfile()
-                .then(data => { setProfile(data); setIsLoading(false); })
-                .catch(() => { setIsLoading(false); });
-        } else {
-            setIsLoading(false);
-        }
-    }, [location.pathname, navigate]);
+        let isCancelled = false;
+
+        const initAuth = async () => {
+            // 1. Sync Clerk student session if user is logged in via Clerk
+            if (user) {
+                try {
+                    const email = user.primaryEmailAddress?.emailAddress;
+                    if (email) {
+                        const response = await fetch(`${API_URL}/api/auth/clerk-sync/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email,
+                                clerk_user_id: user.id,
+                                role_intent: 'student'
+                            })
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.access) {
+                                localStorage.setItem('token', data.access);
+                                localStorage.setItem('studentToken', data.access);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Clerk student sync caught:", e);
+                }
+            }
+
+            // 2. Validate token availability
+            const token = localStorage.getItem('studentToken') || localStorage.getItem('token');
+            if (!token && !user && isClerkLoaded && location.pathname !== '/student/login') {
+                navigate('/student/login');
+                return;
+            }
+
+            if (location.pathname !== '/student/login') {
+                try {
+                    const data = await studentApi.getProfile();
+                    if (!isCancelled) {
+                        setProfile(data);
+                        setIsLoading(false);
+                    }
+                } catch {
+                    if (!isCancelled) {
+                        if (user) {
+                            setProfile({
+                                full_name: user.fullName || user.firstName || 'Student',
+                                email: user.primaryEmailAddress?.emailAddress,
+                                target_role: 'Full Stack Engineer'
+                            });
+                        }
+                        setIsLoading(false);
+                    }
+                }
+            } else {
+                if (!isCancelled) setIsLoading(false);
+            }
+        };
+
+        initAuth();
+
+        return () => { isCancelled = true; };
+    }, [user, isClerkLoaded, location.pathname, navigate]);
 
     // Close mobile drawer on route change
     useEffect(() => { setMobileOpen(false); }, [location.pathname]);
@@ -130,8 +182,15 @@ const StudentLayout = () => {
     // Login page renders without layout chrome
     if (location.pathname === '/student/login') return <Outlet />;
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         studentApi.logout();
+        try {
+            if (clerk && clerk.signOut) {
+                await clerk.signOut();
+            }
+        } catch (e) {
+            console.error("Clerk signout error:", e);
+        }
         navigate('/student/login');
     };
 
@@ -169,29 +228,7 @@ const StudentLayout = () => {
 
             {/* Nav Items */}
             <nav className={`flex-1 py-3 overflow-y-auto student-scrollbar ${collapsed && !forMobile ? 'flex flex-col items-center' : ''}`}>
-                {/* Section 1: Core Assessment Navigation (5 items) */}
-                {(!collapsed || forMobile) && (
-                    <div className="px-4 pb-1 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                        Assessment Hub
-                    </div>
-                )}
-                {primaryNavItems.map(item => (
-                    <NavItem
-                        key={item.path}
-                        item={item}
-                        collapsed={collapsed && !forMobile}
-                        onClick={forMobile ? () => setMobileOpen(false) : undefined}
-                    />
-                ))}
-
-                {/* Section 2: Secondary Career Preparation Modules */}
-                <div className="my-2 border-t border-slate-100 dark:border-slate-800" />
-                {(!collapsed || forMobile) && (
-                    <div className="px-4 py-1 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                        Career Modules
-                    </div>
-                )}
-                {secondaryNavItems.map(item => (
+                {navItems.map(item => (
                     <NavItem
                         key={item.path}
                         item={item}
@@ -244,7 +281,7 @@ const StudentLayout = () => {
         </div>
     );
 
-    const SIDEBAR_W = collapsed ? 68 : 220;
+    const SIDEBAR_W = collapsed ? 72 : 252;
 
     return (
         <div
@@ -290,8 +327,7 @@ const StudentLayout = () => {
 
             {/* ─── Main Column ─── */}
             <div
-                className="flex flex-col flex-1 min-h-screen transition-all duration-300 ease-in-out"
-                style={{ marginLeft: typeof window !== 'undefined' && window.innerWidth >= 1024 ? SIDEBAR_W : 0 }}
+                className={`flex flex-col flex-1 min-h-screen transition-all duration-300 ease-in-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
             >
                 {/* Top Bar */}
                 <header
@@ -320,30 +356,18 @@ const StudentLayout = () => {
                         </nav>
                     </div>
 
-                    {/* Center: Responsive Navigation Menu (5 Primary Sections) */}
-                    <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                        {primaryNavItems.map(item => {
-                            const active = location.pathname === item.path || (item.path === '/student/dashboard' && location.pathname === '/student');
-                            const Icon = item.icon;
-                            return (
-                                <Link
-                                    key={item.path}
-                                    to={item.path}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                                        active
-                                            ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs border border-emerald-200/80 dark:border-emerald-500/30 font-bold'
-                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/60 dark:hover:bg-slate-700/60 border border-transparent'
-                                    }`}
-                                >
-                                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`} />
-                                    <span>{item.label}</span>
-                                </Link>
-                            );
-                        })}
-                    </nav>
-
-                    {/* Right: theme toggle & user pill */}
+                    {/* Right: Take Assessment CTA, theme toggle & user pill */}
                     <div className="flex items-center gap-2.5">
+                        <Link
+                            to="/assessment/setup"
+                            id="student-topbar-assessment-btn"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-all shadow-xs"
+                            title="Start AI Role Assessment"
+                        >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Take Assessment</span>
+                        </Link>
+
                         <button
                             type="button"
                             onClick={toggleTheme}

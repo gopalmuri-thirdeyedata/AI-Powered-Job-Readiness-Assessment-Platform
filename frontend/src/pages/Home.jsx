@@ -59,8 +59,8 @@ const Home = () => {
         if (authParam === 'admin' || ['ORGANIZATION_ADMIN', 'HR', 'PLATFORM_ADMIN'].includes(profile.role)) {
             navigate('/admin/dashboard', { replace: true });
         } else {
-            // Take authenticated student directly to RoleReady Assessment Setup
-            navigate('/assessment/setup', { replace: true });
+            // Default authenticated student destination: Student Dashboard & Career Hub
+            navigate('/student/dashboard', { replace: true });
         }
     }, [user, isLoaded, searchParams, navigate]);
 
@@ -78,7 +78,7 @@ const Home = () => {
 
     const openStudentSignIn = () => {
         if (user) {
-            navigate('/assessment/setup');
+            navigate('/student/dashboard');
         } else {
             setAuthModalMode('student');
             setIsClerkOpen(true);
@@ -101,7 +101,7 @@ const Home = () => {
                 isOpen={isClerkOpen}
                 onClose={() => setIsClerkOpen(false)}
                 mode={authModalMode}
-                redirectUrl={authModalMode === 'student' ? '/assessment/setup' : '/admin/dashboard'}
+                redirectUrl={authModalMode === 'student' ? '/student/dashboard' : '/admin/dashboard'}
             />
 
             {/* Public Top Navbar */}

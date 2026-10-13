@@ -14,7 +14,8 @@ import {
     Briefcase,
     X,
     Lock,
-    Clock
+    Clock,
+    LayoutDashboard
 } from 'lucide-react';
 import rolereadyApi from '../../services/rolereadyApi';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
@@ -237,21 +238,29 @@ const RoleReadySetup = () => {
 
             {/* ── Main Content Container (Max width ~1160–1240px) ── */}
             <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-                
-
-
-                {/* Header Title Section */}
-                <div className="mb-8 space-y-1.5">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
-                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span>AI-POWERED EVALUATION</span>
+                {/* Header Title Section with Dashboard Link */}
+                <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                    <div className="space-y-1.5">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>AI-POWERED EVALUATION</span>
+                        </div>
+                        <h1 className="text-2xl sm:text-3xl lg:text-[32px] font-extrabold text-[var(--rr-text)] tracking-tight">
+                            Set Up Your Assessment
+                        </h1>
+                        <p className="text-sm sm:text-base text-[var(--rr-muted)] font-normal leading-relaxed max-w-2xl">
+                            Choose your target role and provide the job description for a personalized assessment.
+                        </p>
                     </div>
-                    <h1 className="text-2xl sm:text-3xl lg:text-[32px] font-extrabold text-[var(--rr-text)] tracking-tight">
-                        Set Up Your Assessment
-                    </h1>
-                    <p className="text-sm sm:text-base text-[var(--rr-muted)] font-normal leading-relaxed max-w-2xl">
-                        Choose your target role and provide the job description for a personalized assessment.
-                    </p>
+
+                    <Link
+                        to="/student/dashboard"
+                        id="setup-view-dashboard-btn"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--rr-card)] hover:bg-[var(--rr-input)] border border-[var(--rr-border)] text-xs font-semibold text-[var(--rr-text)] transition-all shadow-2xs hover:shadow-xs self-start md:self-auto shrink-0"
+                    >
+                        <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>View Past Tests & Dashboard</span>
+                    </Link>
                 </div>
 
                 {/* Validation / Error Banner */}

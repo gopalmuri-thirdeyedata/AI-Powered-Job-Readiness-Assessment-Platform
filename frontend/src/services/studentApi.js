@@ -407,6 +407,37 @@ export const studentApi = {
         return response.data;
     },
 
+    // Phase 11: Student Performance Dashboard & Assessment History
+    async getPerformanceDashboard() {
+        const response = await axios.get(`${API_URL}/api/student/performance/dashboard`, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    async getPerformanceHistory(params = {}) {
+        const queryParams = new URLSearchParams();
+        if (params.category) queryParams.append('category', params.category);
+        if (params.status) queryParams.append('status', params.status);
+        if (params.sortBy) queryParams.append('sort_by', params.sortBy);
+        if (params.page) queryParams.append('page', params.page);
+        if (params.pageSize) queryParams.append('page_size', params.pageSize);
+
+        const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+        const response = await axios.get(`${API_URL}/api/student/performance/history${queryStr}`, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    async getPerformanceAssessmentDetail(assessmentType, assessmentId) {
+        const response = await axios.get(
+            `${API_URL}/api/student/performance/assessment/${assessmentType}/${assessmentId}`,
+            { headers: getAuthHeaders() }
+        );
+        return response.data;
+    },
+
     logout() {
         localStorage.removeItem('studentToken');
         // If current role is STUDENT in user_profile, clean up user_profile too

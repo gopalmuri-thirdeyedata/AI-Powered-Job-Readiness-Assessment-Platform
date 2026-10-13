@@ -24,7 +24,7 @@ const StudentLogin = () => {
     const redirectParam = searchParams.get('redirect');
     const destination = (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//'))
         ? redirectParam
-        : '/assessment/setup';
+        : '/student/dashboard';
 
     const [isRegistering, setIsRegistering] = useState(false);
     const [email, setEmail] = useState('');

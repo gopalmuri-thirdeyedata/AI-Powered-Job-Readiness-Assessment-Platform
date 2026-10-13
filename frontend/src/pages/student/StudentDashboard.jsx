@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { 
     LayoutDashboard,
     Award, 
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 import StudentOnboardingWizard from '../../components/student/StudentOnboardingWizard';
+import StudentPerformanceView from '../../components/student/StudentPerformanceView';
 
 /* ─── Circular Score Gauge ─────────────────────────── */
 const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "Readiness" }) => {
@@ -99,9 +100,10 @@ const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "R
     );
 };
 
-const StudentDashboard = ({ defaultTab = 'all' }) => {
-    const location = useLocation();
-    const navigate = useNavigate();
+const StudentDashboard = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const urlTab = searchParams.get('tab');
+    const [activeTab, setActiveTab] = useState(urlTab === 'readiness' ? 'readiness' : 'performance');
     const [dashboardData, setDashboardData] = useState(null);
     const [unifiedData, setUnifiedData] = useState(null);
     const [onboardingStatus, setOnboardingStatus] = useState(null);
@@ -111,41 +113,13 @@ const StudentDashboard = ({ defaultTab = 'all' }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // Determine current active section/tab from route
-    let activeTab = defaultTab;
-    if (location.pathname === '/student/assessments') activeTab = 'assessments';
-    else if (location.pathname === '/student/results') activeTab = 'results';
-    else if (location.pathname === '/student/progress') activeTab = 'progress';
-    else if (location.pathname === '/student/dashboard' || location.pathname === '/student') activeTab = 'all';
-
-    const formatDate = (isoString) => {
-        if (!isoString) return 'N/A';
-        try {
-            const d = new Date(isoString);
-            return d.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric'
-            });
-        } catch {
-            return isoString;
-        }
-    };
-
-    const formatDateTime = (isoString) => {
-        if (!isoString) return 'N/A';
-        try {
-            const d = new Date(isoString);
-            return d.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        } catch {
-            return isoString;
-        }
+    const handleTabChange = (newTab) => {
+        setActiveTab(newTab);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', newTab);
+            return next;
+        }, { replace: true });
     };
 
     const loadDashboard = async () => {
@@ -263,9 +237,34 @@ const StudentDashboard = ({ defaultTab = 'all' }) => {
     const readinessBadge = getReadinessBadge(readiness_score);
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-300 pb-12">
-            {/* ─── Hero Header & Quick Actions ───────────────────── */}
-            <div className="relative rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-sm overflow-hidden">
+        <div className="space-y-6 animate-in fade-in duration-300 pb-12">
+            {/* ─── Dashboard View Segmented Switcher ────────────────── */}
+            <div className="flex items-center justify-between flex-wrap gap-4 pb-1">
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+                    <button
+                        onClick={() => handleTabChange('performance')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'performance' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs border border-slate-200/60 dark:border-slate-700/60' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        <span>Performance & Analytics</span>
+                    </button>
+                    <button
+                        onClick={() => handleTabChange('readiness')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'readiness' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs border border-slate-200/60 dark:border-slate-700/60' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Readiness & Profile Hub</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* ─── View Content ────────────────────────────────────── */}
+            {activeTab === 'performance' ? (
+                <StudentPerformanceView />
+            ) : (
+                <div className="space-y-8 animate-in fade-in duration-200">
+                    {/* ─── Hero Header & Quick Actions ───────────────────── */}
+                    <div className="relative rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-sm overflow-hidden">
                 {/* Ambient glow decoration */}
                 <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-50 dark:bg-emerald-500/5 rounded-full blur-[90px] pointer-events-none" />
 
@@ -281,6 +280,23 @@ const StudentDashboard = ({ defaultTab = 'all' }) => {
                         <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-2xl leading-relaxed">
                             Monitor your real-time placement readiness, target role skill benchmarks, and active campus drive preparations in one unified hub.
                         </p>
+                        <div className="flex flex-wrap items-center gap-3 mt-4 text-xs">
+                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80">
+                                <span className="text-slate-400 font-medium">Target Role:</span>
+                                <strong className="text-slate-800 dark:text-slate-200 font-semibold">{target_role || 'Software Engineer'}</strong>
+                            </div>
+                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80">
+                                <span className="text-slate-400 font-medium">Target Company:</span>
+                                <strong className="text-slate-800 dark:text-slate-200 font-semibold">{target_company || 'Top Tech & Product Firms'}</strong>
+                            </div>
+                            <Link
+                                to="/student/skill-gap"
+                                className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                            >
+                                <span>Skill Gap</span>
+                                <ArrowUpRight className="w-3 h-3" />
+                            </Link>
+                        </div>
                     </div>
 
                     {/* Quick Action Buttons */}
@@ -1380,6 +1396,8 @@ const StudentDashboard = ({ defaultTab = 'all' }) => {
                     <strong className="text-slate-700 dark:text-slate-300">Placement Readiness Indicator:</strong> This score represents an indicative preparation assessment based on your current resume, profile, technical credentials, and ATS criteria. It is an algorithmic benchmarking tool designed for guidance and is not a commercial guarantee of placement.
                 </span>
             </div>
+            </div>
+            )}
 
             {/* ─── Onboarding Wizard Modal ───────────────────────── */}
             <StudentOnboardingWizard

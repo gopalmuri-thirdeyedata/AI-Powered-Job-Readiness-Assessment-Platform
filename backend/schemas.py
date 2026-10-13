@@ -827,6 +827,153 @@ class OnboardingCompleteRequest(BaseModel):
     current_skills: Optional[List[str]] = []
 
 
+# ==============================================================================
+# PHASE 11: STUDENT PERFORMANCE DASHBOARD SCHEMAS
+# ==============================================================================
+
+class BestPerformanceInfo(BaseModel):
+    score: float
+    max_score: float = 100.0
+    percentage: float
+    test_name: str
+    category: str
+    category_key: str
+    completed_at: Optional[datetime] = None
+    formatted_date: Optional[str] = None
+    id: str
+
+class StudentPerformanceSummary(BaseModel):
+    total_tests_completed: int
+    average_score: Optional[float] = None
+    best_performance: Optional[BestPerformanceInfo] = None
+    tests_in_progress: int
+    improvement_rate: Optional[float] = None
+
+class StudentPerformanceTrendPoint(BaseModel):
+    id: str
+    test_name: str
+    category: str
+    category_key: str
+    score: float
+    max_score: float = 100.0
+    percentage: float
+    date: Optional[datetime] = None
+    formatted_date: str
+
+class StudentPerformanceTrends(BaseModel):
+    trend_status: str  # "improving", "declining", "stable", "insufficient_data"
+    trend_message: str
+    data_points: List[StudentPerformanceTrendPoint]
+
+class StudentPerformanceSkill(BaseModel):
+    skill: str
+    score: float
+    tests_count: int
+    level: str  # "Proficient", "Developing", "Needs Focus"
+    source: str = "assessment"
+
+class StudentPerformanceSkillsAnalysis(BaseModel):
+    assessment_skills: List[StudentPerformanceSkill]
+    resume_skills: List[str]
+    strongest_skills: List[StudentPerformanceSkill]
+    areas_needing_improvement: List[StudentPerformanceSkill]
+    has_evaluation_data: bool
+
+class StudentPerformanceNextStep(BaseModel):
+    id: str
+    title: str
+    description: str
+    category: str
+    action_url: str
+    action_label: str
+    priority: str  # "high", "medium", "low"
+
+class StudentPerformanceActivity(BaseModel):
+    id: str
+    type: str  # "assessment", "simulation", "interview", "practice", "roadmap"
+    title: str
+    description: str
+    score: Optional[float] = None
+    status: str
+    timestamp: datetime
+    formatted_time: str
+
+class StudentPerformanceOverview(BaseModel):
+    student_name: str
+    email: str
+    target_role: Optional[str] = None
+    target_company: Optional[str] = None
+    readiness_score: float
+    pending_tests_count: int
+    completed_tests_count: int
+    has_active_test: bool
+    active_test_message: Optional[str] = None
+
+class StudentPerformanceDashboardResponse(BaseModel):
+    overview: StudentPerformanceOverview
+    summary: StudentPerformanceSummary
+    trends: StudentPerformanceTrends
+    skills_analysis: StudentPerformanceSkillsAnalysis
+    recommended_next_steps: List[StudentPerformanceNextStep]
+    recent_activity: List[StudentPerformanceActivity]
+
+class AssessmentRoundSummary(BaseModel):
+    round_number: Optional[int] = None
+    round_name: str
+    round_type: str
+    score: float
+    max_score: float = 100.0
+    status: str
+    feedback: Optional[str] = None
+
+class StudentAssessmentHistoryItem(BaseModel):
+    id: str
+    raw_id: Union[int, str]
+    test_name: str
+    category: str
+    category_key: str  # "ROLEREADY", "SIMULATION", "MOCK_INTERVIEW", "ASSIGNED", "PRACTICE"
+    status: str  # "COMPLETED", "IN_PROGRESS", "ABANDONED"
+    score: Optional[float] = None
+    max_score: float = 100.0
+    percentage: Optional[float] = None
+    duration_minutes: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    formatted_date: str
+    created_at: datetime
+    rounds_summary: List[AssessmentRoundSummary] = []
+    details_available: bool = True
+    view_url: Optional[str] = None
+
+class StudentAssessmentHistoryResponse(BaseModel):
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: List[StudentAssessmentHistoryItem]
+
+class StudentAssessmentDetailResponse(BaseModel):
+    id: str
+    raw_id: Union[int, str]
+    test_name: str
+    category: str
+    category_key: str
+    status: str
+    overall_score: Optional[float] = None
+    max_score: float = 100.0
+    percentage: Optional[float] = None
+    duration_minutes: Optional[int] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    formatted_date: str
+    round_details: List[AssessmentRoundSummary] = []
+    strengths: List[str] = []
+    weaknesses: List[str] = []
+    recommendations: List[str] = []
+    evaluation_summary: Optional[str] = None
+    report_url: Optional[str] = None
+
+
+
 
 
 

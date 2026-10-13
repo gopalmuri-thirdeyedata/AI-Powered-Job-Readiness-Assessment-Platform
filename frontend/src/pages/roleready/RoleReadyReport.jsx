@@ -37,7 +37,8 @@ const CircularGauge = ({ score = 0, size = 130, strokeWidth = 10 }) => {
                     cx={size / 2}
                     cy={size / 2}
                     r={radius}
-                    stroke="rgba(255, 255, 255, 0.08)"
+                    stroke="currentColor"
+                    className="text-slate-200 dark:text-slate-800"
                     strokeWidth={strokeWidth}
                     fill="transparent"
                 />
@@ -55,10 +56,10 @@ const CircularGauge = ({ score = 0, size = 130, strokeWidth = 10 }) => {
                 />
             </svg>
             <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-3xl font-extrabold text-white tracking-tight leading-none">
+                <span className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-none">
                     {validScore}%
                 </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mt-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mt-1">
                     Job Fit
                 </span>
             </div>
@@ -280,13 +281,23 @@ const RoleReadyReport = () => {
                         <h4 className="text-sm font-bold text-[var(--rr-text)]">Ready to benchmark against another role?</h4>
                         <p className="text-xs text-[var(--rr-muted)] mt-0.5">Upload a different JD or refine your resume to take a new PrepWin assessment.</p>
                     </div>
-                    <Link
-                        to="/assessment/setup"
-                        className="rr-btn-primary shrink-0"
-                    >
-                        <span>New Self-Assessment</span>
-                        <ArrowRight className="w-4 h-4" />
-                    </Link>
+                    <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                        <Link
+                            to="/student/dashboard"
+                            id="report-view-dashboard-btn"
+                            className="px-4 py-2 rounded-xl border border-[var(--rr-border)] bg-[var(--rr-card)] hover:bg-[var(--rr-input)] text-xs font-semibold text-[var(--rr-text)] flex items-center gap-2 transition-colors shadow-2xs"
+                        >
+                            <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>View Performance Dashboard</span>
+                        </Link>
+                        <Link
+                            to="/assessment/setup"
+                            className="rr-btn-primary shrink-0"
+                        >
+                            <span>New Self-Assessment</span>
+                            <ArrowRight className="w-4 h-4" />
+                        </Link>
+                    </div>
                 </div>
             </div>
         </div>
