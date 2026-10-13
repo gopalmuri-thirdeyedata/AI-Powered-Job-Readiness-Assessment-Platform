@@ -29,7 +29,8 @@ RELEVANT_CLASSES = {
 }
 
 # Detection confidence threshold
-CONFIDENCE_THRESHOLD = 0.45
+CONFIDENCE_THRESHOLD = 0.40
+PHONE_CONFIDENCE_THRESHOLD = 0.45
 
 
 def get_model():
@@ -50,20 +51,47 @@ def get_model():
     return _model
 
 
+def get_model_status() -> dict:
+    """Return runtime status of the YOLO detection engine."""
+    model = get_model()
+    is_ready = model is not None
+    supported_classes = [RELEVANT_CLASSES[k] for k in sorted(RELEVANT_CLASSES.keys())]
+    return {
+        "status": "ready" if is_ready else "error",
+        "model_file": os.path.basename(ACTIVE_MODEL),
+        "model_name": "YOLOv8n (CPU-Optimized)",
+        "classes_supported": supported_classes,
+        "person_class_id": PERSON_CLASS_ID,
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+        "phone_confidence_threshold": PHONE_CONFIDENCE_THRESHOLD
+    }
+
+
 def analyze_frame(image_base64: str) -> dict:
     """
     Analyze a base64-encoded image frame for proctoring violations.
     
     Returns:
         {
+            "status": "ok",
+            "model_name": "YOLOv8n (CPU)",
             "violations": ["phone_detected", "multiple_persons"],
-            "detections": [{"class": "cell phone", "confidence": 0.87}],
-            "person_count": 2
+            "detections": [{"class": "cell phone", "class_id": 67, "confidence": 0.87, "bbox": [x1, y1, x2, y2]}],
+            "person_count": 2,
+            "suspect_label": "📱 Phone Detected",
+            "face_boxes": [[x1, y1, x2, y2]]
         }
     """
     model = get_model()
     if model is None:
-        return {"violations": [], "detections": [], "person_count": -1, "error": "Model not loaded"}
+        return {
+            "status": "error",
+            "violations": [],
+            "detections": [],
+            "person_count": -1,
+            "face_boxes": [],
+            "error": "YOLO model not initialized or file missing"
+        }
 
     try:
         # Decode base64 image
@@ -77,7 +105,7 @@ def analyze_frame(image_base64: str) -> dict:
         image = image.resize((320, 240))
         image_np = np.array(image)
 
-        # Run YOLOv11n inference
+        # Run YOLO inference
         results = model(
             image_np,
             conf=CONFIDENCE_THRESHOLD,
@@ -99,11 +127,16 @@ def analyze_frame(image_base64: str) -> dict:
                 if class_id not in RELEVANT_CLASSES:
                     continue
 
+                # Phone confidence threshold tuning to avoid false positives
+                if class_id == 67 and confidence < PHONE_CONFIDENCE_THRESHOLD:
+                    continue
+
                 # Normalized bounding box [x1, y1, x2, y2] in 0-1 range
                 x1, y1, x2, y2 = box.xyxyn[0].tolist()
 
                 detections.append({
                     "class": class_name,
+                    "class_id": class_id,
                     "confidence": round(confidence, 2),
                     "bbox": [round(x1, 4), round(y1, 4), round(x2, 4), round(y2, 4)]
                 })
@@ -121,14 +154,14 @@ def analyze_frame(image_base64: str) -> dict:
         if person_count == 0:
             violations.append("no_person")
 
-        # Electronic devices detected
-        device_classes = {67: 'cell phone', 63: 'laptop', 65: 'remote', 64: 'mouse', 66: 'keyboard'}
+        # Electronic devices & books detected
         for det in detections:
-            if det['class'] == 'cell phone':
+            c = det['class']
+            if c == 'cell phone':
                 violations.append("phone_detected")
-            elif det['class'] == 'laptop':
+            elif c == 'laptop':
                 violations.append("device_detected")
-            elif det['class'] == 'book':
+            elif c == 'book':
                 violations.append("notes_detected")
 
         # Build human-readable suspect label for UI display
@@ -136,24 +169,25 @@ def analyze_frame(image_base64: str) -> dict:
         for det in detections:
             c = det['class']
             if c == 'cell phone':
-                suspect_label = '📱 Phone Detected'
+                suspect_label = f"📱 Phone Detected ({int(det['confidence'] * 100)}%)"
                 break
             elif c == 'laptop':
-                suspect_label = '💻 Laptop Detected'
+                suspect_label = f"💻 Secondary Device ({int(det['confidence'] * 100)}%)"
                 break
             elif c == 'book':
-                suspect_label = '📖 Notes Detected'
+                suspect_label = f"📖 Notes Detected ({int(det['confidence'] * 100)}%)"
                 break
         if person_count >= 2 and not suspect_label:
-            suspect_label = '👥 Multiple Persons'
+            suspect_label = f"👥 Multiple Persons ({person_count})"
 
         # ── Collect person bboxes for UI overlay ──────────────────────────────
-        # Already in detections as class='person' with bbox coords
         face_boxes = [
             d['bbox'] for d in detections if d['class'] == 'person'
         ]
 
         return {
+            "status": "ok",
+            "model_name": "YOLOv8n (CPU)",
             "violations": list(set(violations)),
             "detections": detections,
             "person_count": person_count,
@@ -163,4 +197,12 @@ def analyze_frame(image_base64: str) -> dict:
 
     except Exception as e:
         print(f"[ProctoringService] Frame analysis error: {e}")
-        return {"violations": [], "detections": [], "person_count": -1, "face_boxes": [], "error": str(e)}
+        return {
+            "status": "error",
+            "violations": [],
+            "detections": [],
+            "person_count": -1,
+            "face_boxes": [],
+            "error": str(e)
+        }
+

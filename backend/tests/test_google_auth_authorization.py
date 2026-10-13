@@ -195,7 +195,7 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
             "clerk_user_id": "unknown_google_user_99999"
         })
         self.assertEqual(res.status_code, 403)
-        self.assertIn("not been invited", res.json()["detail"].lower())
+        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("not been invited", "not been provisioned")))
 
         # Verify no user or membership created
         db = next(database.get_db())
@@ -216,7 +216,7 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
             "clerk_user_id": "clerk_random_gmail_user"
         })
         self.assertEqual(res.status_code, 403)
-        self.assertIn("not been invited", res.json()["detail"].lower())
+        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("not been invited", "not been provisioned")))
 
     def test_03_valid_platform_admin_authorized(self):
         """
@@ -302,7 +302,7 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
             "clerk_user_id": "clerk_uninvited_emp_google"
         })
         self.assertEqual(res.status_code, 403)
-        self.assertIn("not been invited", res.json()["detail"].lower())
+        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("not been invited", "not been provisioned")))
 
     def test_07_company_a_hr_accesses_company_a_data_only(self):
         """

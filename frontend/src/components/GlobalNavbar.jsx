@@ -1,41 +1,22 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Layout, Users, Shield, LogOut, Bell, UserCircle, Menu } from 'lucide-react';
+import { Layout, Users, Shield, LogOut, Bell, UserCircle, Menu, Sun, Moon } from 'lucide-react';
 import CandidateLoginModal from './CandidateLoginModal';
 import { UserButton } from '@clerk/clerk-react';
 import API_URL from '../apiConfig';
+import { useTheme } from '../context/ThemeContext';
 
 const GlobalNavbar = ({ onToggleMobileMenu }) => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { theme, toggleTheme } = useTheme();
 
     const handleNotificationClick = async (notification) => {
         // 1. Mark as Read
         await markOneRead(notification.id);
 
-        // 2. Navigate based on Action/Content
-        // We use heuristic matching on 'action' or 'details' string from ActivityLog
-        const action = notification.action.toLowerCase();
-        const target = notification.target;
-
-        if (action.includes('screened')) {
-            navigate('/candidates'); // Or specific filter if possible
-        } else if (action.includes('submitted')) {
-            if (notification.details && notification.details.includes('Aptitude')) {
-                navigate('/rounds/aptitude');
-            } else if (notification.details && notification.details.includes('Coding')) {
-                navigate('/rounds/coding');
-            } else {
-                navigate('/candidates');
-            }
-        } else if (action.includes('promoted')) {
-            // Move to the new stage page?
-            // For now, simpler to go to candidates or board
-            navigate('/dashboard');
-        } else {
-            navigate('/dashboard');
-        }
-
+        // 2. Navigate to Admin Dashboard
+        navigate('/admin/dashboard');
         setShowNotifications(false);
     };
     const [showLoginModal, setShowLoginModal] = useState(false);
@@ -162,34 +143,23 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                             <Menu className="w-5 h-5" />
                         </button>
                     )}
-                    <Link to="/dashboard" className="flex items-center gap-2.5 sm:gap-4 focus:outline-none min-w-0">
-                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 sm:h-8 w-auto object-contain flex-shrink-0" />
-                        <div className="hidden sm:block w-[1.5px] h-6 bg-gray-300 flex-shrink-0" />
-                        <span className="text-lg sm:text-xl font-bold text-[#5d8c2c] tracking-tight truncate">HiringAI</span>
+                    <Link to="/admin/dashboard" className="flex items-center gap-3 focus:outline-none min-w-0 shrink-0">
+                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-[38px] w-auto object-contain shrink-0" />
+                        <div className="hidden sm:block w-px h-6 bg-gray-200 shrink-0" />
+                        <div className="flex flex-col justify-center">
+                            <span className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-none">RoleReady</span>
+                            <span className="text-[10px] font-medium text-slate-500 leading-none mt-0.5">Job Readiness Platform</span>
+                        </div>
                     </Link>
                 </div>
 
-                {/* Center Navigation Links (Enterprise Style) */}
+                {/* Center Navigation Links */}
                 <div className="hidden md:flex items-center gap-2 lg:gap-4">
                     <Link
-                        to="/dashboard"
-                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/dashboard') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
+                        to="/admin/dashboard"
+                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/admin/dashboard') || isActive('/dashboard') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
                     >
-                        Dashboard
-                    </Link>
-
-                    <Link
-                        to="/analytics"
-                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/analytics') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
-                    >
-                        Analytics
-                    </Link>
-
-                    <Link
-                        to="/settings"
-                        className={`text-sm font-medium px-3.5 py-1.5 rounded-lg transition-all ${isActive('/settings') ? 'bg-green-50 text-[#5d8c2c] font-semibold border border-green-200/80 shadow-xs' : 'text-gray-700 hover:bg-gray-50'}`}
-                    >
-                        Settings
+                        Admin Workspace
                     </Link>
 
                     {profile.role === 'PLATFORM_ADMIN' && (
@@ -197,7 +167,17 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                             to="/platform/organizations"
                             className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${isActive('/platform/organizations') ? 'bg-purple-100 text-purple-800 border border-purple-300 shadow-xs' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'}`}
                         >
-                            Platform Admin
+                            RoleReady Platform
+                        </Link>
+                    )}
+
+                    {profile.role === 'STUDENT' && (
+                        <Link
+                            to="/assessment/setup"
+                            data-fallback="/student/dashboard"
+                            className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/assessment') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+                        >
+                            Student Assessment
                         </Link>
                     )}
                 </div>
@@ -254,6 +234,17 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                         )}
                     </div>
 
+                    {/* Theme Toggle Button */}
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                        className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors focus:outline-none"
+                        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                    >
+                        {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-slate-600" />}
+                    </button>
+
                     <div className="h-8 w-px bg-gray-200 mx-2" />
 
                     {/* Organization and Role Badges */}
@@ -270,7 +261,7 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                     {profile.role === 'PLATFORM_ADMIN' && (
                         <div className="hidden sm:flex flex-col items-end">
                             <span className="text-xs font-bold text-purple-900">
-                                HiringAI Platform
+                                RoleReady Platform
                             </span>
                             <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                                 Platform Admin

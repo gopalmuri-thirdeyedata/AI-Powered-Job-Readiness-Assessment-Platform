@@ -230,7 +230,7 @@ class TestMultitenantIsolationAndSecurity(unittest.TestCase):
             json={"email": "random_stranger@gmail.com", "clerk_user_id": "clerk_stranger_1"}
         )
         self.assertEqual(res.status_code, 403)
-        self.assertIn("invite-only", res.json()["detail"].lower())
+        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("invite-only", "not been provisioned")))
 
     def test_04_invited_user_clerk_sync_succeeds(self):
         """Invited organization users syncing via Clerk receive valid JWT credentials."""

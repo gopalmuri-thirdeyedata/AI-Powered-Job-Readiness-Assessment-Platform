@@ -65,6 +65,19 @@ Eliminating recruitment bottlenecks and cognitive bias, HiringAI provides an end
 
 ---
 
+## 🎓 RoleReady Assessment Notes
+
+- **LLM provider:** all AI calls go through `backend/services/gemini_client.py` (Google Gemini only; no OpenAI or Groq).
+  Set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL_NAME`). `GEMINI_MOCK_MODE=true` serves offline fixtures for development and tests; keep it `false` in production.
+- **Interview round:** the text STAR interview is the default and works with no voice credentials. Vapi + Deepgram voice interviews
+  (recruiter candidate portal) are optional; the Vapi assistant uses the `google` LLM provider with `GEMINI_MODEL_NAME`, which requires a Google AI Studio credential to be added in the Vapi dashboard.
+- **Interview score fallback (agreed behaviour):** if Gemini is unavailable and the student submitted answers, the interview score defaults to **75**.
+  Such rounds are marked `evaluation_source: "fallback_default"` in the round's `evaluation_payload` (AI-scored rounds use `"ai"`, empty interviews score 0 with `"no_answers"`),
+  so fallback scores can always be told apart from AI evaluations. No other scoring formula is applied.
+- **Code execution:** Python only, via the Judge0-compatible endpoint in `JUDGE0_API_URL` (hosting topology is a deferred decision).
+- **Database migration:** `python backend/migrate_roleready_schema.py` adds `roleready_sessions.resume_raw_text` (additive, idempotent). Back up first
+  (`mysqldump --single-transaction` for MySQL, or copy the SQLite file; `*.pre_migration_backup` files are git-ignored). Never drop the column on rollback.
+
 ## 🛠️ Technology Stack
 
 | Layer | Technologies |
@@ -233,3 +246,7 @@ docker compose -f docker-compose.prod.yml ps
 ## 📄 License
 
 Proprietary enterprise software developed for **ThirdEye Data**. All rights reserved.
+
+
+
+

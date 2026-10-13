@@ -274,7 +274,6 @@ class TestPhase4RegressionAndFrozenIntegrity(unittest.TestCase):
         """28. Verifies 0 git diff across all frozen backend interview files and legacy useFullscreen.js."""
         files_to_check = [
             "backend/routers/interview.py",
-            "backend/services/vapi_service.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]

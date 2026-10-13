@@ -10,7 +10,7 @@ import GlobalNavbar from '../components/GlobalNavbar';
 
 const SidebarItem = ({ icon: Icon, label, path, isOpen, onClick }) => {
     const location = useLocation();
-    const isActive = location.pathname === path;
+    const isActive = location.pathname === path || (path === '/admin/dashboard' && (location.pathname === '/admin/dashboard' || location.pathname === '/dashboard'));
 
     return (
         <Link to={path} onClick={onClick} className="focus:outline-none group block">
@@ -105,38 +105,42 @@ const DashboardLayout = () => {
         };
     }, [isResizing, resize, stopResizing]);
 
+    const [profile] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('user_profile') || '{}');
+        } catch {
+            return {};
+        }
+    });
+
     const renderNavItems = (isOpen, onItemClick) => (
-        <div className="py-6 space-y-8">
-            {/* Pipeline Stages */}
+        <div className="py-6 space-y-6">
+            {/* Assessment Workspace */}
             <div>
                 {isOpen && (
                     <h3 className="text-[11px] font-black text-[#5d8c2c] uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c]" /> Recruitment Pipeline
+                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c]" /> RoleReady Assessment Suite
                     </h3>
                 )}
                 {!isOpen && <div className="h-2" />}
                 <div className={isOpen ? "space-y-1.5" : "space-y-3"}>
-                    <SidebarItem icon={LayoutDashboard} label="Dashboard" path="/dashboard" isOpen={isOpen} onClick={onItemClick} />
-                    <SidebarItem icon={Layers} label="Rounds Manager" path="/recruitment/rounds" isOpen={isOpen} onClick={onItemClick} />
-                    <SidebarItem icon={FileText} label="Resume Screening" path="/resume-screening" isOpen={isOpen} onClick={onItemClick} />
-                    <SidebarItem icon={BrainCircuit} label="Screened Candidates" path="/screened-candidates" isOpen={isOpen} onClick={onItemClick} />
-                    <SidebarItem icon={UserCheck} label="Aptitude Round" path="/aptitude-round" isOpen={isOpen} onClick={onItemClick} />
-                    <SidebarItem icon={Code2} label="Coding Round" path="/coding-round" isOpen={isOpen} onClick={onItemClick} />
-                    <SidebarItem icon={Mic} label="AI Interview" path="/technical-interview" isOpen={isOpen} onClick={onItemClick} />
+                    <SidebarItem icon={LayoutDashboard} label="Admin Workspace" path="/admin/dashboard" isOpen={isOpen} onClick={onItemClick} />
                 </div>
             </div>
 
-            {/* Management */}
-            <div>
-                {isOpen && (
-                    <h3 className="text-[11px] font-black text-[#5d8c2c]/80 uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c]/60" /> Management
-                    </h3>
-                )}
-                <div className="space-y-1.5">
-                    <SidebarItem icon={Users} label="All Candidates" path="/candidates" isOpen={isOpen} onClick={onItemClick} />
+            {/* Platform Admin Controls */}
+            {profile?.role === 'PLATFORM_ADMIN' && (
+                <div>
+                    {isOpen && (
+                        <h3 className="text-[11px] font-black text-purple-700 uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-purple-600" /> Platform Admin
+                        </h3>
+                    )}
+                    <div className="space-y-1.5">
+                        <SidebarItem icon={Users} label="Organizations" path="/platform/organizations" isOpen={isOpen} onClick={onItemClick} />
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 
@@ -178,7 +182,7 @@ const DashboardLayout = () => {
                                 <div className="h-16 px-5 border-b border-[#d9e2d9] flex items-center justify-between bg-white flex-shrink-0">
                                     <div className="flex items-center gap-3">
                                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 w-auto object-contain" />
-                                        <span className="text-lg font-bold text-[#5d8c2c] tracking-tight">HiringAI</span>
+                                        <span className="text-lg font-bold text-[#5d8c2c] tracking-tight">RoleReady</span>
                                     </div>
                                     <button
                                         type="button"

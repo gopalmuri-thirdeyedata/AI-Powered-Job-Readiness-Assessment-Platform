@@ -6,15 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-from . import groq_client
-
-
-GROQ_API_KEY = "resilient" if groq_client.has_groq_key() else None
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+from . import gemini_client
 
 def generate_questions(assessment_type: str, config: dict):
-    if not GROQ_API_KEY:
-        print("ERROR: GROQ_API_KEY not found.")
+    if not gemini_client.is_ai_available():
+        print("ERROR: GEMINI_API_KEY not found.")
         return []
 
     if assessment_type == "aptitude":
@@ -53,7 +49,7 @@ def generate_interview_questions(config: dict):
         return [{"id": 1, "question": f"Tell me about your experience with {focus_area}.", "type": "verbal"}]
 
 def evaluate_code(code: str, language: str, question: dict, test_cases: list):
-    if not GROQ_API_KEY:
+    if not gemini_client.is_ai_available():
         return {"error": "AI Service Unavailable"}
 
     prompt = f"""
@@ -312,7 +308,7 @@ def analyze_error(code: str, error_message: str):
     """
     Analyzes execution error to provide hints.
     """
-    if not GROQ_API_KEY:
+    if not gemini_client.is_ai_available():
         return "Analysis unavailable."
 
     prompt = f"""
@@ -597,24 +593,15 @@ def extract_json_block(text: str) -> str:
     return ""
 
 def call_llm(prompt, retries=2):
-    data = {
-        "model": groq_client.get_groq_model(), 
-        "messages": [
-            {"role": "system", "content": "You are a helpful AI that generates assessment questions in strict JSON format."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7
-    }
-
     for attempt in range(retries):
         try:
-            response = groq_client.execute_groq_request(GROQ_API_URL, data, timeout=30)
-            if response.status_code != 200:
-                print(f"LLM API Error (Attempt {attempt+1}): {response.status_code} - {response.text}")
-                continue # Retry
-
-            result = response.json()
-            content = result['choices'][0]['message']['content']
+            result = gemini_client.call_gemini(
+                prompt,
+                system_prompt="You are a helpful AI that generates assessment questions in strict JSON format.",
+                temperature=0.7,
+                json_mode=False,
+            )
+            content = result.get("text", "")
             
             # Robust JSON extraction using matching block parser
             block = extract_json_block(content)

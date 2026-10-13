@@ -12,7 +12,50 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Security Config
-SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY", "your-secret-key-here")
+INSECURE_DEFAULT_JWT_SECRETS = {
+    "your-secret-key-here",
+    "secret",
+    "changeme",
+    "admin",
+    "default",
+    "password",
+    ""
+}
+
+def is_production() -> bool:
+    """Detects whether application is configured to run in production mode."""
+    env = os.getenv("ENVIRONMENT", "").strip().lower()
+    debug = os.getenv("DEBUG", "").strip().lower()
+    return env in ("production", "prod") or (debug in ("false", "0", "no") and env not in ("development", "test"))
+
+def validate_jwt_secret() -> str:
+    """
+    Validates JWT signing secret.
+    In production mode, raises a RuntimeError if the secret is missing, uses a default placeholder,
+    or has fewer than 32 characters.
+    In development/testing mode, falls back to the local development placeholder.
+    """
+    secret = (os.getenv("JWT_SECRET_KEY") or os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY") or "").strip()
+    if is_production():
+        if not secret or secret in INSECURE_DEFAULT_JWT_SECRETS:
+            raise RuntimeError(
+                "FATAL: JWT signing secret is unconfigured or using a default placeholder in production. "
+                "A strong JWT_SECRET_KEY (minimum 32 characters) must be explicitly configured."
+            )
+        if len(secret) < 32:
+            raise RuntimeError(
+                f"FATAL: Production JWT_SECRET_KEY must be at least 32 characters long (current length: {len(secret)})."
+            )
+        return secret
+
+    # Development / testing fallback
+    return secret or "your-secret-key-here"
+
+def get_secret_key() -> str:
+    """Dynamically resolves and validates the active JWT signing key."""
+    return validate_jwt_secret()
+
+SECRET_KEY = validate_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080  # 7 days — sufficient for full candidate test lifecycle
 
@@ -32,8 +75,24 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         # Use configured expiry (not hardcoded 15 min)
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret = get_secret_key()
+    encoded_jwt = jwt.encode(to_encode, secret, algorithm=ALGORITHM)
     return encoded_jwt
+
+def create_resume_preview_token(email: str, file_path: str, expires_seconds: int = 60) -> str:
+    """
+    Generates a short-lived, narrowly scoped token specifically for browser iframe/window navigation.
+    Scoped strictly to 'resume_preview' and binds to the specific file path.
+    """
+    expire = datetime.utcnow() + timedelta(seconds=expires_seconds)
+    payload = {
+        "sub": email,
+        "scope": "resume_preview",
+        "file_path": file_path,
+        "exp": expire
+    }
+    secret = get_secret_key()
+    return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
 # Email Config
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")

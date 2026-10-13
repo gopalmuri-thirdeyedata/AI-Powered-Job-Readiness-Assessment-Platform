@@ -31,6 +31,12 @@ class TestB2BProvisioningFlow(unittest.TestCase):
                 db.query(models.OrganizationMember).filter(models.OrganizationMember.organization_id == org.id).delete()
                 db.delete(org)
         
+        # SQLite has no enforced FK cascade and reuses row ids, so memberships orphaned by earlier runs
+        # can attach to newly created users and make clerk-sync resolve a missing organization.
+        db.query(models.OrganizationMember).filter(
+            ~models.OrganizationMember.organization_id.in_(db.query(models.Organization.id))
+        ).delete(synchronize_session=False)
+
         db.commit()
 
         cls.plat_email = 'gopalmuri1919@gmail.com'
@@ -70,7 +76,7 @@ class TestB2BProvisioningFlow(unittest.TestCase):
             'clerk_user_id': 'clerk_uninvited_2004'
         })
         self.assertEqual(res.status_code, 403)
-        self.assertIn('not been invited', res.json()['detail'].lower())
+        self.assertTrue(any(t in res.json()['detail'].lower() for t in ('not been invited', 'not been provisioned')))
 
         db = next(database.get_db())
         user_check = db.query(models.User).filter(models.User.email == 'gopalmuri2004@gmail.com').first()
@@ -179,7 +185,7 @@ class TestB2BProvisioningFlow(unittest.TestCase):
         self.assertTrue(any(c['id'] == cand_id for c in abc_cands))
 
         xyz_sync = self.client.post('/api/auth/clerk-sync/', json={'email': 'xyz.admin@xyztech.com', 'clerk_user_id': 'clerk_xyz_admin'})
-        self.assertEqual(xyz_sync.status_code, 200)
+        self.assertEqual(xyz_sync.status_code, 200, xyz_sync.text)
         xyz_token = xyz_sync.json()['access']
 
         xyz_cands = self.client.get('/api/resume/candidates/', headers={'Authorization': f'Bearer {xyz_token}'}).json()

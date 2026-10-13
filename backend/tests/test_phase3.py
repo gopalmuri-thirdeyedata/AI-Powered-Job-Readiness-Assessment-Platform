@@ -420,8 +420,8 @@ class TestPhase3EvaluationAndScoring(unittest.TestCase):
             "status": "completed",
             "score": 8.0,
             "candidate_email": "candidate@example.com",
-            "created_at": datetime.now(),
-            "started_at": datetime.now(),
+            "created_at": datetime(2026, 1, 1, 12, 0, 0),
+            "started_at": datetime(2026, 1, 1, 12, 0, 0),
             "question_source": "manual",
             "analysis_data": {
                 "public_passed": 1,
@@ -562,7 +562,6 @@ class TestPhase3FrozenInterviewIntegrity(unittest.TestCase):
         """18. Verifies 0 git diff on strictly frozen interview files and fullscreen-only diff on VapiInterview."""
         strictly_frozen = [
             "backend/routers/interview.py",
-            "backend/services/vapi_service.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]

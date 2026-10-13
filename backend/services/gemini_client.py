@@ -1,186 +1,186 @@
 """
-Gemini AI Client - Replaces Groq with Google Gemini 2.5 Flash
+Gemini AI Client — single centralized LLM entry point for the platform.
+
+* Official `google-generativeai` SDK when installed, native `httpx` REST otherwise.
+* 3 retries with exponential backoff (1s, 2s, 4s) and a 30s request timeout.
+* Offline deterministic mock mode (`GEMINI_MOCK_MODE=true`) for keyless dev/tests.
+* No third-party LLM fallback: a missing key raises `GeminiUnavailableError`
+  (a RuntimeError) so callers fall back to their own deterministic content.
 """
-import os
 import json
+import os
+import time
+from typing import Optional
+
+import httpx
 from dotenv import load_dotenv
 
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_path = os.path.join(_backend_dir, ".env")
+load_dotenv(_env_path)
 load_dotenv()
 
-def get_gemini_api_key():
+DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+REQUEST_TIMEOUT_SECONDS = 30
+RETRY_BACKOFF_SECONDS = (1,)  # 1 retry for transient errors during interactive assessment generation
+GEMINI_REST_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+# Indirection so tests can run the retry loop without real sleeping.
+_sleep = time.sleep
+
+
+class GeminiUnavailableError(RuntimeError):
+    """Raised when Gemini cannot be used (no key configured, or all retries failed)."""
+
+
+def get_gemini_api_key() -> Optional[str]:
     """Get the Gemini API key from environment."""
-    load_dotenv(override=True)
-    return os.getenv("GEMINI_API_KEY")
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        load_dotenv(_env_path)
+        key = os.getenv("GEMINI_API_KEY")
+    return key
+
+
+def get_model_name() -> str:
+    name = os.getenv("GEMINI_MODEL_NAME")
+    if not name:
+        load_dotenv(_env_path)
+        name = os.getenv("GEMINI_MODEL_NAME")
+    return (name or DEFAULT_MODEL_NAME).strip()
+
 
 def has_gemini_key() -> bool:
     """Checks if valid Gemini API key is present."""
     k = get_gemini_api_key()
     return bool(k and k.strip() and not k.startswith("YOUR_GEMINI"))
 
-def has_groq_key() -> bool:
-    from . import groq_client
-    return has_gemini_key() or groq_client.has_groq_key()
 
-def _call_groq_fallback(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, json_mode: bool = True) -> dict:
-    from . import groq_client
-    GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-    data = {
-        "model": "llama-3.1-8b-instant",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": temperature
+def is_mock_mode_enabled() -> bool:
+    return os.getenv("GEMINI_MOCK_MODE", "false").strip().lower() in ("true", "1", "yes")
+
+
+def is_ai_available() -> bool:
+    """True when a call_gemini() attempt can be made (live key or mock mode)."""
+    return is_mock_mode_enabled() or has_gemini_key()
+
+
+def _clean_json_text(content: str) -> str:
+    content = content.strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+    if content.endswith("```"):
+        content = content[:-3].strip()
+    return content.replace("```json", "").replace("```", "").strip()
+
+
+class _TransientGeminiError(Exception):
+    pass
+
+
+def _generate_via_sdk(genai, api_key, prompt, system_prompt, temperature, json_mode) -> str:
+    genai.configure(api_key=api_key)
+    try:
+        model = genai.GenerativeModel(
+            model_name=get_model_name(),
+            system_instruction=system_prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=temperature,
+                response_mime_type="application/json" if json_mode else "text/plain",
+            ),
+        )
+        response = model.generate_content(prompt, request_options={"timeout": REQUEST_TIMEOUT_SECONDS})
+        return response.text
+    except Exception as e:
+        err_msg = str(e).lower()
+        if any(term in err_msg for term in ["429", "500", "502", "503", "504", "deadline", "timeout", "resourceexhausted"]):
+            raise _TransientGeminiError(str(e))
+        raise GeminiUnavailableError(str(e))
+
+
+def _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode) -> str:
+    model_name = get_model_name()
+    generation_config = {
+        "temperature": temperature,
+        "responseMimeType": "application/json" if json_mode else "text/plain",
     }
-    if json_mode:
-        data["response_format"] = {"type": "json_object"}
-    
-    response = groq_client.execute_groq_request(GROQ_API_URL, data, timeout=30)
-    content = response.json()['choices'][0]['message']['content'].strip()
-    
-    if json_mode:
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-        if content.endswith("```"):
-            content = content[:-3].strip()
-        content = content.replace("```json", "").replace("```", "").strip()
-        return json.loads(content)
-    return {"text": content}
+    # For Gemini 2.5 models (e.g. gemini-2.5-flash), disable internal thinking for
+    # structured JSON generation to eliminate multi-second reasoning latency.
+    if json_mode and "2.5" in model_name:
+        generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "generationConfig": generation_config,
+    }
+    try:
+        resp = httpx.post(
+            GEMINI_REST_URL.format(model=model_name),
+            json=body,
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        raise _TransientGeminiError(str(e))
+    if resp.status_code == 429 or resp.status_code >= 500:
+        raise _TransientGeminiError(f"HTTP {resp.status_code}")
+    if resp.status_code != 200:
+        raise GeminiUnavailableError(f"Gemini API returned HTTP {resp.status_code}")
+    data = resp.json()
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        raise GeminiUnavailableError("Gemini API returned an empty or blocked response")
+
+
+def _generate(prompt, system_prompt, temperature, json_mode) -> str:
+    api_key = get_gemini_api_key()
+    try:
+        import google.generativeai as genai  # optional dependency
+    except ImportError:
+        genai = None
+
+    last_error: Optional[Exception] = None
+    for attempt in range(len(RETRY_BACKOFF_SECONDS) + 1):
+        try:
+            if genai is not None:
+                return _generate_via_sdk(genai, api_key, prompt, system_prompt, temperature, json_mode)
+            return _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode)
+        except GeminiUnavailableError:
+            raise
+        except _TransientGeminiError as e:
+            last_error = e
+            if attempt < len(RETRY_BACKOFF_SECONDS):
+                _sleep(RETRY_BACKOFF_SECONDS[attempt])
+        except Exception as e:
+            # Non-retryable error: fail fast so deterministic fallback kicks in immediately
+            raise GeminiUnavailableError(f"Gemini request failed: {e}")
+    raise GeminiUnavailableError(f"Gemini request failed after retries: {last_error}")
+
 
 def call_gemini(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, json_mode: bool = True) -> dict:
     """
-    Calls Google Gemini 2.5 Flash API with automatic fallback to Groq.
+    Calls Gemini and returns a parsed JSON dict (json_mode) or {"text": ...}.
+    Raises GeminiUnavailableError when no key is configured or the call fails.
     """
-    if has_gemini_key():
+    if is_mock_mode_enabled():
+        from . import gemini_mock_fixtures
+        return gemini_mock_fixtures.get_mock_response(prompt, json_mode)
+
+    if not has_gemini_key():
+        raise GeminiUnavailableError("GEMINI_API_KEY is not configured. Safe error; session state preserved.")
+
+    content = _generate(prompt, system_prompt, temperature, json_mode).strip()
+    if json_mode:
         try:
-            import google.generativeai as genai
-            
-            api_key = get_gemini_api_key()
-            genai.configure(api_key=api_key)
-            
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash-preview-05-20",
-                system_instruction=system_prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=temperature,
-                    response_mime_type="application/json" if json_mode else "text/plain",
-                )
-            )
-            
-            response = model.generate_content(prompt)
-            content = response.text.strip()
-            
-            if json_mode:
-                if content.startswith("```"):
-                    content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-                if content.endswith("```"):
-                    content = content[:-3].strip()
-                content = content.replace("```json", "").replace("```", "").strip()
-                return json.loads(content)
-            
-            return {"text": content}
-        except Exception as e:
-            print(f"Gemini call failed ({e}), falling back to Groq...")
-    
-    # Fallback to Groq
-    return _call_groq_fallback(prompt, system_prompt, temperature, json_mode)
+            return json.loads(_clean_json_text(content), strict=False)
+        except json.JSONDecodeError as e:
+            raise GeminiUnavailableError(f"Gemini returned invalid JSON: {e}")
+    return {"text": content}
+
 
 def call_gemini_text(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1) -> str:
-    """
-    Calls Gemini and returns plain text response.
-    """
+    """Calls Gemini and returns plain text response."""
     result = call_gemini(prompt, system_prompt, temperature, json_mode=False)
     return result.get("text", "")
-
-# Legacy compatibility for interview_evaluation.py and ai_generator.py
-def execute_groq_request(url: str, payload: dict, timeout: int = 30):
-    """
-    Legacy wrapper: Translates old Groq HTTP request format to Gemini SDK call.
-    Returns a mock response object compatible with the old code.
-    """
-    messages = payload.get("messages", [])
-    system_msg = ""
-    user_msg = ""
-    
-    for msg in messages:
-        if msg["role"] == "system":
-            system_msg = msg["content"]
-        elif msg["role"] == "user":
-            user_msg = msg["content"]
-    
-    temperature = payload.get("temperature", 0.1)
-    json_mode = payload.get("response_format", {}).get("type") == "json_object"
-    
-    result = call_gemini(user_msg, system_msg, temperature, json_mode)
-    
-    # Create a mock response object that mimics requests.Response
-    class MockResponse:
-        def __init__(self, data):
-            self.status_code = 200
-            self._data = data
-            self.text = json.dumps(data)
-        
-        def json(self):
-            return {
-                "choices": [{
-                    "message": {
-                        "content": json.dumps(self._data)
-                    }
-                }]
-            }
-        
-        def raise_for_status(self):
-            pass
-    
-    return MockResponse(result)
-
-def call_groq_sdk(fn, *args, **kwargs):
-    """
-    Legacy wrapper for interview_evaluation.py: Translates Groq SDK calls to Gemini.
-    """
-    import google.generativeai as genai
-    
-    api_key = get_gemini_api_key()
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not configured in environment.")
-    
-    genai.configure(api_key=api_key)
-    
-    # Create a mock client that the fn can use
-    class MockGroqClient:
-        class chat:
-            class completions:
-                @staticmethod
-                def create(**kwargs):
-                    messages = kwargs.get("messages", [])
-                    system_msg = ""
-                    user_msg = ""
-                    for msg in messages:
-                        if msg["role"] == "system":
-                            system_msg = msg["content"]
-                        elif msg["role"] == "user":
-                            user_msg = msg["content"]
-                    
-                    model = genai.GenerativeModel(
-                        model_name="gemini-2.5-flash-preview-05-20",
-                        system_instruction=system_msg,
-                        generation_config=genai.GenerationConfig(
-                            temperature=kwargs.get("temperature", 0.1),
-                            response_mime_type="application/json" if kwargs.get("response_format", {}).get("type") == "json_object" else "text/plain",
-                        )
-                    )
-                    
-                    response = model.generate_content(user_msg)
-                    
-                    # Return mock response matching Groq SDK format
-                    class Choice:
-                        def __init__(self, text):
-                            self.message = type('obj', (object,), {'content': text})()
-                    
-                    class MockCompletion:
-                        def __init__(self, text):
-                            self.choices = [Choice(text)]
-                    
-                    return MockCompletion(response.text.strip())
-    
-    return fn(MockGroqClient(), *args, **kwargs)

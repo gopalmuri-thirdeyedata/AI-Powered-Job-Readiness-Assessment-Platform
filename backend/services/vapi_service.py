@@ -95,8 +95,8 @@ Begin the interview now.
 
     payload = {
         "model": {
-            "provider": "openai",
-            "model": "gpt-4-turbo",
+            "provider": "google",
+            "model": os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"),
             "messages": [
                 {
                     "role": "system",

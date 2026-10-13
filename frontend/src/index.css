@@ -1,6 +1,91 @@
+/* ─── Google Font Import ─────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ─── ThirdEye / RoleReady Design Tokens ────────── */
+/* Light mode (default) */
+:root {
+    /* Brand */
+    --brand:         #16A34A;
+    --brand-dark:    #15803D;
+    --brand-light:   #DCFCE7;
+    --brand-faint:   #F0FDF4;
+
+    /* Page surfaces */
+    --rr-bg:         #F7F9FC;
+    --rr-surface:    #FFFFFF;
+    --rr-elevated:   #FFFFFF;
+    --rr-card:       #FFFFFF;
+    --rr-input:      #F8FAFC;
+    --rr-border:     #E2E8F0;
+    --rr-border-md:  #CBD5E1;
+
+    /* Text */
+    --rr-text:       #0F172A;
+    --rr-text-2:     #334155;
+    --rr-muted:      #64748B;
+    --rr-faint:      #94A3B8;
+
+    /* Semantic */
+    --rr-success:    #16A34A;
+    --rr-warning:    #D97706;
+    --rr-error:      #DC2626;
+    --rr-info:       #2563EB;
+
+    /* Student Platform Tokens — Light-First (matches RoleReady Light Theme) */
+    --s-bg:        #F7F9FC;
+    --s-surface:   #FFFFFF;
+    --s-elevated:  #FFFFFF;
+    --s-card:      #FFFFFF;
+    --s-border:    #E2E8F0;
+    --s-border-md: #CBD5E1;
+    --s-emerald:   #10B981;
+    --s-emerald-d: #059669;
+    --s-emerald-g: rgba(16,185,129,0.08);
+    --s-purple:    #8B5CF6;
+    --s-blue:      #2563EB;
+    --s-amber:     #D97706;
+    --s-cyan:      #0891B2;
+    --s-rose:      #E11D48;
+    --s-text:      #0F172A;
+    --s-muted:     #64748B;
+    --s-faint:     #94A3B8;
+}
+
+/* Dark mode overrides */
+.dark {
+    --rr-bg:        #0B1220;
+    --rr-surface:   #111B2E;
+    --rr-elevated:  #16233B;
+    --rr-card:      #111B2E;
+    --rr-input:     #0B1220;
+    --rr-border:    #1E293B;
+    --rr-border-md: #334155;
+
+    --rr-text:      #F8FAFC;
+    --rr-text-2:    #CBD5E1;
+    --rr-muted:     #94A3B8;
+    --rr-faint:     #64748B;
+
+    --brand-light:  rgba(22,163,74,0.15);
+    --brand-faint:  rgba(22,163,74,0.08);
+
+    /* Student Platform Dark Mode */
+    --s-bg:        #0B1220;
+    --s-surface:   #111B2E;
+    --s-elevated:  #16233B;
+    --s-card:      #111B2E;
+    --s-border:    #1E293B;
+    --s-border-md: #334155;
+    --s-emerald-g: rgba(16,185,129,0.15);
+    --s-text:      #F8FAFC;
+    --s-muted:     #94A3B8;
+    --s-faint:     #64748B;
+}
+
 
 @layer base {
     html {
@@ -8,11 +93,24 @@
     }
 
     body {
-        /* Full Dark Text (Pure Black) and no-blur rendering */
-        @apply bg-white text-black font-sans overflow-x-hidden;
-        color: #000000;
-        -webkit-font-smoothing: auto;
-        -moz-osx-font-smoothing: auto;
+        @apply bg-[#F7F9FC] text-slate-900 font-sans overflow-x-hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Dark mode: apply dark page background & text */
+    .dark body {
+        background-color: var(--rr-bg);
+        color: var(--rr-text);
+    }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
     }
 }
 
@@ -58,22 +156,284 @@
     .input-field {
         @apply w-full px-4 py-3 bg-white border border-gray-200 rounded-none focus:outline-none focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] text-black placeholder-gray-400 transition-all;
     }
+
+    /* ─── RoleReady Page Components (light+dark aware) ── */
+    .rr-page {
+        background-color: var(--rr-bg);
+        color: var(--rr-text);
+        min-height: 100vh;
+        font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    .rr-card {
+        background-color: var(--rr-card);
+        border: 1px solid var(--rr-border);
+        border-radius: 0.75rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .rr-card:hover {
+        border-color: var(--rr-border-md);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+
+    .rr-input {
+        background-color: var(--rr-surface);
+        border: 1.5px solid var(--rr-border);
+        border-radius: 0.5rem;
+        color: var(--rr-text);
+        padding: 0.625rem 1rem;
+        font-size: 0.875rem;
+        width: 100%;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        outline: none;
+    }
+
+    .rr-input:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
+    }
+
+    .rr-input::placeholder {
+        color: var(--rr-faint);
+    }
+
+    .rr-textarea {
+        background-color: var(--rr-surface);
+        border: 1.5px solid var(--rr-border);
+        border-radius: 0.5rem;
+        color: var(--rr-text);
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+        width: 100%;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        outline: none;
+        resize: vertical;
+        font-family: inherit;
+    }
+
+    .rr-textarea:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
+    }
+
+    .rr-btn-primary {
+        background-color: var(--brand);
+        color: white;
+        border-radius: 0.5rem;
+        padding: 0.625rem 1.5rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: background-color 0.15s, transform 0.1s, box-shadow 0.15s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        box-shadow: 0 1px 3px rgba(22,163,74,0.2);
+    }
+
+    .rr-btn-primary:hover {
+        background-color: var(--brand-dark);
+        box-shadow: 0 4px 12px rgba(22,163,74,0.25);
+        transform: translateY(-1px);
+    }
+
+    .rr-btn-primary:active { transform: translateY(0); }
+    .rr-btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .rr-btn-secondary {
+        background-color: transparent;
+        color: var(--rr-muted);
+        border: 1.5px solid var(--rr-border-md);
+        border-radius: 0.5rem;
+        padding: 0.625rem 1.25rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .rr-btn-secondary:hover {
+        background-color: var(--brand-faint);
+        color: var(--brand);
+        border-color: var(--brand);
+    }
+
+    .rr-label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--rr-text-2);
+        margin-bottom: 0.375rem;
+        letter-spacing: 0.01em;
+    }
+
+    .rr-muted-text {
+        color: var(--rr-muted);
+        font-size: 0.75rem;
+    }
+
+    .rr-badge-green {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.625rem;
+        border-radius: 9999px;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        background-color: var(--brand-light);
+        color: var(--brand-dark);
+    }
+
+    .rr-divider {
+        border: none;
+        border-top: 1px solid var(--rr-border);
+        margin: 0;
+    }
+
+    /* ─── Student Platform Components ─────────────── */
+    .s-card {
+        background: var(--s-card);
+        border: 1px solid var(--s-border);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 1rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .s-card:hover {
+        border-color: var(--s-border-md);
+    }
+
+    .s-card-glow {
+        background: var(--s-card);
+        border: 1px solid var(--s-border);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 1rem;
+        transition: all 0.25s;
+    }
+
+    .s-card-glow:hover {
+        border-color: rgba(16,185,129,0.3);
+        box-shadow: 0 0 24px rgba(16,185,129,0.08), 0 4px 24px rgba(0,0,0,0.3);
+    }
+
+    .s-input {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid var(--s-border-md);
+        border-radius: 0.75rem;
+        color: var(--s-text);
+        padding: 0.625rem 1rem;
+        font-size: 0.875rem;
+        width: 100%;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        outline: none;
+    }
+
+    .s-input:focus {
+        border-color: var(--s-emerald);
+        box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
+    }
+
+    .s-input::placeholder {
+        color: var(--s-faint);
+    }
+
+    .s-btn-primary {
+        background: linear-gradient(135deg, #10B981, #059669);
+        color: white;
+        border-radius: 0.75rem;
+        padding: 0.625rem 1.5rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        box-shadow: 0 4px 14px rgba(16,185,129,0.25);
+    }
+
+    .s-btn-primary:hover {
+        background: linear-gradient(135deg, #34D399, #10B981);
+        box-shadow: 0 4px 20px rgba(16,185,129,0.4);
+        transform: translateY(-1px);
+    }
+
+    .s-btn-primary:active {
+        transform: translateY(0);
+    }
+
+    .s-btn-secondary {
+        background: rgba(255,255,255,0.06);
+        color: var(--s-muted);
+        border: 1px solid var(--s-border-md);
+        border-radius: 0.75rem;
+        padding: 0.625rem 1.25rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .s-btn-secondary:hover {
+        background: rgba(255,255,255,0.1);
+        color: var(--s-text);
+        border-color: var(--s-border-md);
+    }
+
+    .s-label {
+        display: block;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--s-muted);
+        margin-bottom: 0.4rem;
+    }
+
+    .s-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 9999px;
+        font-size: 0.6875rem;
+        font-weight: 600;
+    }
+
+    .s-progress-bar {
+        background: rgba(255,255,255,0.07);
+        border-radius: 9999px;
+        overflow: hidden;
+        height: 6px;
+    }
+
+    .s-progress-fill {
+        height: 100%;
+        border-radius: 9999px;
+        transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
 }
 
 @layer utilities {
     .text-pure-black {
         color: #000000 !important;
     }
-
-    /* Force commonly-used gray utility classes to full dark text for better contrast */
-    .text-gray-400,
-    .text-gray-500,
-    .text-gray-600,
-    .text-gray-700,
-    .text-gray-800 {
-        color: #111827 !important; /* Tailwind gray-900 */
-    }
-
 
     /* Hide scrollbar */
     .no-scrollbar::-webkit-scrollbar {
@@ -170,4 +530,96 @@
         box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
         outline: none !important;
     }
+
+    /* ─── Student Platform Keyframes ─────────────── */
+    @keyframes s-fade-in-up {
+        from { opacity: 0; transform: translateY(16px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes s-fade-in {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+
+    @keyframes s-scale-in {
+        from { opacity: 0; transform: scale(0.95); }
+        to   { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes s-shimmer {
+        0%   { background-position: -200% center; }
+        100% { background-position: 200% center; }
+    }
+
+    @keyframes s-pulse-glow {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+        50%       { box-shadow: 0 0 20px 4px rgba(16,185,129,0.15); }
+    }
+
+    @keyframes s-spin-slow {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+    }
+
+    @keyframes s-float {
+        0%, 100% { transform: translateY(0px); }
+        50%       { transform: translateY(-6px); }
+    }
+
+    @keyframes s-progress-fill {
+        from { width: 0%; }
+    }
+
+    .s-animate-fade-in-up { animation: s-fade-in-up 0.4s ease-out both; }
+    .s-animate-fade-in    { animation: s-fade-in 0.3s ease-out both; }
+    .s-animate-scale-in   { animation: s-scale-in 0.3s ease-out both; }
+    .s-animate-float      { animation: s-float 3s ease-in-out infinite; }
+    .s-animate-pulse-glow { animation: s-pulse-glow 2.5s ease-in-out infinite; }
+    .s-animate-spin-slow  { animation: s-spin-slow 3s linear infinite; }
+    .s-animate-progress   { animation: s-progress-fill 1s ease-out both; }
+
+    .s-delay-1 { animation-delay: 0.1s; }
+    .s-delay-2 { animation-delay: 0.2s; }
+    .s-delay-3 { animation-delay: 0.3s; }
+    .s-delay-4 { animation-delay: 0.4s; }
+    .s-delay-5 { animation-delay: 0.5s; }
+
+    /* ─── Gradient text utility ─────────────────── */
+    .s-gradient-text {
+        background: linear-gradient(135deg, #34D399 0%, #10B981 50%, #059669 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .s-gradient-text-purple {
+        background: linear-gradient(135deg, #C4B5FD 0%, #8B5CF6 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .s-gradient-text-blue {
+        background: linear-gradient(135deg, #93C5FD 0%, #3B82F6 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    /* ─── Dark portal overrides ─────────────────── */
+    /* Prevents the global "force gray → black" from affecting the dark student portal */
+    .student-portal .text-gray-400,
+    .student-portal .text-gray-500,
+    .student-portal .text-gray-600,
+    .student-portal .text-gray-700,
+    .student-portal .text-gray-800 {
+        color: inherit !important;
+    }
+
+    /* Thin custom scrollbar for student sidebar */
+    .student-scrollbar::-webkit-scrollbar { width: 4px; }
+    .student-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .student-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+    .student-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 }

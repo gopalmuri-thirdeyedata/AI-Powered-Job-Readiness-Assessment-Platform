@@ -599,7 +599,7 @@ export default function Analytics() {
         // Brand Header
         doc.setFontSize(20);
         doc.setTextColor(93, 140, 44);
-        doc.text("HiringAI - Pipeline & Talent Intelligence Report", 14, 20);
+        doc.text("RoleReady - Pipeline & Talent Intelligence Report", 14, 20);
         
         doc.setFontSize(9);
         doc.setTextColor(100, 100, 100);
@@ -666,7 +666,7 @@ export default function Analytics() {
             styles: { fontSize: 8, cellPadding: 2 }
         });
 
-        doc.save(`HiringAI_Analytics_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+        doc.save(`RoleReady_Analytics_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
         setShowExportDropdown(false);
     };
 
@@ -704,7 +704,7 @@ export default function Analytics() {
         const htmlContent = `
         <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
         <head>
-            <title>HiringAI Recruitment Intelligence Dossier</title>
+            <title>RoleReady Recruitment Intelligence Dossier</title>
             <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; }
                 h1 { color: #5d8c2c; font-size: 24px; border-bottom: 2px solid #5d8c2c; padding-bottom: 8px; }
@@ -718,7 +718,7 @@ export default function Analytics() {
             </style>
         </head>
         <body>
-            <h1>HiringAI Recruitment Intelligence Dossier</h1>
+            <h1>RoleReady Recruitment Intelligence Dossier</h1>
             <div class="meta">
                 Generated: ${new Date().toLocaleString()}<br/>
                 Role Filter: ${selectedRoleFilter}<br/>
@@ -758,7 +758,7 @@ export default function Analytics() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `HiringAI_Analytics_Report_${new Date().toISOString().slice(0, 10)}.doc`;
+        a.download = `RoleReady_Analytics_Report_${new Date().toISOString().slice(0, 10)}.doc`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -774,7 +774,7 @@ export default function Analytics() {
 
         const workbook = XLSX.utils.book_new();
         const reportData = [
-            ["HiringAI - Recruitment Intelligence Report"],
+            ["RoleReady - Recruitment Intelligence Report"],
             [`Generated on: ${new Date().toLocaleString()} | Filter: ${selectedRoleFilter} | Date Range: ${selectedDateRange}`],
             [],
             ["EXECUTIVE SUMMARY METRICS"],
@@ -802,7 +802,7 @@ export default function Analytics() {
         const worksheet = XLSX.utils.aoa_to_sheet(reportData);
         worksheet['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 25 }, { wch: 20 }];
         XLSX.utils.book_append_sheet(workbook, worksheet, "Analytics Report");
-        XLSX.writeFile(workbook, `HiringAI_Analytics_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(workbook, `RoleReady_Analytics_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
         setShowExportDropdown(false);
     };
 

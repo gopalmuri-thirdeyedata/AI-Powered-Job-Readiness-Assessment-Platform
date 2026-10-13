@@ -72,7 +72,7 @@ export default function PlatformAdminDashboard() {
 
     useEffect(() => {
         if (userProfile.role && userProfile.role !== 'PLATFORM_ADMIN') {
-            navigate('/dashboard', { replace: true });
+            navigate('/admin/dashboard', { replace: true });
             return;
         }
         fetchData();
@@ -255,7 +255,7 @@ export default function PlatformAdminDashboard() {
                     This portal is reserved strictly for the Platform Administrator (Software Owner). Your current role does not have permission to view or manage customer organizations.
                 </p>
                 <button
-                    onClick={() => navigate('/dashboard')}
+                    onClick={() => navigate('/admin/dashboard')}
                     className="px-6 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-green-700 transition-all shadow-sm"
                 >
                     Return to Organization Dashboard

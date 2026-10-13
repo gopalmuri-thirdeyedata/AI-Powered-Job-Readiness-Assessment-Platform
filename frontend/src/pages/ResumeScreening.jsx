@@ -1422,7 +1422,7 @@ const ResumeScreening = () => {
                                         <h3 className="font-bold text-gray-900 text-base sm:text-lg flex items-center gap-1.5">
                                             <span>Folder & Bulk Upload</span>
                                         </h3>
-                                        <p className="text-xs text-gray-500">ThirdEye HiringAI Resume Importer</p>
+                                        <p className="text-xs text-gray-500">ThirdEye RoleReady Resume Importer</p>
                                     </div>
                                 </div>
                                 <button
@@ -1445,7 +1445,7 @@ const ResumeScreening = () => {
                                             <CheckCircle size={26} />
                                         </div>
                                         <h4 className="font-bold text-gray-900 text-base">
-                                            Upload {stagedFiles.length} Resume{stagedFiles.length === 1 ? '' : 's'} to HiringAI?
+                                            Upload {stagedFiles.length} Resume{stagedFiles.length === 1 ? '' : 's'} to RoleReady?
                                         </h4>
                                         <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
                                             The following resumes have been detected and are ready to be added to your screening queue.

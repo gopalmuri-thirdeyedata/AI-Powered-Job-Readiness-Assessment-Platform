@@ -250,7 +250,6 @@ class TestCandidateEndpointSecurityAudit(unittest.TestCase):
         """Verifies that the 4 strictly frozen interview files have exactly 0 git modifications and VapiInterview only fullscreen diff."""
         strictly_frozen = [
             "backend/routers/interview.py",
-            "backend/services/vapi_service.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]

@@ -84,7 +84,18 @@ const AnalyticsModal = ({ candidate, onClose, onViewResume }) => {
                                         if (onViewResume) {
                                             onViewResume(resumeUrl);
                                         } else {
-                                            window.open(resumeUrl, '_blank');
+                                            const token = localStorage.getItem('token');
+                                            fetch(`${API_URL}/api/resume/preview-token?file_path=${encodeURIComponent(candidate.resume_file)}`, {
+                                                headers: { 'Authorization': `Bearer ${token}` }
+                                            })
+                                            .then(r => r.ok ? r.json() : Promise.reject())
+                                            .then(d => window.open(`${resumeUrl}?token=${encodeURIComponent(d.preview_token)}`, '_blank'))
+                                            .catch(() => {
+                                                fetch(resumeUrl, { headers: { 'Authorization': `Bearer ${token}` } })
+                                                    .then(r => r.blob())
+                                                    .then(blob => window.open(URL.createObjectURL(blob), '_blank'))
+                                                    .catch(() => alert("Failed to load candidate resume."));
+                                            });
                                         }
                                     }}
                                     className="ml-3 px-3 py-1 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 hover:text-gray-900 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm"

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import API_URL from '../apiConfig';
 
-export default function ClerkAuthModal({ isOpen, onClose }) {
+export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redirectUrl }) {
     const { user } = useClerk();
     const navigate = useNavigate();
     const wasSignedInRef = useRef(!!user);
@@ -16,14 +16,15 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
     const verifiedEmailsRef = useRef(new Set());
     const pendingCheckRef = useRef(false);
 
-    // Only redirect on NEW sign-in, not when modal opens with existing session
+    const targetDestination = redirectUrl || (mode === 'student' ? '/assessment/setup' : '/admin/dashboard');
+
+    // Automatically redirect upon successful authentication
     useEffect(() => {
-        if (user && !wasSignedInRef.current && isOpen) {
+        if (user && isOpen) {
             onClose();
-            navigate('/dashboard');
+            navigate(targetDestination, { replace: true });
         }
-        wasSignedInRef.current = !!user;
-    }, [user, isOpen, onClose, navigate]);
+    }, [user, isOpen, onClose, navigate, targetDestination]);
 
     // Aggressively remove Clerk "Last used" badges and clear browser autofill until user interacts
     useEffect(() => {
@@ -129,7 +130,7 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
                 const res = await fetch(`${API_URL}/api/auth/check-email/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
+                    body: JSON.stringify({ email, intent: mode })
                 });
                 if (!res.ok) {
                     return { allowed: false, detail: "Error verifying email authorization." };
@@ -173,7 +174,7 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
             setIsCheckingEmail(false);
 
             if (!result.allowed) {
-                setEmailError(result.detail || "This email has not been invited to HiringAI.");
+                setEmailError(result.detail || "This email has not been invited to RoleReady.");
                 identifierInput.focus();
                 identifierInput.style.borderColor = '#ef4444';
             } else {
@@ -229,7 +230,7 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
                     pendingCheckRef.current = false;
                     setIsCheckingEmail(false);
                     if (!result.allowed) {
-                        setEmailError(result.detail || "This email has not been invited to HiringAI.");
+                        setEmailError(result.detail || "This email has not been invited to RoleReady.");
                         target.style.borderColor = '#ef4444';
                     } else {
                         verifiedEmailsRef.current.add(email);
@@ -325,11 +326,11 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
                         <button
                             onClick={() => {
                                 onClose();
-                                navigate('/dashboard');
+                                navigate(targetDestination);
                             }}
                             className="w-full py-3 bg-primary text-white font-semibold rounded-xl hover:bg-green-700 transition-all shadow-md cursor-pointer"
                         >
-                            Go to Dashboard
+                            {mode === 'student' ? 'Continue to Assessment Setup' : 'Continue to Dashboard'}
                         </button>
                     </div>
                 </div>
@@ -366,9 +367,12 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
                             className="h-7 w-auto object-contain shrink-0" 
                         />
                         <span className="text-[15px] font-bold text-[#5d8c2c] tracking-tight leading-none translate-y-[4.5px]">
-                            HiringAI
+                            RoleReady
                         </span>
                     </div>
+                    <span className="text-[11px] font-medium text-slate-500 mt-1">
+                        {mode === 'student' ? 'Student Assessment Sign In' : 'Recruiter & Administrator Sign In'}
+                    </span>
                 </div>
 
                 {/* Pre-auth Email Authorization Error Banner */}
@@ -481,6 +485,8 @@ export default function ClerkAuthModal({ isOpen, onClose }) {
                 <SignIn
                     appearance={clerkAppearance}
                     routing="virtual"
+                    fallbackRedirectUrl={targetDestination}
+                    forceRedirectUrl={targetDestination}
                     initialValues={{ emailAddress: "" }}
                 />
             </div>

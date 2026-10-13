@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 import shutil
 import os
@@ -263,7 +265,7 @@ def run_llm_screening(
     scoring_weights: Optional[dict] = None
 ):
     candidate_name = candidate_data['candidate_info'].get('name', candidate_data['file'])
-    print(f"   [LLM Start] Running Groq screening for {candidate_name}...")
+    print(f"   [LLM Start] Running Gemini screening for {candidate_name}...")
     try:
         analysis = RAGService.screen_resume(
             job_description,
@@ -278,9 +280,9 @@ def run_llm_screening(
         candidate_data["score"] = analysis.get("score", 0)
         candidate_data["reasoning"] = analysis.get("reasoning", "N/A")
         candidate_data["status"] = "success"
-        print(f"   [LLM Success] Completed Groq screening for {candidate_name} | AI Score: {candidate_data['score']}%")
+        print(f"   [LLM Success] Completed Gemini screening for {candidate_name} | AI Score: {candidate_data['score']}%")
     except Exception as e:
-        print(f"   [LLM Error] Groq screening failed for {candidate_name} due to: {e}. Falling back to Stage 1 keyword score.")
+        print(f"   [LLM Error] Gemini screening failed for {candidate_name} due to: {e}. Falling back to Stage 1 keyword score.")
         score = candidate_data["keyword_score"]
         matched = candidate_data["matched_skills"]
         missing = candidate_data["missing_skills"]
@@ -524,7 +526,7 @@ def screen_resume(
     # 3. Stage 2: Parallel LLM screening for top candidates
     llm_screened = []
     if to_llm:
-        print(f"[Stage 2] Submitting Top {len(to_llm)} candidates to Groq LLM for deep evaluation:")
+        print(f"[Stage 2] Submitting Top {len(to_llm)} candidates to Gemini LLM for deep evaluation:")
         for c in to_llm:
             c_name = c["candidate_info"].get("name", c["file"])
             print(f" -> Sending to LLM: {c_name} (Stage 1 Score: {c['keyword_score']}%)")
@@ -1857,8 +1859,6 @@ def delete_job_description(
     return None
 
 
-from fastapi.responses import FileResponse
-
 @router.get("/file/{candidate_id}")
 def get_candidate_resume_file(
     candidate_id: int,
@@ -1883,5 +1883,71 @@ def get_candidate_resume_file(
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File does not exist on disk")
 
-    return FileResponse(file_path, filename=os.path.basename(candidate.resume_file))
+    return FileResponse(
+        file_path,
+        filename=os.path.basename(candidate.resume_file),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff"
+        }
+    )
+
+
+@router.get("/preview-token")
+def get_resume_preview_token(
+    file_path: str = Query(..., description="Filename or relative path of candidate resume"),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Issues a short-lived (60s), narrowly scoped access token specifically for browser navigation
+    and iframe preview of candidate resumes.
+    Verifies tenant isolation and permissions before issuance.
+    """
+    import utils
+    clean_filename = Path(file_path).name
+    if current_user.role != models.UserRole.PLATFORM_ADMIN:
+        if current_user.role == models.UserRole.STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Students cannot request recruiter resume preview tokens."
+            )
+        cand = db.query(models.Candidate).filter(
+            or_(
+                models.Candidate.resume_file == clean_filename,
+                models.Candidate.resume_file == file_path,
+                models.Candidate.resume_file.endswith("/" + clean_filename)
+            )
+        ).first()
+        if cand:
+            user_org_id = getattr(current_user, "organization_id", None)
+            if not user_org_id:
+                try:
+                    user_org_id = _get_tenant_org_id(current_user, db)
+                except Exception:
+                    user_org_id = None
+            if user_org_id and cand.organization_id and user_org_id != cand.organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: Cannot preview candidate resume from another organization."
+                )
+        elif current_user.role not in (models.UserRole.ORGANIZATION_ADMIN, models.UserRole.HR_ADMIN, models.UserRole.HR):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions to preview candidate resumes."
+            )
+
+    token = utils.create_resume_preview_token(
+        email=current_user.email,
+        file_path=clean_filename,
+        expires_seconds=60
+    )
+    return {
+        "preview_token": token,
+        "expires_in": 60,
+        "token_type": "Bearer"
+    }
 

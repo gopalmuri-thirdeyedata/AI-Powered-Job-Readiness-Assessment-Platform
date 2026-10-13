@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     MoreHorizontal, ChevronDown, CheckCircle, XCircle, Clock,
     AlertCircle, FileText, Download, Mail, Filter, Search, RotateCw,
@@ -126,10 +126,52 @@ const hasResumeFile = (resumeFile) => {
 const ResumeModal = ({ resumeUrl, onClose }) => {
     if (!resumeUrl) return null;
 
-    const isPdf = resumeUrl.toLowerCase().endsWith('.pdf');
-    const iframeUrl = isPdf 
-        ? resumeUrl 
-        : `https://docs.google.com/gview?url=${encodeURIComponent(resumeUrl)}&embedded=true`;
+    const [blobUrl, setBlobUrl] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        let createdBlobUrl = null;
+
+        const fetchResume = async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                const token = localStorage.getItem('token');
+                const cleanUrl = resumeUrl.split('?')[0];
+
+                const response = await fetch(cleanUrl, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to load resume (${response.status})`);
+                }
+
+                const blob = await response.blob();
+                if (isMounted) {
+                    createdBlobUrl = URL.createObjectURL(blob);
+                    setBlobUrl(createdBlobUrl);
+                    setLoading(false);
+                }
+            } catch (err) {
+                if (isMounted) {
+                    setError(err.message || 'Error loading resume');
+                    setLoading(false);
+                }
+            }
+        };
+
+        fetchResume();
+
+        return () => {
+            isMounted = false;
+            if (createdBlobUrl) {
+                URL.revokeObjectURL(createdBlobUrl);
+            }
+        };
+    }, [resumeUrl]);
 
     return (
         <div className="fixed inset-0 z-[20000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -145,12 +187,23 @@ const ResumeModal = ({ resumeUrl, onClose }) => {
                         </button>
                     </div>
                 </div>
-                <div className="flex-1 bg-gray-100 p-2">
-                    <iframe
-                        src={iframeUrl}
-                        title="Resume Viewer"
-                        className="w-full h-full border-0 rounded-xl bg-white"
-                    />
+                <div className="flex-1 bg-gray-100 p-2 flex items-center justify-center">
+                    {loading ? (
+                        <div className="text-sm font-medium text-gray-500 flex items-center gap-2">
+                            <RotateCw className="w-4 h-4 animate-spin text-green-600" />
+                            Loading candidate resume securely...
+                        </div>
+                    ) : error ? (
+                        <div className="text-sm font-medium text-red-500 bg-red-50 border border-red-200 p-4 rounded-xl">
+                            {error}
+                        </div>
+                    ) : (
+                        <iframe
+                            src={blobUrl}
+                            title="Resume Viewer"
+                            className="w-full h-full border-0 rounded-xl bg-white"
+                        />
+                    )}
                 </div>
             </div>
         </div>
@@ -250,7 +303,7 @@ const CandidateTable = ({
         // Add Title Header
         doc.setFontSize(18);
         doc.setTextColor(93, 140, 44); // Brand Color #5d8c2c
-        doc.text("HiringAI - Candidate Assessment Dataset", 14, 20);
+        doc.text("RoleReady - Candidate Assessment Dataset", 14, 20);
         
         doc.setFontSize(10);
         doc.setTextColor(100, 100, 100);

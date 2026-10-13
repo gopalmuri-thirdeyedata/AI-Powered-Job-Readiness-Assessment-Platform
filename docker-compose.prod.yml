@@ -1,7 +1,6 @@
 # ==============================================================================
 # HIRINGAI PRODUCTION DOCKER COMPOSE ORCHESTRATION
 # ==============================================================================
-version: '3.8'
 
 services:
   # MySQL Database Server
@@ -9,11 +8,13 @@ services:
     image: mysql:8.0
     container_name: hiringai_mysql_prod
     restart: always
+    env_file:
+      - ./backend/.env
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-hiringai_root_pass}
       MYSQL_DATABASE: ${DB_NAME:-hiringai}
       MYSQL_USER: ${DB_USER:-hiringai_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-hiringai_pass}
     volumes:
       - mysql_prod_data:/var/lib/mysql
     networks:
@@ -24,8 +25,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    # Note: Ports are NOT published to the host/internet for security.
-    # Access is restricted to the internal Docker network.
 
   # Redis In-Memory Cache
   redis:
@@ -56,6 +55,7 @@ services:
       - DB_HOST=db
       - DB_PORT=3306
       - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     volumes:
       - backend_media:/app/media
     networks:
@@ -79,8 +79,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
-        VITE_VAPI_PUBLIC_KEY: ${VITE_VAPI_PUBLIC_KEY}
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_dWx0aW1hdGUtZmVycmV0LTYzLmNsZXJrLmFjY291bnRzLmRldiQ}
+        VITE_VAPI_PUBLIC_KEY: ${VITE_VAPI_PUBLIC_KEY:-85876843-8675-47b9-b5bd-f4387a97473d}
     container_name: hiringai_frontend_prod
     restart: always
     networks:
@@ -88,14 +88,13 @@ services:
     depends_on:
       - backend
 
-  # Edge Nginx Reverse Proxy with SSL Termination
+  # Edge Nginx Reverse Proxy
   reverse_proxy:
     image: nginx:alpine
     container_name: hiringai_nginx_prod
     restart: always
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - certbot_certs:/etc/letsencrypt:ro

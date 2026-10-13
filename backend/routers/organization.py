@@ -93,8 +93,8 @@ def invite_organization_user(
     email = payload.email.strip().lower()
     target_role = (payload.role or "HR").upper()
 
-    if target_role not in ("HR", "ORGANIZATION_ADMIN"):
-        raise HTTPException(status_code=400, detail="Role must be 'HR' or 'ORGANIZATION_ADMIN'.")
+    if target_role not in ("HR", "ORGANIZATION_ADMIN", "STUDENT"):
+        raise HTTPException(status_code=400, detail="Role must be 'HR', 'ORGANIZATION_ADMIN', or 'STUDENT'.")
 
     # Prevent inviting as Platform Admin
     platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
@@ -135,9 +135,23 @@ def invite_organization_user(
         organization_id=current_tenant.id,
         user_id=target_user.id,
         role=target_role,
-        status="active"
+        status="pending" if target_role == "STUDENT" else "active"
     )
     db.add(new_member)
+
+    # Pre-provision StudentProfile if inviting student
+    if target_role == "STUDENT":
+        student_prof = db.query(models.StudentProfile).filter(models.StudentProfile.user_id == target_user.id).first()
+        if not student_prof:
+            student_prof = models.StudentProfile(
+                user_id=target_user.id,
+                organization_id=current_tenant.id,
+                full_name=email.split('@')[0].replace('.', ' ').title(),
+                email=email,
+                target_role="Software Engineer"
+            )
+            db.add(student_prof)
+
     db.commit()
     db.refresh(new_member)
 

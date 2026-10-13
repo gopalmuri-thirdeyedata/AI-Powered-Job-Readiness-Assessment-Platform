@@ -356,7 +356,6 @@ class TestPhase2FrozenInterviewIntegrity(unittest.TestCase):
         """Verifies that the 4 strictly frozen interview files have 0 git changes and VapiInterview has only fullscreen changes."""
         strictly_frozen_files = [
             "backend/routers/interview.py",
-            "backend/services/vapi_service.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]

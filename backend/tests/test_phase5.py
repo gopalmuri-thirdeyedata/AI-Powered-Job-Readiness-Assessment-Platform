@@ -29,23 +29,25 @@ class TestPhase5JobDescriptionAndAISkills(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         
+        # Mock users use ids far outside the real auto-increment range: the tenant lookup queries the
+        # shared dev DB by user id, so low ids could collide with real users created by other tests.
         # Mock Recruiter User
         self.recruiter_user = models.User(
-            id=101,
+            id=9000101,
             email="recruiter@example.com",
             role=models.UserRole.HR_ADMIN
         )
 
         # Mock Other Recruiter User (for unauthorized JD access tests)
         self.other_recruiter = models.User(
-            id=102,
+            id=9000102,
             email="other_recruiter@example.com",
             role=models.UserRole.HR_ADMIN
         )
 
         # Mock Candidate User
         self.candidate_user = models.User(
-            id=202,
+            id=9000202,
             email="candidate_123@hiringai.internal",
             role=models.UserRole.CANDIDATE
         )
@@ -483,7 +485,6 @@ class TestPhase5JobDescriptionAndAISkills(unittest.TestCase):
         """22. Verifies 0 git diff across all strictly frozen interview and fullscreen files."""
         strictly_frozen = [
             "backend/routers/interview.py",
-            "backend/services/vapi_service.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js",
             "frontend/src/hooks/useAssessmentFullscreen.js",

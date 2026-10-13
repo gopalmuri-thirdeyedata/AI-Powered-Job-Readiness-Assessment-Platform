@@ -100,8 +100,9 @@ from pydantic import BaseModel
 
 class CheckEmailSchema(BaseModel):
     email: str
+    intent: Optional[str] = "admin"
 
-def _check_email_allowed(raw_email: str, db: Session) -> dict:
+def _check_email_allowed(raw_email: str, db: Session, intent: str = "admin") -> dict:
     raw_email = (raw_email or "").strip().lower()
     if not raw_email or "@" not in raw_email:
         return {
@@ -119,7 +120,15 @@ def _check_email_allowed(raw_email: str, db: Session) -> dict:
             "organization_name": "Platform Administration"
         }
 
-    # 2. Organization Member check
+    # 2. Student Intent Check: Student self-assessment is accessible to all students
+    if intent == "student":
+        return {
+            "allowed": True,
+            "role": "STUDENT",
+            "organization_name": "RoleReady Student Assessment"
+        }
+
+    # 3. Organization Member check for Enterprise Administrator Suite
     membership = db.query(models.OrganizationMember).join(
         models.User, models.OrganizationMember.user_id == models.User.id
     ).filter(
@@ -136,7 +145,7 @@ def _check_email_allowed(raw_email: str, db: Session) -> dict:
             }
         return {
             "allowed": False,
-            "detail": "This email has not been invited to HiringAI. Please contact your organization administrator."
+            "detail": "This email has not been invited to the RoleReady enterprise recruitment workspace. Please contact your organization administrator."
         }
 
     # Check organization status
@@ -164,32 +173,46 @@ def _check_email_allowed(raw_email: str, db: Session) -> dict:
 def check_email_registered_post(payload: CheckEmailSchema, db: Session = Depends(database.get_db)):
     """
     Pre-authentication authorization check:
-    Validates whether an email address is authorized in HiringAI BEFORE sending OTP.
-    Prevents OTP credits/send waste for unregistered emails.
+    Validates whether an email address is authorized in RoleReady BEFORE sending OTP.
     """
-    return _check_email_allowed(payload.email, db)
+    return _check_email_allowed(payload.email, db, intent=payload.intent or "admin")
 
 @router.get("/check-email/")
-def check_email_registered_get(email: str, db: Session = Depends(database.get_db)):
+def check_email_registered_get(email: str, intent: str = "admin", db: Session = Depends(database.get_db)):
     """GET variant of check-email."""
-    return _check_email_allowed(email, db)
+    return _check_email_allowed(email, db, intent=intent)
 
 class ClerkSyncSchema(BaseModel):
     email: str
     clerk_user_id: Optional[str] = None
     clerk_org_id: Optional[str] = None
     org_slug: Optional[str] = None
+    role_intent: Optional[str] = None
 
 @router.post("/clerk-sync/", response_model=schemas.Token)
 def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db)):
     email = sync_data.email.strip().lower()
     clerk_id = sync_data.clerk_user_id.strip() if sync_data.clerk_user_id else None
+    role_intent = (sync_data.role_intent or "").strip().lower()
 
     platform_admin_clerk_id = os.getenv("PLATFORM_ADMIN_CLERK_USER_ID", "").strip()
     platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
 
+    # Helper: Ensure default community organization for students
+    def get_or_create_student_org():
+        student_org = db.query(models.Organization).filter_by(slug="roleready-students").first()
+        if not student_org:
+            student_org = models.Organization(
+                name="RoleReady Student Assessment Hub",
+                slug="roleready-students",
+                status="active"
+            )
+            db.add(student_org)
+            db.commit()
+            db.refresh(student_org)
+        return student_org
+
     # 1. EXPLICIT PLATFORM ADMIN CHECK
-    # Only matches explicitly configured platform identity: gopalmuri1919@gmail.com, configured clerk ID, or admin@hiringai.com
     existing_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     is_platform = False
     if platform_admin_clerk_id and clerk_id and clerk_id == platform_admin_clerk_id:
@@ -223,8 +246,7 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
         access_token = utils.create_access_token(data={"sub": user.email, "role": models.UserRole.PLATFORM_ADMIN})
         return {"access": access_token, "token_type": "bearer"}
 
-    # 2. NON-PLATFORM USER: LOOKUP EXPLICIT PROVISIONED MEMBERSHIP
-    # Google/OTP login alone DOES NOT grant access. An explicit membership MUST exist.
+    # 2. LOOKUP EXPLICIT RECRUITER MEMBERSHIP
     membership = None
     if clerk_id:
         membership = db.query(models.OrganizationMember).filter(
@@ -238,54 +260,103 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
             func.lower(models.User.email) == email
         ).first()
 
-    # If no membership was found, REJECT with 403 Forbidden!
-    # Do NOT insert into organization_members.
-    # Do NOT assign HR, ORGANIZATION_ADMIN, or PLATFORM_ADMIN.
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account has not been invited to HiringAI (invite-only access). Please contact your organization administrator."
-        )
+    # 3. IF MEMBERSHIP EXISTS AND NOT EXPLICITLY IN STUDENT-ONLY MODE: PROVISION RECRUITER
+    if membership and role_intent != "student":
+        org = db.query(models.Organization).filter(models.Organization.id == membership.organization_id).first()
+        if not org or org.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your organization account is inactive or suspended. Please contact your administrator."
+            )
 
-    # Membership exists! Validate that the organization is active
-    org = db.query(models.Organization).filter(models.Organization.id == membership.organization_id).first()
-    if not org or org.status != "active":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Your organization account is inactive or suspended. Please contact your administrator."
-        )
+        user = db.query(models.User).filter(models.User.id == membership.user_id).first()
+        if not user:
+            user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
 
-    # Retrieve or bind the user record
-    user = db.query(models.User).filter(models.User.id == membership.user_id).first()
-    if not user:
-        user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account has not been invited to RoleReady. Please contact your organization administrator."
+            )
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account has not been invited to HiringAI. Please contact your organization administrator."
-        )
+        if membership.status == "pending":
+            membership.status = "active"
 
-    # Activate pending membership if user accepted invitation
-    if membership.status == "pending":
-        membership.status = "active"
+        if clerk_id:
+            membership.clerk_user_id = clerk_id
+            user.clerk_user_id = clerk_id
 
-    # Link Clerk User ID if provided
-    if clerk_id:
-        membership.clerk_user_id = clerk_id
-        user.clerk_user_id = clerk_id
+        assigned_role = membership.role
+        if assigned_role not in ("ORGANIZATION_ADMIN", "HR"):
+            assigned_role = "HR"
 
-    # Strictly sync role and tenant org from explicit organization membership
-    assigned_role = membership.role
-    if assigned_role not in ("ORGANIZATION_ADMIN", "HR"):
-        assigned_role = "HR"
+        user.role = assigned_role
+        user.organization_id = membership.organization_id
+        db.commit()
 
-    user.role = assigned_role
-    user.organization_id = membership.organization_id
-    db.commit()
+        access_token = utils.create_access_token(data={"sub": user.email, "role": user.role})
+        return {"access": access_token, "token_type": "bearer"}
 
-    access_token = utils.create_access_token(data={"sub": user.email, "role": user.role})
-    return {"access": access_token, "token_type": "bearer"}
+    # 4. STUDENT WORKFLOW / STUDENT ROLE INTENT
+    if role_intent == "student" or (existing_user and (existing_user.role == models.UserRole.STUDENT or existing_user.student_profile)):
+        student_org = get_or_create_student_org()
+
+        if existing_user:
+            if existing_user.role not in (models.UserRole.PLATFORM_ADMIN, models.UserRole.ORGANIZATION_ADMIN, models.UserRole.HR):
+                existing_user.role = models.UserRole.STUDENT
+            if not existing_user.organization_id:
+                existing_user.organization_id = student_org.id
+            if clerk_id:
+                existing_user.clerk_user_id = clerk_id
+            db.commit()
+
+            # Ensure StudentProfile exists
+            prof = db.query(models.StudentProfile).filter(models.StudentProfile.user_id == existing_user.id).first()
+            if not prof:
+                prof = models.StudentProfile(
+                    user_id=existing_user.id,
+                    organization_id=existing_user.organization_id or student_org.id,
+                    email=existing_user.email,
+                    full_name=existing_user.email.split('@')[0].replace('.', ' ').replace('_', ' ').title(),
+                    target_role="Software Engineer"
+                )
+                db.add(prof)
+                db.commit()
+
+            access_token = utils.create_access_token(data={"sub": existing_user.email, "role": existing_user.role})
+            return {"access": access_token, "token_type": "bearer"}
+        else:
+            # Provision new student account
+            new_student = models.User(
+                email=email,
+                role=models.UserRole.STUDENT,
+                hashed_password=utils.get_password_hash("clerk_student_user"),
+                is_active=True,
+                organization_id=student_org.id,
+                clerk_user_id=clerk_id
+            )
+            db.add(new_student)
+            db.commit()
+            db.refresh(new_student)
+
+            prof = models.StudentProfile(
+                user_id=new_student.id,
+                organization_id=student_org.id,
+                email=email,
+                full_name=email.split('@')[0].replace('.', ' ').replace('_', ' ').title(),
+                target_role="Software Engineer"
+            )
+            db.add(prof)
+            db.commit()
+
+            access_token = utils.create_access_token(data={"sub": new_student.email, "role": models.UserRole.STUDENT})
+            return {"access": access_token, "token_type": "bearer"}
+
+    # 5. ATTEMPTED ADMIN ACCESS WITHOUT PROVISIONED MEMBERSHIP
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Your account has not been provisioned for the RoleReady enterprise recruitment workspace. Please contact your organization administrator."
+    )
 
 # Dependency
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login/")
@@ -395,10 +466,10 @@ def require_hr_or_admin(
     db: Session = Depends(database.get_db)
 ) -> models.User:
     """Security check: Ensures user is an authorized recruiter (HR, Org Admin, or Platform Admin)."""
-    if current_user.role == models.UserRole.CANDIDATE or current_user.email.endswith(".internal"):
+    if current_user.role in (models.UserRole.CANDIDATE, models.UserRole.STUDENT) or current_user.email.endswith(".internal"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Candidates are not permitted to access recruiter tools."
+            detail="Candidates and students are not permitted to access recruiter tools."
         )
 
     if current_user.role == models.UserRole.PLATFORM_ADMIN:
@@ -443,6 +514,16 @@ def get_current_user_profile(
             "organization_id": None,
             "organization_name": None,
             "organization_slug": None
+        }
+
+    if current_user.role == models.UserRole.STUDENT or current_user.student_profile:
+        return {
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "role": "STUDENT",
+            "organization_id": current_user.organization_id,
+            "organization_name": "RoleReady Student Assessment Hub",
+            "organization_slug": "roleready-students"
         }
 
     member = db.query(models.OrganizationMember).filter(

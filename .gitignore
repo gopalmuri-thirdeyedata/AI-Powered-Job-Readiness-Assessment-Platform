@@ -298,3 +298,18 @@ logo_base64.txt
 # Agent configurations
 .agents/
 
+
+# Local database backups taken before migrations (contain real data - never commit)
+*.pre_migration_backup
+backend/hiringai.db.pre_migration_backup
+
+# Local database and media safety backups (contain real data - never commit)
+*.backup_before_clean
+backend/hiringai.db.backup_before_clean
+*_backup_before_clean/
+backend/media_backup_before_clean/
+
+# Local developer scratchpad
+scratch/
+backend/scratch/
+

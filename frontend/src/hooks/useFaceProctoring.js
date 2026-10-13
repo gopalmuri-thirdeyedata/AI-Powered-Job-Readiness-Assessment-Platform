@@ -3,46 +3,61 @@ import API_URL from '../apiConfig';
 
 /**
  * useFaceProctoring
- * Silent background proctoring using YOLOv11n (via FastAPI backend).
+ * Real-time background proctoring using YOLOv8n (via FastAPI backend).
  *
- * Detects every 3 seconds:
- * - No person in frame (after 3 consecutive checks = 9s) → violation
- * - Multiple persons in frame                             → immediate violation
- * - Mobile phone detected                                 → immediate violation
- * - Laptop / electronic device detected                  → immediate violation
- * - Book / reference material detected                   → immediate violation
+ * Checks camera frame every 3000ms:
+ * - No person in frame (after 3 consecutive checks = 9s) → triggers violation
+ * - Multiple persons in frame (>= 2)                      → immediate violation
+ * - Mobile phone detected (class 'cell phone', conf >= 0.45) → immediate violation
+ * - Secondary electronic device (laptop/screen)           → immediate violation
+ * - Book / reference notes detected                       → immediate violation
  *
- * @param {Function} onViolation - Called with (reason: string) on each violation
- * @param {boolean}  enabled     - Toggle detection on/off
+ * @param {Object} options
+ * @param {Function} [options.onViolation]   - Callback (reason: string) on confirmed violation
+ * @param {Function} [options.onDetection]   - Callback (status: 'detected'|'not_detected'|'multiple')
+ * @param {Function} [options.onDetections]  - Callback (detections: Array, faceBoxes: Array)
+ * @param {boolean}  [options.enabled=true]  - Toggle background detection on/off
+ * @param {MediaStream} [options.externalStream] - Optional existing MediaStream to reuse
  */
-const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = true }) => {
-    const streamRef      = useRef(null);
-    const videoRef       = useRef(null);
-    const canvasRef      = useRef(null);
-    const intervalRef    = useRef(null);
-    const noPersonCountRef       = useRef(0);
-    const isRunningRef           = useRef(false);
-    const lastViolationTimeRef   = useRef({});
+const useFaceProctoring = ({
+    onViolation,
+    onDetection,
+    onDetections,
+    enabled = true,
+    externalStream = null
+} = {}) => {
+    const streamRef = useRef(null);
+    const videoRef = useRef(null);
+    const canvasRef = useRef(null);
+    const intervalRef = useRef(null);
+    const noPersonCountRef = useRef(0);
+    const isRunningRef = useRef(false);
+    const lastViolationTimeRef = useRef({});
     const [cameraStream, setCameraStream] = useState(null);
 
-    const detectionStatusRef     = useRef('idle');
+    const [detectionStatus, setDetectionStatus] = useState('idle'); // 'idle' | 'detected' | 'not_detected' | 'multiple'
     const [suspectLabel, setSuspectLabel] = useState(null);
-    const suspectTimerRef        = useRef(null);
-    const onDetectionsRef        = useRef(onDetections); // Always keep latest callback
-    const onDetectionRef         = useRef(onDetection);
-    const onViolationRef         = useRef(onViolation);
+    const [personCount, setPersonCount] = useState(1);
+    const [detections, setDetections] = useState([]);
+    const [faceBoxes, setFaceBoxes] = useState([]);
+    const [isModelActive, setIsModelActive] = useState(false);
+    const [modelError, setModelError] = useState(null);
 
-    // Keep refs current on every render (avoids stale closure in setInterval)
+    const suspectTimerRef = useRef(null);
+    const onDetectionsRef = useRef(onDetections);
+    const onDetectionRef = useRef(onDetection);
+    const onViolationRef = useRef(onViolation);
+
+    // Keep callback refs fresh
     useEffect(() => { onDetectionsRef.current = onDetections; }, [onDetections]);
-    useEffect(() => { onDetectionRef.current  = onDetection;  }, [onDetection]);
-    useEffect(() => { onViolationRef.current   = onViolation;  }, [onViolation]);
+    useEffect(() => { onDetectionRef.current = onDetection; }, [onDetection]);
+    useEffect(() => { onViolationRef.current = onViolation; }, [onViolation]);
 
+    const CHECK_INTERVAL_MS = 3000;
+    const NO_PERSON_THRESHOLD = 3; // 3 consecutive checks (~9s)
+    const VIOLATION_COOLDOWN_MS = 8000; // 8s cooldown per specific violation reason
 
-    const CHECK_INTERVAL_MS  = 3000;  // Analyze frame every 3 seconds
-    const NO_PERSON_THRESHOLD = 3;    // 3 consecutive no-person checks (~9s) before warning
-    const VIOLATION_COOLDOWN_MS = 10000; // Min 10s between same violation type
-
-    // ── Violation trigger with per-type cooldown ──────────────────────────────
+    // ── Debounced violation trigger with cooldown ─────────────────────────────
     const triggerViolation = useCallback((reason) => {
         const cb = onViolationRef.current;
         if (!cb) return;
@@ -53,15 +68,17 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
         cb(reason);
     }, []);
 
-    // ── Camera setup ──────────────────────────────────────────────────────────
+    // ── Camera acquisition ────────────────────────────────────────────────────
     const startCamera = async () => {
-        // Clean up any existing camera resources first
-        if (streamRef.current) {
+        // Stop old stream if existing
+        if (streamRef.current && streamRef.current !== externalStream) {
             try {
                 streamRef.current.getTracks().forEach(t => t.stop());
             } catch (e) {}
             streamRef.current = null;
         }
+
+        // Clean up previous video/canvas
         if (videoRef.current) {
             try {
                 videoRef.current.srcObject = null;
@@ -76,37 +93,19 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
             canvasRef.current = null;
         }
 
-        const tryGetUserMedia = async (retries = 3, delayMs = 800) => {
-            // First: try to reuse stream already opened on start page
-            const existing = window.__activeProctorStream;
-            if (existing && existing.getVideoTracks().some(t => t.readyState === 'live')) {
-                window.__activeProctorStream = null; // Claim it
-                return existing;
-            }
-
-            // Otherwise: request fresh stream with retry
-            for (let i = 0; i < retries; i++) {
-                try {
-                    return await navigator.mediaDevices.getUserMedia({
-                        video: { width: 320, height: 240, facingMode: 'user' },
-                        audio: false
-                    });
-                } catch (err) {
-                    if (err.name === 'NotAllowedError') throw err;
-                    if (i < retries - 1) {
-                        await new Promise(r => setTimeout(r, delayMs));
-                    } else {
-                        throw err;
-                    }
-                }
-            }
-        };
-
         try {
-            const stream = await tryGetUserMedia();
-            streamRef.current = stream;
+            let stream = externalStream;
+            if (!stream || !stream.getVideoTracks().some(t => t.readyState === 'live')) {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 320, height: 240, facingMode: 'user' },
+                    audio: false
+                });
+            }
 
-            // Invisible video element — off-screen, no pixels shown to user
+            streamRef.current = stream;
+            setCameraStream(stream);
+
+            // Hidden video element for canvas frame capture
             const video = document.createElement('video');
             video.srcObject = stream;
             video.autoplay = true;
@@ -114,36 +113,28 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
             video.muted = true;
             video.width = 320;
             video.height = 240;
-            video.style.cssText =
-                'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+            video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
             document.body.appendChild(video);
             videoRef.current = video;
 
-            // Also attach stream to the corner preview element if provided
-            setCameraStream(stream);
-
-            // Hidden canvas for frame capture
+            // Hidden canvas for JPEG export
             const canvas = document.createElement('canvas');
             canvas.width = 320;
             canvas.height = 240;
-            canvas.style.cssText =
-                'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+            canvas.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
             document.body.appendChild(canvas);
             canvasRef.current = canvas;
 
-            // Wait for video metadata to load
+            // Wait for video frame readiness
             await new Promise((resolve) => {
                 video.onloadedmetadata = resolve;
-                setTimeout(resolve, 2000);
+                setTimeout(resolve, 1500);
             });
 
             return stream;
         } catch (err) {
-            if (err.name === 'NotAllowedError') {
-                console.warn('[FaceProctoring] Camera permission denied.');
-            } else {
-                console.error('[FaceProctoring] Camera error:', err);
-            }
+            console.warn('[FaceProctoring] Camera initialization failed:', err);
+            setModelError(err.message || 'Camera permission denied or device unavailable');
             return null;
         }
     };
@@ -153,51 +144,44 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
             clearInterval(intervalRef.current);
             intervalRef.current = null;
         }
-        if (streamRef.current) {
+        if (streamRef.current && streamRef.current !== externalStream) {
             try {
                 streamRef.current.getTracks().forEach(t => t.stop());
-            } catch (e) {
-                console.error("[FaceProctoring] Error stopping track:", e);
-            }
+            } catch (e) {}
             streamRef.current = null;
         }
         setCameraStream(null);
+
         try {
             if (videoRef.current) {
                 videoRef.current.srcObject = null;
-                if (videoRef.current.parentNode) {
-                    videoRef.current.remove();
-                }
+                if (videoRef.current.parentNode) videoRef.current.remove();
                 videoRef.current = null;
             }
-        } catch (e) {
-            console.error("[FaceProctoring] Error removing video element:", e);
-        }
+        } catch (e) {}
+
         try {
             if (canvasRef.current) {
-                if (canvasRef.current.parentNode) {
-                    canvasRef.current.remove();
-                }
+                if (canvasRef.current.parentNode) canvasRef.current.remove();
                 canvasRef.current = null;
             }
-        } catch (e) {
-            console.error("[FaceProctoring] Error removing canvas element:", e);
-        }
+        } catch (e) {}
+
         isRunningRef.current = false;
+        setIsModelActive(false);
     };
 
-    // ── Frame capture + backend call ─────────────────────────────────────────
+    // ── Frame capture + YOLO analysis ─────────────────────────────────────────
     const analyzeFrame = async () => {
-        const video  = videoRef.current;
+        const video = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) return;
 
         try {
-            // Draw current frame onto hidden canvas
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Export as JPEG (lower quality = smaller payload = faster)
+            // Export compressed JPEG base64
             const base64Image = canvas.toDataURL('image/jpeg', 0.6);
 
             const response = await fetch(`${API_URL}/api/proctor/analyze-frame`, {
@@ -206,19 +190,36 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
                 body: JSON.stringify({ image: base64Image })
             });
 
-            if (!response.ok) return;
+            if (!response.ok) {
+                setIsModelActive(false);
+                return;
+            }
 
             const data = await response.json();
+            if (data.status === 'error') {
+                setModelError(data.error);
+                setIsModelActive(false);
+                return;
+            }
+
+            setIsModelActive(true);
+            setModelError(null);
+
             const violations = data.violations || [];
-            const personCount = data.person_count ?? 1;
+            const count = data.person_count ?? 1;
             const suspect = data.suspect_label || null;
-            const detections = data.detections || [];
-            const faceBoxes  = data.face_boxes  || [];
+            const currentDetections = data.detections || [];
+            const currentFaceBoxes = data.face_boxes || [];
 
-            // Send detections + face boxes to UI for drawing
-            if (onDetectionsRef.current) onDetectionsRef.current(detections, faceBoxes);
+            setPersonCount(count);
+            setDetections(currentDetections);
+            setFaceBoxes(currentFaceBoxes);
 
-            // Update suspect label with auto-clear after 6s
+            if (onDetectionsRef.current) {
+                onDetectionsRef.current(currentDetections, currentFaceBoxes);
+            }
+
+            // Update suspect label banner
             if (suspect) {
                 setSuspectLabel(suspect);
                 if (suspectTimerRef.current) clearTimeout(suspectTimerRef.current);
@@ -227,41 +228,46 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
                 setSuspectLabel(null);
             }
 
-            // ── No person tracking (needs consecutive checks) ──
+            // ── Temporal No-Person Check (3 consecutive frames = ~9s) ──
             if (violations.includes('no_person')) {
                 noPersonCountRef.current += 1;
-                detectionStatusRef.current = 'not_detected';
+                setDetectionStatus('not_detected');
                 if (onDetectionRef.current) onDetectionRef.current('not_detected');
+
                 if (noPersonCountRef.current >= NO_PERSON_THRESHOLD) {
                     noPersonCountRef.current = 0;
                     triggerViolation('Face not visible in camera');
                 }
+            } else if (count >= 2) {
+                noPersonCountRef.current = 0;
+                setDetectionStatus('multiple');
+                if (onDetectionRef.current) onDetectionRef.current('multiple');
             } else {
-                noPersonCountRef.current = 0; // Reset on person found
-                detectionStatusRef.current = 'detected';
+                noPersonCountRef.current = 0;
+                setDetectionStatus('detected');
                 if (onDetectionRef.current) onDetectionRef.current('detected');
             }
 
-            // ── Immediate violations ───────────────────────────
+            // ── Immediate Violations ──────────────────────────
             if (violations.includes('multiple_persons')) {
-                triggerViolation('Multiple persons detected in camera');
+                triggerViolation('Multiple persons detected in camera view');
             }
             if (violations.includes('phone_detected')) {
-                triggerViolation('Mobile phone detected in camera');
+                triggerViolation('Mobile phone detected in camera view');
             }
             if (violations.includes('device_detected')) {
-                triggerViolation('Electronic device detected in camera');
+                triggerViolation('Secondary electronic device detected in camera view');
             }
             if (violations.includes('notes_detected')) {
-                triggerViolation('Reference material detected in camera');
+                triggerViolation('Reference material or notes detected in camera view');
             }
-
         } catch (err) {
-            // Silently ignore — network errors or server restart shouldn't crash proctoring
+            // Suppress network jitter errors from interrupting test
+            setIsModelActive(false);
         }
     };
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // ── Hook Lifecycle ────────────────────────────────────────────────────────
     useEffect(() => {
         let cancelled = false;
 
@@ -274,37 +280,18 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
 
             const stream = await startCamera();
             if (!stream || cancelled) {
-                if (stream) {
-                    try {
-                        stream.getTracks().forEach(t => t.stop());
-                    } catch (e) {
-                        console.error("[FaceProctoring] Error stopping orphaned stream track:", e);
-                    }
-                }
-                try {
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = null;
-                        if (videoRef.current.parentNode) videoRef.current.remove();
-                        videoRef.current = null;
-                    }
-                } catch (e) {}
-                try {
-                    if (canvasRef.current) {
-                        if (canvasRef.current.parentNode) canvasRef.current.remove();
-                        canvasRef.current = null;
-                    }
-                } catch (e) {}
-                if (cancelled) {
-                    stopCamera();
-                }
+                if (cancelled) stopCamera();
                 return;
             }
 
-            streamRef.current = stream;
-            setCameraStream(stream);
             isRunningRef.current = true;
 
-            // Start detection loop
+            // Trigger initial analysis frame immediately
+            setTimeout(() => {
+                if (!cancelled) analyzeFrame();
+            }, 500);
+
+            // Start periodic detection loop
             intervalRef.current = setInterval(() => {
                 if (!cancelled) analyzeFrame();
             }, CHECK_INTERVAL_MS);
@@ -316,9 +303,19 @@ const useFaceProctoring = ({ onViolation, onDetection, onDetections, enabled = t
             cancelled = true;
             stopCamera();
         };
-    }, [enabled]);
+    }, [enabled, externalStream]);
 
-    return { cameraStream, streamRef, detectionStatusRef, suspectLabel };
+    return {
+        cameraStream,
+        streamRef,
+        detectionStatus,
+        suspectLabel,
+        personCount,
+        detections,
+        faceBoxes,
+        isModelActive,
+        modelError
+    };
 };
 
 export default useFaceProctoring;

@@ -364,7 +364,7 @@ const Candidates = () => {
         // Add Title Header
         doc.setFontSize(18);
         doc.setTextColor(93, 140, 44); // Brand Color #5d8c2c
-        doc.text("HiringAI - Full Candidate Dataset", 14, 20);
+        doc.text("RoleReady - Full Candidate Dataset", 14, 20);
         
         doc.setFontSize(10);
         doc.setTextColor(100, 100, 100);
@@ -576,7 +576,26 @@ const Candidates = () => {
             if (candidate.resume_file) {
                 let resumeUrl = candidate.resume_file;
                 if (!resumeUrl.startsWith('http')) {
-                    resumeUrl = `${API_URL}/media/resumes/${resumeUrl}`;
+                    const token = localStorage.getItem('token');
+                    fetch(`${API_URL}/api/resume/preview-token?file_path=${encodeURIComponent(resumeUrl)}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                    .then(res => {
+                        if (res.ok) return res.json();
+                        throw new Error("Preview token issuance failed");
+                    })
+                    .then(data => {
+                        window.open(`${API_URL}/media/resumes/${resumeUrl}?token=${encodeURIComponent(data.preview_token)}`, '_blank');
+                    })
+                    .catch(() => {
+                        fetch(`${API_URL}/media/resumes/${resumeUrl}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        })
+                        .then(r => r.blob())
+                        .then(blob => window.open(URL.createObjectURL(blob), '_blank'))
+                        .catch(() => alert("Failed to load candidate resume."));
+                    });
+                    return;
                 }
                 window.open(resumeUrl, '_blank');
             } else {

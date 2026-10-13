@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -12,6 +13,12 @@ export default {
       colors: {
         primary: "#5d8c2c", // Brand Green
         actionBlue: "#00AEEF",
+        rrBg: "#F7F9FC",
+        rrDarkBg: "#0B1220",
+        rrCard: "#FFFFFF",
+        rrDarkCard: "#111B2E",
+        rrBorder: "#E2E8F0",
+        rrDarkBorder: "#1E293B",
         sky: {
           50: '#f0f9ff',
           100: '#e0f2fe',

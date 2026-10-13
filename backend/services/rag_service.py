@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from . import groq_client
+from . import gemini_client
 
 load_dotenv()
 
@@ -185,23 +185,18 @@ class RAGService:
     @staticmethod
     def extract_with_llm(text_chunk):
         """
-        Uses Groq to parse structured contact info from raw text.
+        Uses Gemini to parse structured contact info from raw text.
         """
-        if not groq_client.has_groq_key():
+        if not gemini_client.is_ai_available():
             return {}
 
         try:
             return RAGService._inner_extract_with_llm(text_chunk)
         except Exception as e:
-            print(f"Groq extraction failed after retries: {e}")
+            print(f"Gemini extraction failed after retries: {e}")
             return {}
 
     @staticmethod
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=2, max=10),
-        retry=retry_if_exception_type(Exception)
-    )
     def _inner_extract_with_llm(text_chunk):
         prompt = f"""
         Extract the **Candidate Name**, **Email Address**, and **Phone Number** from the text below.
@@ -218,28 +213,12 @@ class RAGService:
         }}
         """
         
-        url = "https://api.groq.com/openai/v1/chat/completions" 
-        payload = {
-            "messages": [
-                {"role": "system", "content": "You are a data extraction assistant. Output valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            "model": groq_client.get_groq_model(),
-            "temperature": 0.1,
-            "response_format": {"type": "json_object"}
-        }
-        
-        response = groq_client.execute_groq_request(url, payload, timeout=15)
-        response.raise_for_status()
-        
-        if response.status_code == 200:
-            content = response.json()['choices'][0]['message']['content']
-            try:
-                return json.loads(content)
-            except json.JSONDecodeError:
-                content = content.replace("```json", "").replace("```", "").strip()
-                return json.loads(content)
-        return {}
+        return gemini_client.call_gemini(
+            prompt,
+            system_prompt="You are a data extraction assistant. Output valid JSON only.",
+            temperature=0.1,
+            json_mode=True,
+        )
 
     @staticmethod
     def screen_resume(
@@ -264,10 +243,10 @@ class RAGService:
                 "missing_skills": []
             }
 
-        # 3. Call Groq API with context
-        if not groq_client.has_groq_key():
+        # 3. Call Gemini with context
+        if not gemini_client.is_ai_available():
             return {"score": 0, "reasoning": "Missing API Key", "key_skills_match": [], "missing_skills": []}
-        return RAGService.call_groq_api(
+        return RAGService.call_gemini_screening(
             jd_text,
             resume_context,
             required_skills=required_skills,
@@ -277,12 +256,7 @@ class RAGService:
         )
 
     @staticmethod
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=2, max=10),
-        retry=retry_if_exception_type(Exception)
-    )
-    def call_groq_api(
+    def call_gemini_screening(
         jd,
         resume_context,
         required_skills=None,
@@ -397,29 +371,12 @@ class RAGService:
         """
         
         try:
-            url = "https://api.groq.com/openai/v1/chat/completions" 
-            payload = {
-                "messages": [
-                    {"role": "system", "content": "You are a helpful and accurate recruitment assistant. You only output valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                "model": groq_client.get_groq_model(),
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"}
-            }
-            
-            response = groq_client.execute_groq_request(url, payload, timeout=30)
-            response.raise_for_status() 
-            
-            data = response.json()
-            content = data['choices'][0]['message']['content']
-            
-            try:
-                return json.loads(content)
-            except json.JSONDecodeError:
-                content = content.replace("```json", "").replace("```", "").strip()
-                return json.loads(content)
-            
+            return gemini_client.call_gemini(
+                prompt,
+                system_prompt="You are a helpful and accurate recruitment assistant. You only output valid JSON.",
+                temperature=0.1,
+                json_mode=True,
+            )
         except Exception as e:
-            print(f"Groq API Error: {e}")
+            print(f"Gemini screening error: {e}")
             raise
