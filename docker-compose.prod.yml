@@ -1,65 +1,60 @@
-# ==============================================================================
-# HIRINGAI PRODUCTION DOCKER COMPOSE ORCHESTRATION
-# ==============================================================================
-
 services:
-  # MySQL Database Server
   db:
     image: mysql:8.0
-    container_name: hiringai_mysql_prod
+    container_name: interviewer_mysql
     restart: always
-    env_file:
-      - ./backend/.env
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-hiringai_root_pass}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-InterviewerPass2026}
       MYSQL_DATABASE: ${DB_NAME:-hiringai}
       MYSQL_USER: ${DB_USER:-hiringai_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-hiringai_pass}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-InterviewerPass2026}
     volumes:
-      - mysql_prod_data:/var/lib/mysql
+      - interviewer_mysql_data:/var/lib/mysql
     networks:
-      - hiringai_internal
+      - interviewer_net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${DB_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${DB_PASSWORD:-InterviewerPass2026}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-  # Redis In-Memory Cache
   redis:
     image: redis:7-alpine
-    container_name: hiringai_redis_prod
+    container_name: interviewer_redis
     restart: always
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - redis_prod_data:/data
+      - interviewer_redis_data:/data
     networks:
-      - hiringai_internal
+      - interviewer_net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  # FastAPI ASGI Backend Application
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hiringai_backend_prod
+    container_name: interviewer_backend
     restart: always
     env_file:
       - ./backend/.env
     environment:
       - DB_HOST=db
       - DB_PORT=3306
+      - DB_USER=hiringai_user
+      - DB_PASSWORD=InterviewerPass2026
+      - DB_NAME=hiringai
       - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - FRONTEND_URL=https://interviewer.thirdeyedata.ai
+      - CORS_ORIGINS=https://interviewer.thirdeyedata.ai
     volumes:
-      - backend_media:/app/media
+      - interviewer_media:/app/media
     networks:
-      - hiringai_internal
+      - interviewer_net
     depends_on:
       db:
         condition: service_healthy
@@ -70,48 +65,45 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
 
-  # Frontend Single Page Application (Nginx static)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-/api}
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_dWx0aW1hdGUtZmVycmV0LTYzLmNsZXJrLmFjY291bnRzLmRldiQ}
-        VITE_VAPI_PUBLIC_KEY: ${VITE_VAPI_PUBLIC_KEY:-85876843-8675-47b9-b5bd-f4387a97473d}
-    container_name: hiringai_frontend_prod
+        VITE_API_URL: /api
+        VITE_CLERK_PUBLISHABLE_KEY: pk_test_dWx0aW1hdGUtZmVycmV0LTYzLmNsZXJrLmFjY291bnRzLmRldiQ
+        VITE_VAPI_PUBLIC_KEY: 0faeae3d-541b-4a79-8320-816c202d38b9
+    container_name: interviewer_frontend
     restart: always
     networks:
-      - hiringai_internal
+      - interviewer_net
     depends_on:
       - backend
 
-  # Edge Nginx Reverse Proxy
   reverse_proxy:
     image: nginx:alpine
-    container_name: hiringai_nginx_prod
+    container_name: interviewer_proxy
     restart: always
     ports:
-      - "80:80"
+      - "8212:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - certbot_certs:/etc/letsencrypt:ro
-      - certbot_www:/var/www/certbot:ro
     networks:
-      - hiringai_internal
+      - interviewer_net
     depends_on:
       - backend
       - frontend
 
 networks:
-  hiringai_internal:
+  interviewer_net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 10.97.0.0/24
 
 volumes:
-  mysql_prod_data:
-  redis_prod_data:
-  backend_media:
-  certbot_certs:
-  certbot_www:
+  interviewer_mysql_data:
+  interviewer_redis_data:
+  interviewer_media:

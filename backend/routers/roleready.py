@@ -181,7 +181,7 @@ class SendInvitationsSchema(BaseModel):
 # ==============================================================================
 
 @router.post("/student/initialize")
-async def initialize_student_session(
+def initialize_student_session(
     target_role: Optional[str] = Form("Software Engineer"),
     target_company: Optional[str] = Form(None),
     custom_jd_text: Optional[str] = Form(None),
