@@ -174,7 +174,7 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                     {profile.role === 'STUDENT' && (
                         <Link
                             to="/assessment/setup"
-                            data-fallback="/student/dashboard"
+                            data-fallback="/assessment/setup"
                             className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/assessment') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
                         >
                             Student Assessment

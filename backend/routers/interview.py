@@ -31,20 +31,23 @@ def initialize_interview(
             pass
             
     if not candidate:
+        candidate = db.query(models.Candidate).filter(models.Candidate.email == current_user.email).first()
+
+    if not candidate:
         raise HTTPException(status_code=404, detail="Candidate profile not found")
 
     # 2. Get Context (Resume + Role)
-    # Resume summary is in candidate.analysis_data (JSON) typically
     resume_summary = "No resume data available."
     if candidate.analysis_data:
-        # Try to extract meaningful summary
         resume_summary = str(candidate.analysis_data)
         
-    role = candidate.role or "Software Engineer"
+    role = candidate.role or "Full Stack Engineer"
     
-    # 2.5 Fetch Assessment Config for Instructions
-    # Find the latest 'interview' type assessment for this candidate
+    # 2.5 Fetch Assessment Config & Questions
     custom_instructions = ""
+    questions = []
+    duration = 30
+    assessment = None
     try:
         assessment = db.query(models.Assessment)\
             .filter(models.Assessment.candidate_email == candidate.email)\
@@ -54,25 +57,42 @@ def initialize_interview(
             
         if assessment and assessment.config:
             custom_instructions = assessment.config.get("instructions", "")
+            duration = assessment.config.get("duration") or assessment.config.get("timeLimit") or 30
+
+        if assessment and assessment.questions and isinstance(assessment.questions, list) and len(assessment.questions) > 0:
+            questions = assessment.questions
+        elif assessment and assessment.config and assessment.config.get("questions"):
+            questions = assessment.config.get("questions")
     except Exception as e:
         print(f"Failed to fetch assessment config: {e}")
+
+    # Generate 5 role-specific questions if not already present
+    if not questions or len(questions) < 3:
+        from services import ai_generator
+        questions = ai_generator.generate_interview_questions({
+            "role": role,
+            "focus_area": role,
+            "resume_summary": resume_summary
+        })
+        if assessment:
+            try:
+                assessment.questions = questions
+                db.commit()
+            except Exception as save_err:
+                print(f"Failed to cache questions to assessment: {save_err}")
         
-    # 3. Create Assistant
+    # 3. Create Ephemeral Assistant with 5 Questions
     assistant_id = vapi_service.create_ephemeral_assistant(
         candidate_name=candidate.name,
         role=role,
         resume_summary=resume_summary,
-        custom_instructions=custom_instructions
+        custom_instructions=custom_instructions,
+        questions=questions
     )
     
     if assistant_id:
         # Mark Assessment as Started
         try:
-            assessment = db.query(models.Assessment)\
-                .filter(models.Assessment.candidate_email == candidate.email)\
-                .filter(models.Assessment.type == "interview")\
-                .order_by(models.Assessment.created_at.desc())\
-                .first()
             if assessment and not assessment.started_at:
                 from sqlalchemy.sql import func
                 assessment.started_at = func.now()
@@ -83,7 +103,13 @@ def initialize_interview(
     if not assistant_id:
         raise HTTPException(status_code=500, detail="Failed to initialize AI Interviewer")
         
-    return {"assistantId": assistant_id}
+    return {
+        "assistantId": assistant_id,
+        "questions": questions,
+        "role": role,
+        "candidateName": candidate.name,
+        "duration": duration
+    }
 
 @router.post("/submit")
 def submit_interview(
@@ -219,5 +245,10 @@ def submit_interview(
     db.commit()
     db.refresh(candidate)
     
-    return {"message": "Interview results saved successfully", "candidate_id": candidate.id}
+    return {
+        "message": "Interview results saved successfully",
+        "candidate_id": candidate.id,
+        "scores": current_data.get("interview", {}).get("scores", {}),
+        "overall_score": candidate.score
+    }
 

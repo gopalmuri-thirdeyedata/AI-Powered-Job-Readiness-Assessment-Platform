@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sun, Moon, LogOut, Menu, X, User } from 'lucide-react';
+import { Sun, Moon, LogOut, Menu, X, User, LayoutDashboard } from 'lucide-react';
 import { useClerk, useUser } from '@clerk/clerk-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -12,10 +12,11 @@ import { useTheme } from '../context/ThemeContext';
  * - Centered max-w-7xl inner container with balanced horizontal padding
  * - ThirdEye logo & PrepWin wordmark vertically aligned on one baseline
  * - Responsive light/dark theme toggle utilizing design tokens
+ * - Direct Student Dashboard return button for seamless navigation
  * - Clean user profile identity and sign-out action
  * - Cohesive border and surface treatment in both light (#FFFFFF) and dark (#0B1220 / #111B2E) themes
  */
-const RoleReadyNavbar = ({ title = "Student Assessment", showHome = false }) => {
+const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true }) => {
     const navigate = useNavigate();
     const { user } = useUser();
     const clerk = useClerk();
@@ -86,16 +87,6 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showHome = false }) => 
                         {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
                     </button>
 
-                    {/* Optional Home link if explicitly requested */}
-                    {showHome && (
-                        <Link
-                            to="/"
-                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--rr-muted)] hover:text-[var(--rr-text)] px-3 py-1.5 rounded-xl hover:bg-[var(--rr-bg)] transition-colors"
-                        >
-                            Home
-                        </Link>
-                    )}
-
                     {/* User Identity or Sign In */}
                     {user ? (
                         <div className="flex items-center gap-2.5 pl-2 border-l border-[var(--rr-border)]">
@@ -152,16 +143,6 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showHome = false }) => 
             {/* ── Mobile Dropdown Drawer ── */}
             {mobileMenuOpen && (
                 <div className="md:hidden absolute top-20 left-0 right-0 bg-[var(--rr-surface)] border-b border-[var(--rr-border)] shadow-xl px-5 py-4 animate-in slide-in-from-top-2 duration-200 z-50">
-                    <div className="flex flex-col gap-2">
-                        {showHome && (
-                            <Link
-                                to="/"
-                                onClick={() => setMobileMenuOpen(false)}
-                                className="px-3.5 py-2.5 rounded-xl text-sm font-medium text-[var(--rr-text)] hover:bg-[var(--rr-bg)]"
-                            >
-                                PrepWin Home
-                            </Link>
-                        )}
                         {user ? (
                             <>
                                 <div className="px-3.5 py-2 rounded-xl bg-[var(--rr-card)] border border-[var(--rr-border)] flex items-center gap-2.5 my-1">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard,
+    ClipboardList,
     FileText,
     User,
     LogOut,
@@ -19,29 +20,39 @@ import {
     ChevronRight,
     Sun,
     Moon,
+    TrendingUp
 } from 'lucide-react';
 import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import { useTheme } from '../context/ThemeContext';
 
-// Navigation definition with per-item accent colors
-const navItems = [
-    { label: 'Dashboard',       path: '/student/dashboard',  icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'Skill Gap',       path: '/student/skill-gap',  icon: Target,          accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Roadmap',         path: '/student/roadmap',    icon: Compass,         accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
-    { label: 'Practice',        path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'Mock Interview',      path: '/student/interview',  icon: MessageSquare,   accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
-    { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#F43F5E', glow: 'rgba(244,63,94,0.2)'   },
-    { label: 'Campus Drives',       path: '/student/drives',     icon: Building2,       accent: '#3B82F6', glow: 'rgba(59,130,246,0.2)'  },
-    { label: 'Projects',        path: '/student/projects',   icon: FolderGit2,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Resume',          path: '/student/resume',     icon: FileText,        accent: '#A855F7', glow: 'rgba(168,85,247,0.2)'  },
-    { label: 'Profile',         path: '/student/profile',    icon: User,            accent: '#94A3B8', glow: 'rgba(148,163,184,0.15)'},
+// Primary Assessment & Dashboard Navigation (The 5 Core Sections)
+export const primaryNavItems = [
+    { label: 'Dashboard',       path: '/student/dashboard',   icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
+    { label: 'My Assessments',  path: '/student/assessments', icon: ClipboardList,   accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
+    { label: 'Results',         path: '/student/results',     icon: Award,           accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
+    { label: 'Progress',        path: '/student/progress',    icon: TrendingUp,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
+    { label: 'Profile',         path: '/student/profile',     icon: User,            accent: '#94A3B8', glow: 'rgba(148,163,184,0.15)'},
 ];
+
+// Secondary Career Preparation Modules
+export const secondaryNavItems = [
+    { label: 'Skill Gap',            path: '/student/skill-gap',  icon: Target,          accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
+    { label: 'Roadmap',              path: '/student/roadmap',    icon: Compass,         accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
+    { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
+    { label: 'Mock Interview',       path: '/student/interview',  icon: MessageSquare,   accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
+    { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#F43F5E', glow: 'rgba(244,63,94,0.2)'   },
+    { label: 'Campus Drives',        path: '/student/drives',     icon: Building2,       accent: '#3B82F6', glow: 'rgba(59,130,246,0.2)'  },
+    { label: 'Projects',             path: '/student/projects',   icon: FolderGit2,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
+    { label: 'Resume',               path: '/student/resume',     icon: FileText,        accent: '#A855F7', glow: 'rgba(168,85,247,0.2)'  },
+];
+
+const allNavItems = [...primaryNavItems, ...secondaryNavItems];
 
 /* ─── Sidebar NavItem ─────────────────────────────── */
 const NavItem = ({ item, collapsed, onClick }) => {
     const location = useLocation();
-    const active = location.pathname === item.path;
+    const active = location.pathname === item.path || (item.path === '/student/dashboard' && location.pathname === '/student');
     const Icon = item.icon;
 
     return (
@@ -124,7 +135,7 @@ const StudentLayout = () => {
         navigate('/student/login');
     };
 
-    const currentPage = navItems.find(n => n.path === location.pathname);
+    const currentPage = allNavItems.find(n => n.path === location.pathname);
 
     /* ─── Sidebar Inner Content ─── */
     const SidebarInner = ({ forMobile = false }) => (
@@ -158,7 +169,29 @@ const StudentLayout = () => {
 
             {/* Nav Items */}
             <nav className={`flex-1 py-3 overflow-y-auto student-scrollbar ${collapsed && !forMobile ? 'flex flex-col items-center' : ''}`}>
-                {navItems.map(item => (
+                {/* Section 1: Core Assessment Navigation (5 items) */}
+                {(!collapsed || forMobile) && (
+                    <div className="px-4 pb-1 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                        Assessment Hub
+                    </div>
+                )}
+                {primaryNavItems.map(item => (
+                    <NavItem
+                        key={item.path}
+                        item={item}
+                        collapsed={collapsed && !forMobile}
+                        onClick={forMobile ? () => setMobileOpen(false) : undefined}
+                    />
+                ))}
+
+                {/* Section 2: Secondary Career Preparation Modules */}
+                <div className="my-2 border-t border-slate-100 dark:border-slate-800" />
+                {(!collapsed || forMobile) && (
+                    <div className="px-4 py-1 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                        Career Modules
+                    </div>
+                )}
+                {secondaryNavItems.map(item => (
                     <NavItem
                         key={item.path}
                         item={item}
@@ -286,6 +319,28 @@ const StudentLayout = () => {
                             )}
                         </nav>
                     </div>
+
+                    {/* Center: Responsive Navigation Menu (5 Primary Sections) */}
+                    <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                        {primaryNavItems.map(item => {
+                            const active = location.pathname === item.path || (item.path === '/student/dashboard' && location.pathname === '/student');
+                            const Icon = item.icon;
+                            return (
+                                <Link
+                                    key={item.path}
+                                    to={item.path}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                                        active
+                                            ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs border border-emerald-200/80 dark:border-emerald-500/30 font-bold'
+                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/60 dark:hover:bg-slate-700/60 border border-transparent'
+                                    }`}
+                                >
+                                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                                    <span>{item.label}</span>
+                                </Link>
+                            );
+                        })}
+                    </nav>
 
                     {/* Right: theme toggle & user pill */}
                     <div className="flex items-center gap-2.5">
