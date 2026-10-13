@@ -167,6 +167,9 @@ coverage/
 *.sqlite
 *.sqlite3
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Database data directories
 /data
