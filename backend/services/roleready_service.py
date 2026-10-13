@@ -1872,7 +1872,14 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
     ).first()
 
     if not int_round:
-        raise HTTPException(status_code=404, detail="Interview round configuration missing.")
+        int_round = RoleReadyRoundAttempt(
+            session_id=session.id,
+            round_type="INTERVIEW",
+            status="NOT_STARTED",
+            time_limit_minutes=15
+        )
+        db.add(int_round)
+        _commit_or_500(db)
 
     if session.current_state == RoleReadySessionState.INTERVIEW_UNLOCKED:
         session.current_state = RoleReadySessionState.INTERVIEW_IN_PROGRESS
@@ -1909,7 +1916,14 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
     ).first()
 
     if not int_round:
-        raise HTTPException(status_code=404, detail="Interview round configuration missing.")
+        int_round = RoleReadyRoundAttempt(
+            session_id=session.id,
+            round_type="INTERVIEW",
+            status="NOT_STARTED",
+            time_limit_minutes=15
+        )
+        db.add(int_round)
+        _commit_or_500(db)
 
     if session.current_state == RoleReadySessionState.INTERVIEW_UNLOCKED:
         session.current_state = RoleReadySessionState.INTERVIEW_IN_PROGRESS

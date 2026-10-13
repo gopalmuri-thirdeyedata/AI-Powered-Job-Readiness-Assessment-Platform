@@ -2,7 +2,9 @@ import requests
 import os
 import json
 import re
+from dotenv import load_dotenv
 
+load_dotenv()
 VAPI_PRIVATE_KEY = os.getenv("VAPI_PRIVATE_KEY") 
 # Base Vapi API URL
 VAPI_BASE_URL = "https://api.vapi.ai"
