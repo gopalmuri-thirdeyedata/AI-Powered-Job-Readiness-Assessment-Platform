@@ -86,7 +86,7 @@ const CandidateInvitationPortal = () => {
             <div className="w-full max-w-lg flex items-center justify-between mb-4 px-1">
                 <div className="flex items-center gap-2.5">
                     <img src="/logo_main.png" alt="ThirdEye" className="h-6 w-auto object-contain" />
-                    <span className="text-sm font-bold text-[var(--rr-text)] tracking-tight">RoleReady</span>
+                    <span className="text-sm font-bold text-[var(--rr-text)] tracking-tight">PrepWin</span>
                 </div>
                 <button
                     type="button"

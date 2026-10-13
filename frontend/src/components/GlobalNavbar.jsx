@@ -147,7 +147,7 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-[38px] w-auto object-contain shrink-0" />
                         <div className="hidden sm:block w-px h-6 bg-gray-200 shrink-0" />
                         <div className="flex flex-col justify-center">
-                            <span className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-none">RoleReady</span>
+                            <span className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-none">PrepWin</span>
                             <span className="text-[10px] font-medium text-slate-500 leading-none mt-0.5">Job Readiness Platform</span>
                         </div>
                     </Link>
@@ -167,7 +167,7 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                             to="/platform/organizations"
                             className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${isActive('/platform/organizations') ? 'bg-purple-100 text-purple-800 border border-purple-300 shadow-xs' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'}`}
                         >
-                            RoleReady Platform
+                            PrepWin Platform
                         </Link>
                     )}
 
@@ -261,7 +261,7 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                     {profile.role === 'PLATFORM_ADMIN' && (
                         <div className="hidden sm:flex flex-col items-end">
                             <span className="text-xs font-bold text-purple-900">
-                                RoleReady Platform
+                                PrepWin Platform
                             </span>
                             <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                                 Platform Admin

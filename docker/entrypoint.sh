@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# HIRINGAI / ROLEREADY UNIFIED CONTAINER ENTRYPOINT
+# HIRINGAI / PREPWIN UNIFIED CONTAINER ENTRYPOINT
 # ==============================================================================
 
 # Support custom port for cloud environments (Cloud Run, Render, Heroku)

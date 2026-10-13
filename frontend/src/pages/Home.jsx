@@ -293,7 +293,7 @@ const Home = () => {
                             The 3-Round Sequential Process
                         </span>
                         <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                            How RoleReady Evaluates Job Readiness
+                            How PrepWin Evaluates Job Readiness
                         </h2>
                         <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base leading-relaxed">
                             A connected sequential progression tailored to your target job description and resume.
@@ -427,7 +427,7 @@ const Home = () => {
                                 <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-slate-800">
                                     <div>
                                         <span className="text-xs uppercase font-bold text-slate-500 dark:text-slate-400">Recruitment Command Center</span>
-                                        <h4 className="text-base font-bold text-slate-900 dark:text-white">RoleReady Assessment Operations</h4>
+                                        <h4 className="text-base font-bold text-slate-900 dark:text-white">PrepWin Assessment Operations</h4>
                                     </div>
                                     <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
                                         Active Suite
@@ -527,7 +527,7 @@ const Home = () => {
                     <div className="flex items-center gap-2.5">
                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-6 w-auto object-contain" />
                         <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
-                        <span className="font-bold text-slate-900 dark:text-white text-sm">RoleReady</span>
+                        <span className="font-bold text-slate-900 dark:text-white text-sm">PrepWin</span>
                         <span className="text-[11px] text-slate-400">· ThirdEye Data</span>
                     </div>
 
@@ -538,7 +538,7 @@ const Home = () => {
                     </div>
 
                     <div>
-                        &copy; 2026 RoleReady · ThirdEye Data. All rights reserved.
+                        &copy; 2026 PrepWin · ThirdEye Data. All rights reserved.
                     </div>
                 </div>
             </footer>

@@ -504,7 +504,7 @@ class PlacementDriveApplication(Base):
 
 
 # ==============================================================================
-# ROLEREADY — JOB READINESS & ASSESSMENT PLATFORM MODELS
+# PREPWIN — JOB READINESS & ASSESSMENT PLATFORM MODELS
 # ==============================================================================
 
 class RoleReadySessionState(str, enum.Enum):

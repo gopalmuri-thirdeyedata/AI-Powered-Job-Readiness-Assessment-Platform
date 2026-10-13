@@ -1,7 +1,7 @@
-# RoleReady — Reporting Design & Analytics
+# PrepWin — Reporting Design & Analytics
 
 ## 1. Dual Audience Architecture
-RoleReady generates two strictly partitioned reports:
+PrepWin generates two strictly partitioned reports:
 - **Candidate/Student Job-Readiness Dossier:** Empowering, diagnostic, and private to the student.
 - **Administrator Recruitment Dossier:** Comparative, metric-driven, ranking-capable, and private to the recruiting organization.
 

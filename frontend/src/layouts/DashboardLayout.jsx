@@ -119,7 +119,7 @@ const DashboardLayout = () => {
             <div>
                 {isOpen && (
                     <h3 className="text-[11px] font-black text-[#5d8c2c] uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c]" /> RoleReady Assessment Suite
+                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c]" /> PrepWin Assessment Suite
                     </h3>
                 )}
                 {!isOpen && <div className="h-2" />}
@@ -182,7 +182,7 @@ const DashboardLayout = () => {
                                 <div className="h-16 px-5 border-b border-[#d9e2d9] flex items-center justify-between bg-white flex-shrink-0">
                                     <div className="flex items-center gap-3">
                                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 w-auto object-contain" />
-                                        <span className="text-lg font-bold text-[#5d8c2c] tracking-tight">RoleReady</span>
+                                        <span className="text-lg font-bold text-[#5d8c2c] tracking-tight">PrepWin</span>
                                     </div>
                                     <button
                                         type="button"

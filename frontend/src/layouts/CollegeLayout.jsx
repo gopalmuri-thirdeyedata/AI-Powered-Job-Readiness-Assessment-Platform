@@ -61,7 +61,7 @@ const CollegeLayout = () => {
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-lg font-bold text-indigo-400 tracking-tight group-hover:text-indigo-300 transition-colors">
-                                    RoleReady
+                                    PrepWin
                                 </span>
                                 <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400">
                                     College Placement Office
@@ -174,7 +174,7 @@ const CollegeLayout = () => {
             {/* Footer */}
             <footer className="border-t border-slate-800/80 bg-slate-950/40 py-6 text-center text-xs text-slate-500">
                 <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-                    <p>© 2026 ThirdEye Data — RoleReady College Placement Administration</p>
+                    <p>© 2026 ThirdEye Data — PrepWin College Placement Administration</p>
                     <p className="text-slate-600">Phase 9: Placement Officer Intelligence</p>
                 </div>
             </footer>

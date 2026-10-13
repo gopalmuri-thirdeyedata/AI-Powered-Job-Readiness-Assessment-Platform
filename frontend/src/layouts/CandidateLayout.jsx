@@ -27,7 +27,7 @@ const CandidateLayout = () => {
                     <div className="flex items-center gap-3 sm:gap-4">
                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 sm:h-8 w-auto object-contain" />
                         <div className="hidden sm:block w-[1.5px] h-7 bg-gray-300" />
-                        <span className="text-lg sm:text-xl font-bold text-[#5d8c2c] tracking-tight">RoleReady</span>
+                        <span className="text-lg sm:text-xl font-bold text-[#5d8c2c] tracking-tight">PrepWin</span>
                     </div>
                     <div className="text-[11px] sm:text-xs font-medium text-gray-500 bg-gray-100 px-2.5 sm:px-3 py-1 rounded-full whitespace-nowrap">
                         <span className="hidden xs:inline">Secure </span>Assessment
@@ -59,7 +59,7 @@ const CandidateLayout = () => {
             {/* Simple Footer - Hide for assessments */}
             {!isAssessment && (
                 <footer className="py-4 text-center text-xs text-gray-400 bg-white border-t border-gray-100 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-                    <span>&copy; {new Date().getFullYear()} RoleReady. All rights reserved.</span>
+                    <span>&copy; {new Date().getFullYear()} PrepWin. All rights reserved.</span>
                     <span className="text-gray-300 select-none">·</span>
                     <span className="text-gray-500 font-medium text-[11px]">Developed by Gopal Muri · ThirdEye Data</span>
                 </footer>

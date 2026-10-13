@@ -140,7 +140,7 @@ const StudentLayout = () => {
                 </div>
                 {(!collapsed || forMobile) && (
                     <div className="leading-none">
-                        <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">RoleReady</div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</div>
                         <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
                             Student Career Hub
                         </div>
@@ -329,7 +329,7 @@ const StudentLayout = () => {
                 <footer
                     className="shrink-0 py-4 px-6 text-center text-xs text-slate-400 border-t border-slate-200/80 dark:border-slate-800"
                 >
-                    © 2026 ThirdEye Data — RoleReady Student Career &amp; Placement Platform
+                    © 2026 ThirdEye Data — PrepWin Student Career &amp; Placement Platform
                 </footer>
             </div>
         </div>

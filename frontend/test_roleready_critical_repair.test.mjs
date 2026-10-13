@@ -65,21 +65,21 @@ describe('RoleReady Critical Repair — Authentication, Routing, and Integration
         assert.ok(dashboardCode.includes('getBatchReport'), 'Dashboard must provide consolidated recruitment reports');
     });
 
-    test('7. DashboardLayout replaces old navigation and Branding with RoleReady', () => {
+    test('7. DashboardLayout replaces old navigation and Branding with PrepWin', () => {
         assert.ok(!dashboardLayoutCode.includes('Recruitment Pipeline'), 'Legacy Recruitment Pipeline section title must be replaced');
-        assert.ok(dashboardLayoutCode.includes('RoleReady Assessment Suite'), 'DashboardLayout must render RoleReady Assessment Suite');
+        assert.ok(dashboardLayoutCode.includes('PrepWin Assessment Suite'), 'DashboardLayout must render PrepWin Assessment Suite');
         assert.ok(!dashboardLayoutCode.includes('HiringAI</span>'), 'Mobile header must not render HiringAI branding');
-        assert.ok(dashboardLayoutCode.includes('RoleReady</span>'), 'Mobile header must render RoleReady branding');
+        assert.ok(dashboardLayoutCode.includes('PrepWin</span>'), 'Mobile header must render PrepWin branding');
     });
 
-    test('8. Active layout and guard components use RoleReady branding', () => {
+    test('8. Active layout and guard components use PrepWin branding', () => {
         assert.ok(!clerkGuardCode.includes('HiringAI</span>'), 'ClerkAdminGuard must not render legacy HiringAI');
-        assert.ok(clerkGuardCode.includes('RoleReady'), 'ClerkAdminGuard must render RoleReady');
+        assert.ok(clerkGuardCode.includes('PrepWin'), 'ClerkAdminGuard must render PrepWin');
         assert.ok(!candidateLayoutCode.includes('HiringAI</span>'), 'CandidateLayout must not render legacy HiringAI');
-        assert.ok(candidateLayoutCode.includes('RoleReady</span>'), 'CandidateLayout must render RoleReady');
+        assert.ok(candidateLayoutCode.includes('PrepWin</span>'), 'CandidateLayout must render PrepWin');
         assert.ok(!collegeLayoutCode.includes('HiringAI\n'), 'CollegeLayout must not render legacy HiringAI');
-        assert.ok(collegeLayoutCode.includes('RoleReady'), 'CollegeLayout must render RoleReady');
-        assert.ok(globalNavbarCode.includes('RoleReady Platform'), 'GlobalNavbar must render RoleReady Platform for platform admin');
+        assert.ok(collegeLayoutCode.includes('PrepWin'), 'CollegeLayout must render PrepWin');
+        assert.ok(globalNavbarCode.includes('PrepWin Platform'), 'GlobalNavbar must render PrepWin Platform for platform admin');
     });
 
     test('9. Candidate invitation portal and API service persist and send invitation tokens', () => {

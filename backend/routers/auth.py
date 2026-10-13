@@ -125,7 +125,7 @@ def _check_email_allowed(raw_email: str, db: Session, intent: str = "admin") -> 
         return {
             "allowed": True,
             "role": "STUDENT",
-            "organization_name": "RoleReady Student Assessment"
+            "organization_name": "PrepWin Student Assessment"
         }
 
     # 3. Organization Member check for Enterprise Administrator Suite
@@ -145,7 +145,7 @@ def _check_email_allowed(raw_email: str, db: Session, intent: str = "admin") -> 
             }
         return {
             "allowed": False,
-            "detail": "This email has not been invited to the RoleReady enterprise recruitment workspace. Please contact your organization administrator."
+            "detail": "This email has not been invited to the PrepWin enterprise recruitment workspace. Please contact your organization administrator."
         }
 
     # Check organization status
@@ -173,7 +173,7 @@ def _check_email_allowed(raw_email: str, db: Session, intent: str = "admin") -> 
 def check_email_registered_post(payload: CheckEmailSchema, db: Session = Depends(database.get_db)):
     """
     Pre-authentication authorization check:
-    Validates whether an email address is authorized in RoleReady BEFORE sending OTP.
+    Validates whether an email address is authorized in PrepWin BEFORE sending OTP.
     """
     return _check_email_allowed(payload.email, db, intent=payload.intent or "admin")
 
@@ -203,7 +203,7 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
         student_org = db.query(models.Organization).filter_by(slug="roleready-students").first()
         if not student_org:
             student_org = models.Organization(
-                name="RoleReady Student Assessment Hub",
+                name="PrepWin Student Assessment Hub",
                 slug="roleready-students",
                 status="active"
             )
@@ -276,7 +276,7 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account has not been invited to RoleReady. Please contact your organization administrator."
+                detail="Your account has not been invited to PrepWin. Please contact your organization administrator."
             )
 
         if membership.status == "pending":
@@ -355,7 +355,7 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
     # 5. ATTEMPTED ADMIN ACCESS WITHOUT PROVISIONED MEMBERSHIP
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Your account has not been provisioned for the RoleReady enterprise recruitment workspace. Please contact your organization administrator."
+        detail="Your account has not been provisioned for the PrepWin enterprise recruitment workspace. Please contact your organization administrator."
     )
 
 # Dependency
@@ -522,7 +522,7 @@ def get_current_user_profile(
             "email": current_user.email,
             "role": "STUDENT",
             "organization_id": current_user.organization_id,
-            "organization_name": "RoleReady Student Assessment Hub",
+            "organization_name": "PrepWin Student Assessment Hub",
             "organization_slug": "roleready-students"
         }
 

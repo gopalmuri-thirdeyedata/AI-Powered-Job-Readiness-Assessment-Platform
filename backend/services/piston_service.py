@@ -7,7 +7,7 @@ import requests
 DEFAULT_API_URL = "https://ce.judge0.com/submissions"
 
 # Language Mapping (Frontend/Internal -> Judge0 language_id)
-# RoleReady assessments and student practice enforce Python only at their own layers;
+# PrepWin assessments and student practice enforce Python only at their own layers;
 # other entries remain for the recruiter-managed assessment flows.
 LANGUAGE_MAP = {
     "javascript": {"language_id": 63},

@@ -1,7 +1,7 @@
-# RoleReady — UI & UX Design Plan
+# PrepWin — UI & UX Design Plan
 
 ## 1. Visual Identity & Brand Philosophy
-- **Product Name:** RoleReady
+- **Product Name:** PrepWin
 - **Tagline:** "AI-powered assessments that evaluate job readiness against real job requirements."
 - **Color Palette:**
   - Deep Navy / Slate Obsidian Background: `#070B14`, `#0C1120`, `#111827`
@@ -25,7 +25,7 @@
 - Step 1: Upload resume (with drag-and-drop & instant parsing preview).
 - Step 2: Paste or upload target Job Description.
 - Step 3: AI Analysis Card showing detected competencies and generated assessment battery.
-- Step 4: "Launch RoleReady Assessment" button.
+- Step 4: "Launch PrepWin Assessment" button.
 
 ### 2.3 The Sequential Assessment Portal (`/assessment/:session_uuid`)
 - Unified Header with round progress breadcrumb:

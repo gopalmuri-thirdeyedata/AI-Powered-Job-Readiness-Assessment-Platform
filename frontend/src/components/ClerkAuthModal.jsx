@@ -174,7 +174,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
             setIsCheckingEmail(false);
 
             if (!result.allowed) {
-                setEmailError(result.detail || "This email has not been invited to RoleReady.");
+                setEmailError(result.detail || "This email has not been invited to PrepWin.");
                 identifierInput.focus();
                 identifierInput.style.borderColor = '#ef4444';
             } else {
@@ -230,7 +230,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                     pendingCheckRef.current = false;
                     setIsCheckingEmail(false);
                     if (!result.allowed) {
-                        setEmailError(result.detail || "This email has not been invited to RoleReady.");
+                        setEmailError(result.detail || "This email has not been invited to PrepWin.");
                         target.style.borderColor = '#ef4444';
                     } else {
                         verifiedEmailsRef.current.add(email);
@@ -367,7 +367,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                             className="h-7 w-auto object-contain shrink-0" 
                         />
                         <span className="text-[15px] font-bold text-[#5d8c2c] tracking-tight leading-none translate-y-[4.5px]">
-                            RoleReady
+                            PrepWin
                         </span>
                     </div>
                     <span className="text-[11px] font-medium text-slate-500 mt-1">

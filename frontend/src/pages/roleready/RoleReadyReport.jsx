@@ -134,7 +134,7 @@ const RoleReadyReport = () => {
                             <span>Verified Assessment Dossier</span>
                         </div>
                         <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--rr-text)] tracking-tight">
-                            RoleReady Job-Readiness Report
+                            PrepWin Job-Readiness Report
                         </h1>
                         <p className="text-sm text-[var(--rr-text-2)] mt-1">
                             Role: <strong className="text-[var(--rr-text)]">{target_role}</strong> {target_company && `• Target: ${target_company}`}
@@ -277,7 +277,7 @@ const RoleReadyReport = () => {
                 <div className="p-6 bg-[var(--rr-bg)] border border-[var(--rr-border)] rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div>
                         <h4 className="text-sm font-bold text-[var(--rr-text)]">Ready to benchmark against another role?</h4>
-                        <p className="text-xs text-[var(--rr-muted)] mt-0.5">Upload a different JD or refine your resume to take a new RoleReady assessment.</p>
+                        <p className="text-xs text-[var(--rr-muted)] mt-0.5">Upload a different JD or refine your resume to take a new PrepWin assessment.</p>
                     </div>
                     <Link
                         to="/assessment/setup"

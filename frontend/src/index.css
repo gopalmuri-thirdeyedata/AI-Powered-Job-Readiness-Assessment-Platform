@@ -5,7 +5,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── ThirdEye / RoleReady Design Tokens ────────── */
+/* ─── ThirdEye / PrepWin Design Tokens ────────── */
 /* Light mode (default) */
 :root {
     /* Brand */
@@ -35,7 +35,7 @@
     --rr-error:      #DC2626;
     --rr-info:       #2563EB;
 
-    /* Student Platform Tokens — Light-First (matches RoleReady Light Theme) */
+    /* Student Platform Tokens — Light-First (matches PrepWin Light Theme) */
     --s-bg:        #F7F9FC;
     --s-surface:   #FFFFFF;
     --s-elevated:  #FFFFFF;
@@ -157,7 +157,7 @@
         @apply w-full px-4 py-3 bg-white border border-gray-200 rounded-none focus:outline-none focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] text-black placeholder-gray-400 transition-all;
     }
 
-    /* ─── RoleReady Page Components (light+dark aware) ── */
+    /* ─── PrepWin Page Components (light+dark aware) ── */
     .rr-page {
         background-color: var(--rr-bg);
         color: var(--rr-text);

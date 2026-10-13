@@ -1,4 +1,4 @@
-# RoleReady — Testing Strategy & Quality Assurance Plan
+# PrepWin — Testing Strategy & Quality Assurance Plan
 
 ## 1. Testing Hierarchy
 1. **Unit Tests (Backend):**

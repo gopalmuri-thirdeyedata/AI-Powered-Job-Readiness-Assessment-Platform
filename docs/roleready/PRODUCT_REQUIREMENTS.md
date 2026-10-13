@@ -1,9 +1,9 @@
-# RoleReady — Product Requirements Document (PRD)
+# PrepWin — Product Requirements Document (PRD)
 
 ## 1. Executive Summary
-**RoleReady** is an enterprise-grade, AI-powered Job Readiness & Assessment Platform designed to evaluate candidate competencies directly against verified Job Descriptions (JDs). 
+**PrepWin** is an enterprise-grade, AI-powered Job Readiness & Assessment Platform designed to evaluate candidate competencies directly against verified Job Descriptions (JDs). 
 
-RoleReady bridges the gap between academic preparation and industry recruitment standards by providing an objective, three-tier sequential assessment pipeline:
+PrepWin bridges the gap between academic preparation and industry recruitment standards by providing an objective, three-tier sequential assessment pipeline:
 1. **Round 1: Role-Specific Aptitude & Reasoning**
 2. **Round 2: Practical Coding & Algorithmic Problem Solving**
 3. **Round 3: Conversational AI Technical & Behavioral Interview**
@@ -14,7 +14,7 @@ RoleReady bridges the gap between academic preparation and industry recruitment 
 
 ### Workflow A: Student Self-Assessment
 1. **Authentication & Profile Setup:**
-   - Student logs in via the RoleReady student portal.
+   - Student logs in via the PrepWin student portal.
    - Student uploads their current resume (PDF / DOCX).
    - Student inputs a target Job Description (either by uploading a JD document or pasting full job text).
 2. **Context Synthesis & Assessment Generation:**

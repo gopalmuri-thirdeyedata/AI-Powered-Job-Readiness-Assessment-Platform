@@ -65,7 +65,7 @@ Eliminating recruitment bottlenecks and cognitive bias, HiringAI provides an end
 
 ---
 
-## 🎓 RoleReady Assessment Notes
+## 🎓 PrepWin Assessment Notes
 
 - **LLM provider:** all AI calls go through `backend/services/gemini_client.py` (Google Gemini only; no OpenAI or Groq).
   Set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL_NAME`). `GEMINI_MOCK_MODE=true` serves offline fixtures for development and tests; keep it `false` in production.

@@ -786,7 +786,7 @@ const RoleReadyAssessment = () => {
         return (
             <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 gap-3">
                 <RefreshCw className="w-9 h-9 text-emerald-600 animate-spin" />
-                <p className="text-slate-600 text-sm font-semibold tracking-tight">Initializing RoleReady Proctored Assessment...</p>
+                <p className="text-slate-600 text-sm font-semibold tracking-tight">Initializing PrepWin Proctored Assessment...</p>
             </div>
         );
     }
@@ -818,7 +818,7 @@ const RoleReadyAssessment = () => {
                 onAction={isRecoveryOpen ? returnToFullscreen : enterFullscreen}
                 timeLeft={recoveryTimeLeft}
                 error={fullscreenError}
-                title={isRecoveryOpen ? "Fullscreen Required — Integrity Alert" : "RoleReady Secure Assessment Gate"}
+                title={isRecoveryOpen ? "Fullscreen Required — Integrity Alert" : "PrepWin Secure Assessment Gate"}
                 description={
                     isRecoveryOpen
                         ? "You have exited fullscreen mode. Please return within the countdown window to avoid a malpractice violation."
@@ -849,10 +849,10 @@ const RoleReadyAssessment = () => {
             {/* =========================================================== */}
             <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3 flex-shrink-0 z-30 shadow-xs">
                 <div className="w-full max-w-[1700px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    {/* Left: RoleReady Brand & Target Position */}
+                    {/* Left: PrepWin Brand & Target Position */}
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">
-                            <span className="text-lg font-extrabold text-slate-900 tracking-tight">RoleReady</span>
+                            <span className="text-lg font-extrabold text-slate-900 tracking-tight">PrepWin</span>
                             <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold uppercase tracking-wider flex items-center gap-1">
                                 <ShieldCheck className="w-3 h-3 text-emerald-600" /> Proctored
                             </span>
@@ -993,7 +993,7 @@ const RoleReadyAssessment = () => {
                                         <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Assessment Overview & Rules
                                     </div>
                                     <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                                        RoleReady Assessment Instructions
+                                        PrepWin Assessment Instructions
                                     </h1>
                                     <p className="text-sm text-slate-600 mt-1">
                                         Target Position: <strong className="text-slate-900">{sessionData?.target_role}</strong> {sessionData?.target_company && `at ${sessionData.target_company}`}

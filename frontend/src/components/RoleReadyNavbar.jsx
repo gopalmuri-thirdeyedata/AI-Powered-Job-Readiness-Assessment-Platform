@@ -7,10 +7,10 @@ import { useTheme } from '../context/ThemeContext';
 /**
  * RoleReadyNavbar
  * 
- * Standardized shared navbar for RoleReady assessment setup & assessment screens:
- * - 80px (h-20) height matching RoleReady homepage
+ * Standardized shared navbar for PrepWin assessment setup & assessment screens:
+ * - 80px (h-20) height matching PrepWin homepage
  * - Centered max-w-7xl inner container with balanced horizontal padding
- * - ThirdEye logo & RoleReady wordmark vertically aligned on one baseline
+ * - ThirdEye logo & PrepWin wordmark vertically aligned on one baseline
  * - Responsive light/dark theme toggle utilizing design tokens
  * - Clean user profile identity and sign-out action
  * - Cohesive border and surface treatment in both light (#FFFFFF) and dark (#0B1220 / #111B2E) themes
@@ -47,7 +47,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showHome = false }) => 
                 
                 {/* ── Left: Branding & Subtitle ── */}
                 <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-                    <Link to="/" className="flex items-center gap-3 group focus:outline-none shrink-0" title="RoleReady Home">
+                    <Link to="/" className="flex items-center gap-3 group focus:outline-none shrink-0" title="PrepWin Home">
                         <img
                             src="/logo_main.png"
                             alt="ThirdEye Data"
@@ -56,7 +56,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showHome = false }) => 
                         <div className="w-px h-6 bg-[var(--rr-border)] hidden sm:block shrink-0" />
                         <div className="flex flex-col justify-center">
                             <span className="text-lg font-bold tracking-tight text-[var(--rr-text)] group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors leading-none">
-                                RoleReady
+                                PrepWin
                             </span>
                             <span className="text-[10px] font-medium text-[var(--rr-muted)] tracking-normal mt-1 leading-none">
                                 Job Readiness Platform
@@ -159,7 +159,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showHome = false }) => 
                                 onClick={() => setMobileMenuOpen(false)}
                                 className="px-3.5 py-2.5 rounded-xl text-sm font-medium text-[var(--rr-text)] hover:bg-[var(--rr-bg)]"
                             >
-                                RoleReady Home
+                                PrepWin Home
                             </Link>
                         )}
                         {user ? (

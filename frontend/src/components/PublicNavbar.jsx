@@ -65,7 +65,7 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
                         <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 hidden sm:block shrink-0" />
                         <div className="flex flex-col justify-center">
                             <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors leading-none">
-                                RoleReady
+                                PrepWin
                             </span>
                             <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 tracking-normal mt-1 leading-none">
                                 Job Readiness Platform

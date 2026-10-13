@@ -1,4 +1,4 @@
-# RoleReady — Database Design & Schema Evolution
+# PrepWin — Database Design & Schema Evolution
 
 ## 1. Design Principles
 1. **Zero Data Loss:** All existing tables (`users`, `organizations`, `job_descriptions`, `candidates`, `assessments`, `student_profiles`) remain intact.

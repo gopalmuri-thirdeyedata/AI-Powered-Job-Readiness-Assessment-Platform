@@ -18,7 +18,7 @@ export const ThemeProvider = ({ children }) => {
             if (stored === 'dark' || stored === 'light') return stored;
         } catch { /* localStorage unavailable */ }
 
-        // Default: light mode (ThirdEye / RoleReady default)
+        // Default: light mode (ThirdEye / PrepWin default)
         return 'light';
     });
 

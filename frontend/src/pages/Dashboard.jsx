@@ -65,7 +65,7 @@ const Dashboard = () => {
     // Step 2: Configure Assessment
     const [targetRole, setTargetRole] = useState('Software Engineer');
     const [targetCompany, setTargetCompany] = useState('ThirdEye Data');
-    const [batchName, setBatchName] = useState('RoleReady Campus Batch 2026');
+    const [batchName, setBatchName] = useState('PrepWin Campus Batch 2026');
     const [jobDescription, setJobDescription] = useState(
         `Job Title: Software Engineer\n\nRequirements:\n- Strong problem-solving skills in Data Structures and Algorithms\n- Proficiency in Python, JavaScript, TypeScript, or modern web frameworks (React, Node.js, FastAPI)\n- Understanding of database design, RESTful APIs, and cloud fundamentals\n- Excellent written and verbal communication skills`
     );
@@ -232,7 +232,7 @@ const Dashboard = () => {
         setConfirmation({
             isOpen: true,
             title: 'Send Assessment Invitations',
-            message: `Are you sure you want to dispatch unique RoleReady assessment links to ${validCandidates.length} candidate(s)? This will generate single-use assessment tokens and deliver invitation emails.`,
+            message: `Are you sure you want to dispatch unique PrepWin assessment links to ${validCandidates.length} candidate(s)? This will generate single-use assessment tokens and deliver invitation emails.`,
             type: 'info',
             confirmText: 'Send Invitations',
             cancelText: 'Cancel',
@@ -321,7 +321,7 @@ const Dashboard = () => {
                 name: candidate.name,
                 email: candidate.email,
                 target_role: candidate.target_role || 'Software Engineer',
-                target_company: 'RoleReady Assessment',
+                target_company: 'PrepWin Assessment',
                 assessment_state: candidate.assessment_state || candidate.readable_status,
                 overall_readiness_score: candidate.overall_score || 0,
                 aptitude_score: candidate.aptitude_score,
@@ -388,7 +388,7 @@ const Dashboard = () => {
                 <div>
                     <div className="flex items-center gap-2 mb-1.5">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#5d8c2c]/15 text-[#5d8c2c] border border-[#5d8c2c]/30">
-                            RoleReady Admin Workspace
+                            PrepWin Admin Workspace
                         </span>
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Standardized Candidate Pipeline</span>
                     </div>

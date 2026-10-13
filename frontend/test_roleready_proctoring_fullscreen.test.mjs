@@ -80,7 +80,7 @@ describe('RoleReady Person Detection, Device Monitoring & Fullscreen Enforcement
 
     test('10. Dedicated Step 1 Instructions contains overview, round durations, rules, and Continue to Device Check CTA', () => {
         assert.ok(assessmentFile.includes("currentStage === 'instructions'"), "Must have dedicated instructions stage check");
-        assert.ok(assessmentFile.includes("RoleReady Assessment Instructions"), "Must show instructions banner");
+        assert.ok(assessmentFile.includes("PrepWin Assessment Instructions"), "Must show instructions banner");
         assert.ok(assessmentFile.includes("Round 1"), "Must display Round 1 info");
         assert.ok(assessmentFile.includes("Round 2"), "Must display Round 2 info");
         assert.ok(assessmentFile.includes("Round 3"), "Must display Round 3 info");

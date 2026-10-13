@@ -120,7 +120,7 @@ const StudentLogin = () => {
                         <div className="w-px h-7 bg-slate-200 dark:bg-slate-700" />
                         <div>
                             <div className="flex items-center gap-2">
-                                <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">RoleReady</span>
+                                <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">PrepWin</span>
                                 <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30">
                                     Student Portal
                                 </span>
@@ -193,7 +193,7 @@ const StudentLogin = () => {
                             className="h-9 w-auto object-contain"
                         />
                         <div className="text-left">
-                            <span className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">RoleReady</span>
+                            <span className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</span>
                             <span className="text-[10px] block text-emerald-600 dark:text-emerald-400 font-semibold tracking-wider uppercase">Student Portal</span>
                         </div>
                     </Link>

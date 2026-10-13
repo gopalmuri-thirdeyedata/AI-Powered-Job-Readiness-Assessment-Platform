@@ -1,7 +1,7 @@
-# RoleReady — System Architecture
+# PrepWin — System Architecture
 
 ## 1. Architectural Overview
-RoleReady is architected as an asynchronous, API-driven web application with distinct tenant boundaries, decoupled assessment execution engines, and a unified scoring pipeline.
+PrepWin is architected as an asynchronous, API-driven web application with distinct tenant boundaries, decoupled assessment execution engines, and a unified scoring pipeline.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐

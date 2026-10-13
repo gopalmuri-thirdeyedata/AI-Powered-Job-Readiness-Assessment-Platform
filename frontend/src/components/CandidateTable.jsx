@@ -303,7 +303,7 @@ const CandidateTable = ({
         // Add Title Header
         doc.setFontSize(18);
         doc.setTextColor(93, 140, 44); // Brand Color #5d8c2c
-        doc.text("RoleReady - Candidate Assessment Dataset", 14, 20);
+        doc.text("PrepWin - Candidate Assessment Dataset", 14, 20);
         
         doc.setFontSize(10);
         doc.setTextColor(100, 100, 100);

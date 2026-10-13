@@ -156,9 +156,9 @@ const GlobalSettings = () => {
             bonus: 5
         },
         emails: {
-            invitationSubject: 'Invitation to Assessment Round - RoleReady',
+            invitationSubject: 'Invitation to Assessment Round - PrepWin',
             invitationBody: 'Dear Candidate,\n\nYou have been promoted to the next stage of our recruitment process. Please log in to the portal to take your assessment.',
-            reminderSubject: 'Reminder: Pending Assessment - RoleReady',
+            reminderSubject: 'Reminder: Pending Assessment - PrepWin',
             reminderBody: 'Dear Candidate,\n\nThis is a friendly reminder to complete your pending assessment as soon as possible.'
         },
         security: {

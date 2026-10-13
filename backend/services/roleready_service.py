@@ -1,5 +1,5 @@
 """
-RoleReady — Core Orchestration Service
+PrepWin — Core Orchestration Service
 Governs Workflow A (Student Self-Assessment) and Workflow B (Admin Recruitment),
 including the strict sequential state machine, dynamic JD/Resume synthesis,
 proctoring telemetry, sandboxed execution, and dual-audience reporting.
@@ -1913,7 +1913,7 @@ Return valid JSON:
                 qualitative = eval_res
                 evaluation_source = "ai"
         except Exception as e:
-            print(f"[RoleReady] AI interview evaluation fallback: {e}")
+            print(f"[PrepWin] AI interview evaluation fallback: {e}")
 
     _claim_round(db, int_round)
     int_round.score = interview_score

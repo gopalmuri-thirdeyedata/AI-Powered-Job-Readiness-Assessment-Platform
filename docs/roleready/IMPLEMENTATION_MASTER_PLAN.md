@@ -1,7 +1,7 @@
-# RoleReady — Implementation Master Plan
+# PrepWin — Implementation Master Plan
 
 ## 1. Overview & Strategy
-This master plan governs the sequential transformation of the existing codebase into **RoleReady — AI-Powered Job Readiness & Assessment Platform**. Every phase delivers verifiable, production-ready code with corresponding automated test suites.
+This master plan governs the sequential transformation of the existing codebase into **PrepWin — AI-Powered Job Readiness & Assessment Platform**. Every phase delivers verifiable, production-ready code with corresponding automated test suites.
 
 ---
 

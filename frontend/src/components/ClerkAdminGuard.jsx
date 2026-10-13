@@ -110,7 +110,7 @@ function ClerkSyncWrapper({ children }) {
                     <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-400">
                         <GraduationCap size={32} />
                     </div>
-                    <span className="text-xs uppercase tracking-widest text-emerald-400 font-bold mb-1 block">RoleReady</span>
+                    <span className="text-xs uppercase tracking-widest text-emerald-400 font-bold mb-1 block">PrepWin</span>
                     <h2 className="text-2xl font-bold text-white mb-2">
                         Student Account Detected
                     </h2>
@@ -147,14 +147,14 @@ function ClerkSyncWrapper({ children }) {
                     <div className="w-14 h-14 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-red-400">
                         <ShieldAlert size={28} />
                     </div>
-                    <span className="text-xs uppercase tracking-widest text-emerald-500 font-bold mb-1 block">RoleReady</span>
+                    <span className="text-xs uppercase tracking-widest text-emerald-500 font-bold mb-1 block">PrepWin</span>
                     <h2 className="text-2xl font-bold text-white mb-3">
                         {error.isForbidden ? "Administrator Access Required" : "Authentication Error"}
                     </h2>
                     <p className="text-gray-300 text-sm mb-6 leading-relaxed max-w-md mx-auto">
                         {error.isForbidden ? (
                             <>
-                                Your account has not been provisioned for any RoleReady enterprise organization.
+                                Your account has not been provisioned for any PrepWin enterprise organization.
                                 <br className="my-1" />
                                 Please contact your organization administrator to request access.
                             </>

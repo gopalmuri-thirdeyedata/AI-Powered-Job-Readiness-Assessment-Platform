@@ -20,7 +20,7 @@ from routers import auth, assessments, resume, dashboard, settings, interview, p
 # Validate JWT secret configuration on startup (fails safely in production if secret is weak/default)
 utils.validate_jwt_secret()
 
-app = FastAPI(title="RoleReady — AI-Powered Job Readiness & Assessment Platform API")
+app = FastAPI(title="PrepWin — AI-Powered Job Readiness & Assessment Platform API")
 
 # Ensure required storage directories exist
 os.makedirs("media/resumes", exist_ok=True)
@@ -229,4 +229,4 @@ app.include_router(roleready.router)
 
 @app.get("/")
 def read_root():
-    return {"message": "RoleReady API is running on FastAPI!"}
+    return {"message": "PrepWin API is running on FastAPI!"}

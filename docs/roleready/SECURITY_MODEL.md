@@ -1,8 +1,8 @@
-# RoleReady — Security Model & Isolation Framework
+# PrepWin — Security Model & Isolation Framework
 
 ## 1. Multi-Tenant Organization Isolation
 1. **Strict Scoping:** Every recruiter entity (`job_descriptions`, `recruitment_batches`, `candidate_invitations`, `candidates`) includes an indexed `organization_id` column.
-2. **Database Query Guards:** Every administrative query in `RoleReady` enforces `WHERE organization_id = :org_id` derived exclusively from the verified Clerk session claims.
+2. **Database Query Guards:** Every administrative query in `PrepWin` enforces `WHERE organization_id = :org_id` derived exclusively from the verified Clerk session claims.
 3. **Cross-Tenant Prevention:** An admin cannot view, invite, or download reports for candidates outside their tenant organization under any circumstance.
 
 ---

@@ -1,4 +1,4 @@
-# RoleReady — API Specification & Endpoint Design
+# PrepWin — API Specification & Endpoint Design
 
 ## 1. Authentication & Security Headers
 All endpoints require either:
