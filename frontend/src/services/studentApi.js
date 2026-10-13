@@ -106,6 +106,14 @@ export const studentApi = {
         return response.data;
     },
 
+    // RoleReady Assessment History & Progress
+    async getAssessmentHistory() {
+        const response = await axios.get(`${API_URL}/api/roleready/student/assessments`, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
     // Phase 2: Skill Gap & Target Roles
     async getTargetRoles() {
         const response = await axios.get(`${API_URL}/api/student/target-roles`, {

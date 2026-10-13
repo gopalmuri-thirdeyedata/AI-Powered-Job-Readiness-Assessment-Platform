@@ -59,7 +59,7 @@ const Home = () => {
         if (authParam === 'admin' || ['ORGANIZATION_ADMIN', 'HR', 'PLATFORM_ADMIN'].includes(profile.role)) {
             navigate('/admin/dashboard', { replace: true });
         } else {
-            // Default authenticated student self-assessment setup page
+            // Take authenticated student directly to RoleReady Assessment Setup
             navigate('/assessment/setup', { replace: true });
         }
     }, [user, isLoaded, searchParams, navigate]);

@@ -38,6 +38,13 @@ export const rolereadyApi = {
         return response.data;
     },
 
+    async getStudentAssessments() {
+        const response = await axios.get(`${API_URL}/api/roleready/student/assessments`, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
     // Round 1: Aptitude
     async startAptitude(sessionUuid) {
         const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/start-aptitude`, {}, {
@@ -90,6 +97,13 @@ export const rolereadyApi = {
     // Round 3: Interview
     async startInterview(sessionUuid) {
         const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/start-interview`, {}, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    async initVapiSession(sessionUuid) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/vapi-init`, {}, {
             headers: getAuthHeaders()
         });
         return response.data;

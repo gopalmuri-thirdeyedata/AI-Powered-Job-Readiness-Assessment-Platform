@@ -618,11 +618,12 @@ Return valid JSON with a "questions" array where each item has:
 
 
 PYTHON_STARTER_DEFAULT = "def solve():\n    pass\n\nif __name__ == '__main__':\n    pass\n"
+JAVA_STARTER_DEFAULT = "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        // Write solution here\n    }\n}\n"
 
 
 def _build_coding_payload(problems: Any, count: int):
     """
-    Validates AI-generated coding problems: exactly `count` problems, Python-only starter code,
+    Validates AI-generated coding problems: exactly `count` problems, Python and Java starter code,
     exactly 1 public sample test and 3-4 hidden tests. Returns (client_safe, server_keys) or None.
     """
     if not isinstance(problems, list) or len(problems) < count:
@@ -645,7 +646,10 @@ def _build_coding_payload(problems: Any, count: int):
             "input_format": prob.get("input_format", ""),
             "output_format": prob.get("output_format", ""),
             "constraints": prob.get("constraints", ""),
-            "starter_code": {"python": starter.get("python") or PYTHON_STARTER_DEFAULT},
+            "starter_code": {
+                "python": starter.get("python") or PYTHON_STARTER_DEFAULT,
+                "java": starter.get("java") or JAVA_STARTER_DEFAULT
+            },
             "public_test_cases": public[:1],
         })
         server_keys[pid] = {"hidden_test_cases": hidden[:4]}
@@ -1029,27 +1033,48 @@ Return valid JSON:
     return client_safe, server_keys
 
 
-def generate_interview_questions(jd_data: Dict[str, Any], resume_data: Optional[Dict[str, Any]] = None, count: int = 5) -> List[Dict[str, Any]]:
+def generate_interview_questions(
+    jd_data: Dict[str, Any],
+    resume_data: Optional[Dict[str, Any]] = None,
+    count: int = 5,
+    resume_text: str = "",
+    jd_text: str = ""
+) -> List[Dict[str, Any]]:
     """
     Generates conversational technical & behavioral interview questions grounded in JD and resume.
     """
     role = jd_data.get("role_title", "Software Engineer")
     skills = ", ".join(jd_data.get("required_skills", ["Full Stack Development"]))
-    candidate_skills = ", ".join(resume_data.get("skills", [])) if resume_data else "General Engineering"
+    candidate_skills = ", ".join(_skill_names(resume_data)) if resume_data else "General Engineering"
+
+    jd_context = jd_text[:1200] if jd_text else f"Role: {role}\nRequired Skills: {skills}"
+    resume_context = resume_text[:1200] if resume_text else f"Candidate Skills: {candidate_skills}"
 
     prompt = f"""
-Generate {count} technical and behavioral interview questions for a candidate being assessed for '{role}'.
-Job Required Skills: {skills}
-Candidate Skills Snapshot: {candidate_skills}
+You are a senior hiring bar raiser conducting a rigorous, highly conversational 5-question voice interview.
+Generate {count} technical and behavioral interview questions grounded specifically in the target Job Description and Candidate Resume.
 
-Return valid JSON with an array "questions" containing objects with:
+TARGET JOB DESCRIPTION & REQUIREMENTS:
+{jd_context}
+
+CANDIDATE RESUME & EXPERIENCE:
+{resume_context}
+
+CRITICAL RULES FOR THE 5 QUESTIONS:
+1. Question 1: Open with a welcoming question probing a specific project, technology, or accomplishment from their resume that directly relates to the {role} position.
+2. Question 2: Architectural and technical defense testing their core design patterns against the required JD stack ({skills}).
+3. Question 3: A realistic debugging or edge-case troubleshooting scenario in the required tech stack.
+4. Question 4: System design or scalability challenge tailored to the role's responsibilities.
+5. Question 5: Production resilience, trade-offs, and behavioral collaboration (STAR methodology).
+
+Return strictly valid JSON with an array "questions" containing objects with:
 - "id": integer (1 to {count})
 - "type": "TECHNICAL" or "BEHAVIORAL" or "SYSTEM_DESIGN"
-- "question": realistic, conversational question text
-- "evaluation_criteria": key points a strong answer should cover
+- "question": realistic, conversational question text suitable for a voice interview
+- "evaluation_criteria": key technical competencies and STAR points a strong answer must demonstrate
 """
     try:
-        res = call_gemini(prompt, system_prompt="You are an expert technical interviewer and hiring bar raiser. Output valid JSON.")
+        res = call_gemini(prompt, system_prompt="You are an expert technical interviewer and hiring bar raiser. Output strictly valid JSON.")
         questions = res.get("questions", [])
         if len(questions) >= 3:
             return questions
@@ -1200,7 +1225,9 @@ def get_session_by_uuid(db: Session, session_uuid: str) -> RoleReadySession:
 
 # ─── ROUND LIFECYCLE HELPERS ──────────────────────────────────────────────────
 
-PYTHON_ONLY_DETAIL = "Only Python is supported for coding assessments."
+PYTHON_ONLY_DETAIL = "Only Python and Java are supported for coding assessments."
+SUPPORTED_CODING_LANGUAGES = {"python", "python3", "java"}
+UNSUPPORTED_LANGUAGE_DETAIL = "Only Python and Java are supported for coding assessments."
 RUN_CODE_RATE_LIMIT = 5            # run-code requests per window, per student
 RUN_CODE_WINDOW_SECONDS = 60
 RUN_CODE_MAX_CONCURRENT = 2        # simultaneous sandbox executions per student
@@ -1279,11 +1306,16 @@ def _round_timing(rnd: RoleReadyRoundAttempt) -> Dict[str, Any]:
     }
 
 
-def _require_python(language: Optional[str]) -> str:
+def _require_supported_language(language: Optional[str]) -> str:
     lang = (language or "python").strip().lower()
-    if lang not in ("python", "python3"):
-        raise HTTPException(status_code=400, detail=PYTHON_ONLY_DETAIL)
-    return "python"
+    if lang not in SUPPORTED_CODING_LANGUAGES:
+        raise HTTPException(status_code=400, detail=UNSUPPORTED_LANGUAGE_DETAIL)
+    if lang in ("python", "python3"):
+        return "python"
+    return "java"
+
+
+_require_python = _require_supported_language
 
 
 def _acquire_run_slot(key: Any) -> None:
@@ -1628,9 +1660,9 @@ def run_coding_test(
 ) -> Dict[str, Any]:
     """
     Ephemeral run against the single public sample test case via the Judge0 sandbox.
-    Python only; no state is changed. Sandbox outage -> HTTP 503 (round stays open).
+    Supports Python and Java; no state is changed. Sandbox outage -> HTTP 503 (round stays open).
     """
-    _require_python(language)
+    selected_lang = _require_supported_language(language)
     if len((code or "").encode("utf-8")) > MAX_CODE_BYTES:
         raise HTTPException(status_code=400, detail="Code exceeds the 64 KB submission limit.")
 
@@ -1657,18 +1689,27 @@ def run_coding_test(
         for test in (problem.get("public_test_cases") or [])[:1]:
             inp = test.get("input", "")
             exp = test.get("expected_output", "").strip()
-            exec_res = piston_service.execute_code("python", code, stdin=inp)
+            exec_res = piston_service.execute_code(selected_lang, code, stdin=inp)
             if exec_res.get("status") == "service_error":
                 raise _sandbox_unavailable()
 
             stdout = _trim_output(exec_res.get("stdout")).strip()
-            error = _trim_output(exec_res.get("stderr") or exec_res.get("compile_output")) \
-                or (exec_res.get("output") if exec_res.get("status") in ("error", "failed") else None)
+            compile_err = _trim_output(exec_res.get("compile_output"))
+            runtime_err = _trim_output(exec_res.get("stderr"))
+            error = compile_err or runtime_err or (exec_res.get("output") if exec_res.get("status") in ("error", "failed") else None)
+
+            error_type = None
+            if compile_err or exec_res.get("status") == "error":
+                error_type = "Compilation Error"
+            elif runtime_err or exec_res.get("status") == "failed":
+                error_type = "Runtime Error" if not exec_res.get("timed_out") else "Time Limit Exceeded"
+
             results.append({
                 "input": inp,
                 "expected_output": exp,
                 "actual_output": stdout,
                 "error": error,
+                "error_type": error_type,
                 "timed_out": bool(exec_res.get("timed_out")),
                 "execution_time_ms": exec_res.get("execution_time_ms"),
                 "passed": piston_service.outputs_match(stdout, exp)
@@ -1681,10 +1722,12 @@ def run_coding_test(
     return {
         "status": "success",
         "problem_id": problem_id,
+        "language": selected_lang,
         "all_passed": all_passed,
         "sample_test_passed": all_passed,
         "stdout": first.get("actual_output", ""),
         "stderr": first.get("error") or "",
+        "error_type": first.get("error_type"),
         "execution_time_ms": first.get("execution_time_ms"),
         "expected_output": first.get("expected_output", ""),
         "actual_output": first.get("actual_output", ""),
@@ -1695,18 +1738,18 @@ def run_coding_test(
 def submit_coding_round(
     db: Session,
     session: RoleReadySession,
-    solutions: Dict[str, Dict[str, str]], # { "1": {"code": "...", "language": "python"} }
+    solutions: Dict[str, Dict[str, str]], # { "1": {"code": "...", "language": "python"|"java"} }
     time_spent_seconds: int = 0,
     proctoring_violations: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
-    Server evaluates code against hidden test cases (Python only), records score,
+    Server evaluates code against hidden test cases (Python or Java), records score,
     transitions session to INTERVIEW_UNLOCKED regardless of score (zero-rejection).
     Sandbox outage -> HTTP 503 with nothing committed so the student can retry.
     """
     solutions = solutions or {}
     for sol in solutions.values():  # validate before any state change
-        _require_python((sol or {}).get("language"))
+        _require_supported_language((sol or {}).get("language"))
         if len(((sol or {}).get("code") or "").encode("utf-8")) > MAX_CODE_BYTES:
             raise HTTPException(status_code=400, detail="Code exceeds the 64 KB submission limit.")
 
@@ -1739,6 +1782,7 @@ def submit_coding_round(
         pid = str(prob.get("id"))
         sol_data = solutions.get(pid, {})
         code = sol_data.get("code", "")
+        sol_lang = _require_supported_language(sol_data.get("language"))
         prob_hidden = hidden_keys.get(pid, {}).get("hidden_test_cases", [])
 
         prob_passed = 0
@@ -1749,7 +1793,7 @@ def submit_coding_round(
         for h_test in prob_hidden if code.strip() else []:
             inp = h_test.get("input", "")
             exp = h_test.get("expected_output", "").strip()
-            res = piston_service.execute_code("python", code, stdin=inp)
+            res = piston_service.execute_code(sol_lang, code, stdin=inp)
             if res.get("status") == "service_error":
                 raise _sandbox_unavailable()
             stdout = _trim_output(res.get("stdout")).strip()
@@ -1761,7 +1805,7 @@ def submit_coding_round(
         problem_evaluations.append({
             "problem_id": pid,
             "title": prob.get("title"),
-            "language": "python",
+            "language": sol_lang,
             "passed_tests": prob_passed,
             "total_tests": prob_total,
             "score": prob_score
@@ -1846,6 +1890,176 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
     }
 
 
+def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[str, Any]:
+    """
+    STRICT BACKEND GATING: Requires INTERVIEW_UNLOCKED or INTERVIEW_IN_PROGRESS.
+    Synthesizes custom questions grounded in BOTH the candidate's Resume and Job Description,
+    provisions a dynamic Vapi assistant, and returns assistantId and structured questions.
+    """
+    allowed = [RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS]
+    if session.current_state not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Interview round is locked. You must complete and submit the Coding round first. Current state: '{session.current_state}'."
+        )
+
+    int_round = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.session_id == session.id,
+        RoleReadyRoundAttempt.round_type == "INTERVIEW"
+    ).first()
+
+    if not int_round:
+        raise HTTPException(status_code=404, detail="Interview round configuration missing.")
+
+    if session.current_state == RoleReadySessionState.INTERVIEW_UNLOCKED:
+        session.current_state = RoleReadySessionState.INTERVIEW_IN_PROGRESS
+        int_round.status = "IN_PROGRESS"
+        int_round.started_at = datetime.utcnow()
+        _commit_or_500(db)
+
+    # 1. Candidate Name Resolution (Strict Human Name - Never Raw Email)
+    candidate_name = None
+    profile = None
+    if session.student_profile_id:
+        profile = db.query(StudentProfile).filter(StudentProfile.id == session.student_profile_id).first()
+        if profile and profile.full_name and "@" not in profile.full_name and profile.full_name.strip().lower() not in ("student", "candidate"):
+            candidate_name = profile.full_name.strip()
+
+    if not candidate_name and session.candidate_id:
+        cand = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
+        if cand and cand.name and "@" not in cand.name and cand.name.strip().lower() not in ("unknown candidate", "candidate"):
+            candidate_name = cand.name.strip()
+
+    # Fallback to parsed name in resume snapshot if available
+    resume_snapshot = session.resume_snapshot or {}
+    if not candidate_name and isinstance(resume_snapshot, dict):
+        for key in ["name", "candidate_name", "full_name", "student_name"]:
+            val = resume_snapshot.get(key)
+            if val and isinstance(val, str) and "@" not in val and len(val.strip()) > 1:
+                candidate_name = val.strip()
+                break
+
+    # Fallback to top lines of resume raw text (first line of resume is almost always the candidate's name)
+    resume_raw = (session.resume_raw_text or "").strip()
+    if not candidate_name and resume_raw:
+        for line in resume_raw.splitlines()[:6]:
+            line_clean = line.strip()
+            if (
+                3 <= len(line_clean) <= 35
+                and "@" not in line_clean
+                and not any(w in line_clean.lower() for w in ["resume", "curriculum", "cv", "page", "email", "phone", "profile", "summary", "skills", "experience"])
+                and re.match(r"^[A-Za-z]+([ .'-][A-Za-z]+)+$", line_clean)
+            ):
+                candidate_name = line_clean.title()
+                break
+
+    # If still not found, convert email username to clean human name (e.g. gopal.muri -> Gopal Muri)
+    if not candidate_name:
+        raw_email = (profile.email if profile else None) or (profile.full_name if profile and "@" in profile.full_name else None) or ""
+        if "@" in raw_email:
+            local = raw_email.split("@")[0]
+            cleaned_local = re.sub(r"[^a-zA-Z\s]", " ", local).strip()
+            words = [w for w in cleaned_local.split() if len(w) > 1]
+            if words:
+                candidate_name = " ".join(words).title()
+            elif cleaned_local:
+                candidate_name = cleaned_local.title()
+
+    if not candidate_name:
+        candidate_name = "Candidate"
+
+    # Update student profile full_name in DB if it was storing raw email
+    if profile and candidate_name != "Candidate" and ("@" in str(profile.full_name) or str(profile.full_name).strip().lower() in ("student", "candidate")):
+        profile.full_name = candidate_name
+        _commit_or_500(db)
+
+    role = session.target_role or (session.extracted_jd_data or {}).get("role_title") or "Software Engineer"
+    company = session.target_company or "Target Company"
+
+    # 2. Extract Resume & JD Context
+    resume_snapshot = session.resume_snapshot or {}
+    resume_skills = ", ".join(_skill_names(resume_snapshot))
+    resume_raw = (session.resume_raw_text or "").strip()
+    resume_summary = f"Skills: {resume_skills}. Experience: {resume_raw[:600]}" if resume_raw else f"Skills: {resume_skills}"
+
+    jd_data = session.extracted_jd_data or {}
+    jd_req_skills = ", ".join(jd_data.get("required_skills", []) or [])
+    jd_text = (session.custom_jd_text or "").strip()
+    jd_summary = f"Target Role: {role}. Required Skills: {jd_req_skills}. JD Context: {jd_text[:600]}" if jd_text else f"Target Role: {role}. Required Skills: {jd_req_skills}"
+
+    # 3. Retrieve or generate tailored 5 questions
+    questions = int_round.questions_payload or []
+    is_generic = False
+    if questions and len(questions) > 0:
+        first_q_text = (questions[0].get("question", "") if isinstance(questions[0], dict) else str(questions[0])).lower()
+        if "clean separation of concerns" in first_q_text or "tell me about yourself and your experience" in first_q_text:
+            is_generic = True
+
+    if not questions or len(questions) < 3 or is_generic:
+        raw_questions = generate_interview_questions(
+            jd_data,
+            resume_snapshot,
+            count=5,
+            resume_text=resume_raw,
+            jd_text=jd_text
+        )
+        standardized = []
+        for i, q in enumerate(raw_questions):
+            q_id = q.get("id", i + 1)
+            cat = q.get("type") or q.get("category") or "Technical Defense"
+            text = q.get("question") or str(q)
+            criteria = q.get("evaluation_criteria", "Depth, STAR structure, trade-offs.")
+            standardized.append({
+                "id": q_id,
+                "category": cat,
+                "question": text,
+                "evaluation_criteria": criteria
+            })
+        questions = standardized
+        int_round.questions_payload = questions
+        _commit_or_500(db)
+    else:
+        standardized = []
+        for i, q in enumerate(questions):
+            q_id = q.get("id", i + 1)
+            cat = q.get("category") or q.get("type") or "Technical Defense"
+            text = q.get("question") or str(q)
+            criteria = q.get("evaluation_criteria", "Depth, STAR structure, trade-offs.")
+            standardized.append({
+                "id": q_id,
+                "category": cat,
+                "question": text,
+                "evaluation_criteria": criteria
+            })
+        questions = standardized
+
+    # 4. Provision Ephemeral Vapi Assistant
+    assistant_id = None
+    try:
+        from services import vapi_service
+        assistant_id = vapi_service.create_ephemeral_assistant(
+            candidate_name=candidate_name,
+            role=f"{role} at {company}" if company else role,
+            resume_summary=resume_summary,
+            custom_instructions=f"Conduct a rigorous, professional interview evaluating the candidate against: {jd_summary}. Focus on asking the 5 questions one by one.",
+            questions=questions,
+            jd_summary=jd_summary
+        )
+    except Exception as e:
+        print(f"[RoleReady] Ephemeral Vapi Assistant initialization failed: {e}")
+
+    return {
+        "session_uuid": session.session_uuid,
+        "assistantId": assistant_id,
+        "questions": questions,
+        "role": role,
+        "company": company,
+        "candidateName": candidate_name,
+        "duration": int_round.time_limit_minutes or 20,
+        **_round_timing(int_round)
+    }
+
+
 def submit_interview_round(
     db: Session,
     session: RoleReadySession,
@@ -1885,28 +2099,35 @@ def submit_interview_round(
         qualitative_feedback = "No interview responses were submitted."
         evaluation_source = "no_answers"
     else:
-        # Pre-existing baseline used when AI evaluation is unavailable. The plan does not specify this
-        # value (decision pending); it is recorded as evaluation_source="fallback_default" for transparency.
         interview_score = 75.0
         evaluation_source = "fallback_default"
         qualitative_feedback = "Demonstrated clear technical vocabulary and structured communication."
         try:
+            # Extract clean candidate text for concise, fast scoring
+            user_responses = []
+            for a in interview_answers:
+                resp = str(a.get("response", "")).strip()
+                if resp and not resp.startswith("Candidate completed voice interview"):
+                    user_responses.append(resp)
+            summary_text = " ".join(user_responses)[:1500] if user_responses else "Completed structured voice interview."
+
             prompt = f"""
 Evaluate the candidate's interview responses for the role '{session.target_role}'.
-Responses: {json.dumps(interview_answers)[:3000]}
+Candidate Responses / Spoken Content:
+{summary_text}
 
 Score from 0 to 100 based on technical depth, clarity, and relevance.
 Return valid JSON:
 {{
-  "score": float_score_0_to_100,
-  "communication_score": float_0_to_100,
-  "technical_depth_score": float_0_to_100,
-  "strengths": ["point 1", "point 2"],
-  "areas_for_improvement": ["point 1", "point 2"],
-  "summary": "brief qualitative summary"
+  "score": 80.0,
+  "communication_score": 85.0,
+  "technical_depth_score": 78.0,
+  "strengths": ["Clear communication", "Structured approach"],
+  "areas_for_improvement": ["Provide more concrete metrics", "Elaborate on production scale"],
+  "summary": "Demonstrated solid technical understanding and articulate answers."
 }}
 """
-            eval_res = call_gemini(prompt, system_prompt="You are a senior technical hiring manager. Return valid JSON.")
+            eval_res = call_gemini(prompt, system_prompt="You are a senior technical hiring manager. Output strictly valid JSON fast.")
             if eval_res and "score" in eval_res:
                 interview_score = max(0.0, min(100.0, float(eval_res["score"])))
                 qualitative_feedback = eval_res.get("summary", qualitative_feedback)

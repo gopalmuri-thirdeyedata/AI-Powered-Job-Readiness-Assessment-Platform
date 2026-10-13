@@ -23,30 +23,101 @@ def generate_questions(assessment_type: str, config: dict):
     return []
 
 def generate_interview_questions(config: dict):
-    # Minimal generator for Interview context to satisfy assignment logic
-    focus_area = config.get("focus_area", "General Technical")
+    role = config.get("role") or config.get("focus_area") or "Full Stack Engineer"
     difficulty = config.get("difficulty", "Medium")
+    resume_summary = config.get("resume_summary", "")
     
     prompt = f"""
-    Generate 5 technical interview discussion starters.
-    Topic: {focus_area}
+    Act as a principal technical interviewer. Generate 5 structured, realistic technical interview questions for the role: "{role}".
+    Candidate Resume Context: {resume_summary[:500] if resume_summary else "Standard industry candidate profile"}
     Difficulty: {difficulty}
-    
-    Return a JSON array of strings only.
-    Example: ["Explain X...", "How does Y work?", ...]
+
+    The 5 questions must sequentially cover:
+    1. Candidate Background & Architecture of Recent Project
+    2. Core Technical Concepts & Deep Dive for {role}
+    3. Practical Problem Solving & System Design
+    4. Debugging, Performance Optimization & Trade-offs
+    5. Production Best Practices, Security & Scalability
+
+    Return ONLY a JSON array of 5 objects formatted as:
+    [
+      {{"id": 1, "question": "Can you walk me through your background and describe the architecture of a recent technical project you built?", "category": "Background & Architecture", "type": "verbal"}}
+    ]
     """
     
     try:
         data = call_llm(prompt)
-        # Ensure we return a list of objects expected by frontend/db structure
-        # Or if the interview module expects strings, adapt.
-        # usually generated_questions storage is flexible JSON.
-        if isinstance(data, list):
-             return [{"id": i+1, "question": q, "type": "verbal"} for i, q in enumerate(data) if isinstance(q, str)]
-        return []
-    except:
-        # Fallback to prevent 500 error
-        return [{"id": 1, "question": f"Tell me about your experience with {focus_area}.", "type": "verbal"}]
+        if isinstance(data, list) and len(data) >= 3:
+            result = []
+            for i, item in enumerate(data[:5]):
+                if isinstance(item, dict) and "question" in item:
+                    result.append({
+                        "id": i + 1,
+                        "question": item["question"],
+                        "category": item.get("category", f"Round {i+1}"),
+                        "type": "verbal"
+                    })
+                elif isinstance(item, str):
+                    result.append({
+                        "id": i + 1,
+                        "question": item,
+                        "category": f"Round {i+1}",
+                        "type": "verbal"
+                    })
+            if len(result) >= 3:
+                return result
+    except Exception as e:
+        print(f"[ai_generator] Interview questions generation fallback: {e}")
+        
+    role_lower = str(role).lower()
+    if "front" in role_lower:
+        return [
+            {"id": 1, "question": "Can you describe a complex frontend application you built and how you structured its state management and component hierarchy?", "category": "Experience & Architecture", "type": "verbal"},
+            {"id": 2, "question": "How does the virtual DOM or modern reactivity model work, and what techniques do you use to prevent unnecessary re-renders?", "category": "Core React / DOM Concepts", "type": "verbal"},
+            {"id": 3, "question": "How do you optimize Core Web Vitals, asset loading, and bundle size for large-scale single-page applications?", "category": "Performance & Optimization", "type": "verbal"},
+            {"id": 4, "question": "Walk me through how you handle asynchronous data fetching, error boundaries, and optimistic UI updates.", "category": "Async State & Error Handling", "type": "verbal"},
+            {"id": 5, "question": "How do you ensure web accessibility, cross-browser compatibility, and secure frontend practices against XSS and CSRF?", "category": "Security & Best Practices", "type": "verbal"}
+        ]
+    elif "back" in role_lower:
+        return [
+            {"id": 1, "question": "Could you walk me through a backend system you architected, detailing your choice of database, API framework, and caching strategy?", "category": "System Architecture", "type": "verbal"},
+            {"id": 2, "question": "How do you approach database schema design, indexing strategies, and query optimization when table sizes scale significantly?", "category": "Data & Performance", "type": "verbal"},
+            {"id": 3, "question": "Explain how you handle distributed transactions, data consistency, and concurrency conflicts across backend services.", "category": "Distributed Systems", "type": "verbal"},
+            {"id": 4, "question": "What is your approach to designing resilient APIs with rate limiting, connection pooling, and circuit breaker patterns?", "category": "Resilience & API Design", "type": "verbal"},
+            {"id": 5, "question": "How do you implement authentication, token revocation, role-based access control, and secrets management in production?", "category": "Security & Production Readiness", "type": "verbal"}
+        ]
+    elif "data" in role_lower:
+        return [
+            {"id": 1, "question": "Can you describe an end-to-end data pipeline or ETL workflow you designed and the technologies you selected?", "category": "Pipeline Architecture", "type": "verbal"},
+            {"id": 2, "question": "How do you handle schema drift, data validation, and idempotency in high-throughput streaming or batch ingestion?", "category": "Data Integrity & Streaming", "type": "verbal"},
+            {"id": 3, "question": "Compare row-oriented versus columnar storage formats and explain how partitioning strategies impact query execution times.", "category": "Storage & Query Optimization", "type": "verbal"},
+            {"id": 4, "question": "How do you monitor pipeline health, debug silent data corruption, and ensure SLA adherence?", "category": "Data Observability & Reliability", "type": "verbal"},
+            {"id": 5, "question": "How do you implement data governance, PII anonymization, and access control across warehouse environments?", "category": "Governance & Security", "type": "verbal"}
+        ]
+    elif "devops" in role_lower or "cloud" in role_lower:
+        return [
+            {"id": 1, "question": "Can you walk through your CI/CD pipeline architecture and how you manage automated testing, artifacts, and zero-downtime deployments?", "category": "CI/CD & Deployments", "type": "verbal"},
+            {"id": 2, "question": "How do you manage Infrastructure as Code with Terraform while ensuring drift detection and state locking?", "category": "Infrastructure as Code", "type": "verbal"},
+            {"id": 3, "question": "Explain how you architect Kubernetes clusters for high availability, including pod autoscaling, ingress, and resource limits.", "category": "Container Orchestration", "type": "verbal"},
+            {"id": 4, "question": "What is your observability strategy across distributed microservices using Prometheus, Grafana, and distributed tracing?", "category": "Monitoring & Telemetry", "type": "verbal"},
+            {"id": 5, "question": "How do you implement least-privilege IAM policies, secrets rotation, and automated vulnerability scanning in container registries?", "category": "Cloud Security & Governance", "type": "verbal"}
+        ]
+    elif "machine" in role_lower or "ml" in role_lower or "ai" in role_lower:
+        return [
+            {"id": 1, "question": "Can you walk me through a machine learning model you trained and deployed to production, including data preprocessing and feature engineering?", "category": "ML Lifecycle & Features", "type": "verbal"},
+            {"id": 2, "question": "How do you diagnose and mitigate overfitting, underfitting, and data leakage during model validation?", "category": "Evaluation & Validation", "type": "verbal"},
+            {"id": 3, "question": "Explain how you serve models with low latency, including model quantization, batching, and GPU/CPU inference trade-offs?", "category": "Inference Optimization", "type": "verbal"},
+            {"id": 4, "question": "How do you detect model drift, concept drift, and data distribution shifts after deployment in live environments?", "category": "MLOps & Monitoring", "type": "verbal"},
+            {"id": 5, "question": "What techniques do you use to evaluate retrieval-augmented generation pipelines or fine-tuned LLMs for hallucinations and grounding?", "category": "LLM & Advanced AI Systems", "type": "verbal"}
+        ]
+    else:
+        return [
+            {"id": 1, "question": f"Can you introduce yourself and walk me through the architecture of a full stack application you recently built for the {role} position?", "category": "Experience & Architecture", "type": "verbal"},
+            {"id": 2, "question": "How do you coordinate state and communication between the frontend client and backend services efficiently?", "category": "Client-Server Architecture", "type": "verbal"},
+            {"id": 3, "question": "How do you approach database schema design, indexing, and caching to ensure queries remain fast as traffic grows?", "category": "Database & Caching", "type": "verbal"},
+            {"id": 4, "question": "Walk me through a difficult bug or production performance bottleneck you investigated and how you resolved it.", "category": "Problem Solving & Debugging", "type": "verbal"},
+            {"id": 5, "question": "What are your core strategies for application security, automated testing, and reliable continuous deployment?", "category": "Security & Best Practices", "type": "verbal"}
+        ]
 
 def evaluate_code(code: str, language: str, question: dict, test_cases: list):
     if not gemini_client.is_ai_available():

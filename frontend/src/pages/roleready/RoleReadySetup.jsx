@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
     Sparkles,
     FileText,
@@ -7,6 +7,7 @@ import {
     Building2,
     Upload,
     ArrowRight,
+    ArrowLeft,
     CheckCircle2,
     AlertTriangle,
     ShieldCheck,
@@ -232,11 +233,13 @@ const RoleReadySetup = () => {
     return (
         <div className="min-h-screen bg-[var(--rr-bg)] text-[var(--rr-text)] font-sans selection:bg-emerald-100 selection:text-emerald-900 flex flex-col transition-colors duration-200">
             {/* ── Standardized Shared Navbar ── */}
-            <RoleReadyNavbar title="Assessment Setup" showHome={false} />
+            <RoleReadyNavbar title="Assessment Setup" />
 
             {/* ── Main Content Container (Max width ~1160–1240px) ── */}
             <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
                 
+
+
                 {/* Header Title Section */}
                 <div className="mb-8 space-y-1.5">
                     <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">

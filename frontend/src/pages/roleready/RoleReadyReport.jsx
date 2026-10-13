@@ -14,7 +14,8 @@ import {
     Printer, 
     Sparkles, 
     Building2,
-    RefreshCw
+    RefreshCw,
+    LayoutDashboard
 } from 'lucide-react';
 import rolereadyApi from '../../services/rolereadyApi';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
@@ -124,7 +125,7 @@ const RoleReadyReport = () => {
 
     return (
         <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-emerald-100 selection:text-emerald-900 flex flex-col">
-            <RoleReadyNavbar title="Assessment Report" showHome={true} />
+            <RoleReadyNavbar title="Assessment Report" />
             <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
                 {/* Header Actions */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--rr-border)]">

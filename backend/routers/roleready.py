@@ -308,6 +308,118 @@ async def initialize_student_session(
     }
 
 
+@router.get("/student/assessments")
+def get_student_assessment_history(
+    student_profile: models.StudentProfile = Depends(get_current_student_profile),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Returns complete assessment history, aggregate metrics, round-wise trends,
+    and improvement areas strictly for the authenticated student.
+    """
+    sessions = db.query(models.RoleReadySession).filter(
+        models.RoleReadySession.student_profile_id == student_profile.id
+    ).order_by(models.RoleReadySession.created_at.desc()).all()
+
+    total_attempted = len(sessions)
+    completed_sessions = [s for s in sessions if s.current_state == models.RoleReadySessionState.COMPLETED]
+    total_completed = len(completed_sessions)
+
+    # In-progress / unfinished session (most recent if any)
+    in_progress = next((s for s in sessions if s.current_state != models.RoleReadySessionState.COMPLETED), None)
+
+    # Format session list
+    records = []
+    for s in sessions:
+        records.append({
+            "id": s.id,
+            "session_uuid": s.session_uuid,
+            "target_role": s.target_role,
+            "target_company": s.target_company,
+            "current_state": s.current_state,
+            "is_completed": s.current_state == models.RoleReadySessionState.COMPLETED,
+            "aptitude_score": round(float(s.aptitude_score or 0.0), 1),
+            "coding_score": round(float(s.coding_score or 0.0), 1),
+            "interview_score": round(float(s.interview_score or 0.0), 1),
+            "overall_readiness_score": round(float(s.overall_readiness_score or 0.0), 1),
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "report_url": f"/assessment/{s.session_uuid}/report" if s.current_state == models.RoleReadySessionState.COMPLETED else None,
+            "continue_url": f"/assessment/{s.session_uuid}" if s.current_state != models.RoleReadySessionState.COMPLETED else None,
+        })
+
+    # Latest assessment summary
+    latest = records[0] if records else None
+
+    # Trends sorted chronologically (oldest to newest)
+    trends = []
+    for s in reversed(sessions):
+        trends.append({
+            "date": s.created_at.strftime("%b %d") if s.created_at else "Assessment",
+            "full_date": s.created_at.isoformat() if s.created_at else None,
+            "role": s.target_role,
+            "aptitude": round(float(s.aptitude_score or 0.0), 1),
+            "coding": round(float(s.coding_score or 0.0), 1),
+            "interview": round(float(s.interview_score or 0.0), 1),
+            "overall": round(float(s.overall_readiness_score or 0.0), 1),
+        })
+
+    # Compute areas for improvement based on completed scores
+    areas_for_improvement = []
+    if completed_sessions:
+        avg_aptitude = sum(s.aptitude_score or 0.0 for s in completed_sessions) / len(completed_sessions)
+        avg_coding = sum(s.coding_score or 0.0 for s in completed_sessions) / len(completed_sessions)
+        avg_interview = sum(s.interview_score or 0.0 for s in completed_sessions) / len(completed_sessions)
+
+        if avg_aptitude < 75:
+            areas_for_improvement.append({
+                "round": "Aptitude Round",
+                "score": round(avg_aptitude, 1),
+                "topic": "Quantitative & Logical Problem Solving",
+                "recommendation": "Focus on numerical agility, data interpretation, and timed reasoning questions."
+            })
+        if avg_coding < 75:
+            areas_for_improvement.append({
+                "round": "Coding Challenge",
+                "score": round(avg_coding, 1),
+                "topic": "Algorithms & Edge Case Handling",
+                "recommendation": "Practice dynamic programming, string hashing, and verify edge cases against hidden test cases."
+            })
+        if avg_interview < 75:
+            areas_for_improvement.append({
+                "round": "Technical Interview",
+                "score": round(avg_interview, 1),
+                "topic": "System Design & Technical Communication",
+                "recommendation": "Practice STAR-method verbal explanations, architectural tradeoffs, and behavioral clarity."
+            })
+    elif sessions:
+        # Default encouragement if attempts started but not completed
+        areas_for_improvement.append({
+            "round": "In-Progress Preparation",
+            "score": 0.0,
+            "topic": "Assessment Completion",
+            "recommendation": "Complete all 3 rounds (Aptitude, Coding, Interview) to generate your job-readiness benchmark."
+        })
+
+    return {
+        "student_id": student_profile.id,
+        "student_name": student_profile.full_name,
+        "total_attempted": total_attempted,
+        "total_completed": total_completed,
+        "latest_assessment": latest,
+        "active_session": {
+            "session_uuid": in_progress.session_uuid,
+            "target_role": in_progress.target_role,
+            "current_state": in_progress.current_state,
+            "continue_url": f"/assessment/{in_progress.session_uuid}"
+        } if in_progress else None,
+        "assessments": records,
+        "trends": trends,
+        "areas_for_improvement": areas_for_improvement
+    }
+
+
 @router.get("/session/{session_uuid}")
 def get_session_status(
     session: models.RoleReadySession = Depends(get_authorized_session),
@@ -425,6 +537,18 @@ def start_interview(
 ):
     """STRICT BACKEND GATING: Fails with HTTP 403 if coding is not completed."""
     return roleready_service.start_interview_round(db, session)
+
+
+@router.post("/session/{session_uuid}/vapi-init")
+def init_vapi_interview(
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """
+    STRICT BACKEND GATING: Fails with HTTP 403 if coding is not completed.
+    Synthesizes custom questions grounded in Resume + JD and provisions dynamic Vapi assistant.
+    """
+    return roleready_service.init_vapi_interview_session(db, session)
 
 
 @router.post("/session/{session_uuid}/submit-interview")
