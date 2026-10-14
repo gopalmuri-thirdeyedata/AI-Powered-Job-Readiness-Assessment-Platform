@@ -1,8 +1,8 @@
-# AI-Powered Job Readiness Assessment Platform (interviewer.thirdeyedata.ai) - Operational Runbook
+# AI-Powered Job Readiness Assessment Platform (interviewer.learningpath.ai) - Operational Runbook
 
-Deployment runbook for **AI-Powered Job Readiness Assessment Platform** (branch `PrepWin`) on `server2` (`139.99.62.133`), served at **`https://interviewer.thirdeyedata.ai`** with host entrypoint port **`8212`**.
+Deployment runbook for **AI-Powered Job Readiness Assessment Platform** (branch `PrepWin`) on `server2` (`139.99.62.133`), served at **`https://interviewer.learningpath.ai`** with host entrypoint port **`8212`**.
 
-Last updated: 2026-10-13. Sections 1-4 describe how to deploy and operate the stack. Section 5 lists the changes the team should make to cut build time and image size.
+Last updated: 2026-10-14. Sections 1-4 describe how to deploy and operate the stack. Section 5 lists the changes the team should make to cut build time and image size.
 
 ---
 
@@ -17,10 +17,10 @@ Last updated: 2026-10-13. Sections 1-4 describe how to deploy and operate the st
 | **Cache** | - | 6379 | `interviewer_redis` | `redis:7-alpine` | In-memory cache and sessions |
 | **Network** | - | - | `interviewer_net` | Subnet `10.97.0.0/24` | Isolated Docker network |
 
-- **Public domain**: https://interviewer.thirdeyedata.ai (behind Cloudflare, see 2.4)
+- **Public domain**: https://interviewer.learningpath.ai (behind Cloudflare, see 2.4)
 - **Direct internal port**: `http://127.0.0.1:8212`
-- **Host nginx config**: `/etc/nginx/sites-available/interviewer.thirdeyedata.ai`
-- **SSL certificate**: `/etc/letsencrypt/live/interviewer.thirdeyedata.ai/fullchain.pem`
+- **Host nginx config**: `/etc/nginx/sites-available/interviewer.learningpath.ai`
+- **SSL certificate**: `/etc/letsencrypt/live/interviewer.learningpath.ai/fullchain.pem`
 - **Remote project directory**: `/home/aniket-TED/interviewer-platform`
 - **Compose file**: `docker-compose.prod.yml`
 
@@ -75,11 +75,11 @@ A cold build is slow, mainly the backend `pip install` (PyTorch via ultralytics)
 The domain is on Cloudflare. In the Cloudflare DNS panel, the `interviewer` A record must point to `139.99.62.133`.
 
 ```bash
-sudo tee /etc/nginx/sites-available/interviewer.thirdeyedata.ai > /dev/null << 'EOF'
+sudo tee /etc/nginx/sites-available/interviewer.learningpath.ai > /dev/null << 'EOF'
 server {
     listen 80;
     listen [::]:80;
-    server_name interviewer.thirdeyedata.ai;
+    server_name interviewer.learningpath.ai;
     client_max_body_size 50M;
 
     location / {
@@ -96,14 +96,14 @@ server {
 }
 EOF
 
-sudo ln -sf /etc/nginx/sites-available/interviewer.thirdeyedata.ai /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/interviewer.learningpath.ai /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
-sudo certbot --nginx -d interviewer.thirdeyedata.ai --non-interactive --agree-tos \
+sudo certbot --nginx -d interviewer.learningpath.ai --non-interactive --agree-tos \
     -m aniket@thirdeyedata.ai --redirect
 
-curl -I https://interviewer.thirdeyedata.ai
-curl -s https://interviewer.thirdeyedata.ai/health/live
+curl -I https://interviewer.learningpath.ai
+curl -s https://interviewer.learningpath.ai/health/live
 ```
 
 **Cloudflare notes (hit during the first deploy):**
@@ -136,13 +136,17 @@ docker logs interviewer_backend --since 2m
 
 `docker compose run` has no `--no-build` flag. It reuses the image if it already exists locally.
 
-**Permanent fix:** add `--preload` so `main.py` is imported once in the master process before forking. Until the Dockerfile CMD is changed (section 5.4), put it in compose with no rebuild. Under `backend:` in `docker-compose.prod.yml`:
+Once the tables exist, `create_all` finds nothing to create and the race cannot happen on later restarts. This was the fix that stuck.
+
+**Do NOT use `--preload` as the fix.** It was tried and caused 500 errors (`Command Out of Sync`, `_NoResultMetaData ... _indexes_for_keys`). With `--preload` the SQLAlchemy pool is created in the master and shared by all forked workers, so several processes use the same MySQL connection and the protocol gets corrupted. If a future fix needs `--preload`, `main.py` must call `database.engine.dispose()` right after `create_all`.
+
+The live compose `command:` (under `backend:` in `docker-compose.prod.yml`) is now:
 
 ```yaml
-    command: gunicorn --preload -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 main:app
+    command: gunicorn --timeout 180 -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 main:app
 ```
 
-Apply with `docker compose -f docker-compose.prod.yml up -d --no-build backend`.
+Apply compose changes with `docker compose -f docker-compose.prod.yml up -d --no-build backend`.
 
 ### 3.2 Frontend shows `unhealthy` while the site works
 
@@ -170,10 +174,106 @@ docker exec interviewer_frontend chmod 644 /usr/share/nginx/html/logo_main.png
 
 The permanent fix is a `chmod -R a+rX` in the frontend Dockerfile (section 5.3).
 
-### 3.4 Console warnings that are not bugs
+### 3.4 Assessment setup fails with a Cloudflare "invalid or incomplete response" error (520/502)
+
+**Symptom:** after "Start", the page shows "The origin web server returned an invalid or incomplete response to Cloudflare". Backend logs show `WORKER TIMEOUT` and `Worker ... was sent code 134`, and the proxy logs a 502 for `POST /api/api/roleready/student/initialize`.
+
+**Cause:** `initialize_student_session` in `backend/routers/roleready.py` was declared `async def`, but it makes blocking calls (several sequential Gemini calls via `call_gemini`, each allowed 30 s plus a retry). A blocking call inside `async def` blocks the whole worker's event loop. Gunicorn cannot see the worker heartbeat for 30 s (its default timeout) and kills it. Other requests on that worker stall too.
+
+**Fix:**
+
+1. In source: change `async def initialize_student_session(` to `def initialize_student_session(`. The body has no `await`, and FastAPI then runs it in a thread pool. This is already done in the repo.
+2. Raise gunicorn's timeout (`--timeout 180`, see 3.1).
+3. Until the image is rebuilt, deploy the changed file with a bind mount, no rebuild. Upload it, make it readable, and add the mount under `backend:` > `volumes:` in `docker-compose.prod.yml`:
+
+   ```powershell
+   scp "D:\Downloads\PJS Global Demo 4\AI-Powered-Job-Readiness-Assessment-Platform\backend\routers\roleready.py" server2:~/interviewer-platform/backend/routers/roleready.py
+   ```
+
+   ```bash
+   chmod 644 ~/interviewer-platform/backend/routers/roleready.py     # scp creates it owner-only; appuser (uid 1000) in the container must be able to read it
+   ```
+
+   ```yaml
+       volumes:
+         - interviewer_media:/app/media
+         - ./backend/routers/roleready.py:/app/routers/roleready.py:ro
+   ```
+
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d --no-build backend
+   docker exec interviewer_backend grep -n "def initialize_student_session" /app/routers/roleready.py   # must have no "async"
+   ```
+
+   Remove the mount line after the next rebuild, since the fix will then be in the image.
+
+**Remaining limit:** Cloudflare cuts any proxied request at about 100 s (shown as a 524). If `initialize` can legitimately take longer, the endpoint should create a job and let the browser poll for the result. That is a code change.
+
+To time one Gemini call from the container:
+
+```bash
+docker exec interviewer_backend python -c "
+import time
+from services.gemini_client import call_gemini
+t=time.time(); print(call_gemini('Reply with the word OK')); print('seconds:', round(time.time()-t,1))"
+```
+
+### 3.5 Console warnings that are not bugs
 
 - `/vite.svg` returns 404. This is a missing favicon and is harmless. Point the favicon in `frontend/index.html` at a file that exists.
 - Clerk warns that development keys are in use. See 6.3.
+
+### 3.6 Requests for `/.env`, `/.env.local` and similar in the proxy logs
+
+Automated scanners probe these paths. They return `200` because the SPA falls back to `index.html` for unknown paths. Confirm that no secrets are served:
+
+```bash
+curl -s https://interviewer.learningpath.ai/.env | head -5     # must print HTML, never KEY=value lines
+```
+
+---
+
+## 3A. Changing the Domain (done 2026-10-14: thirdeyedata.ai -> learningpath.ai)
+
+The site moved from `interviewer.thirdeyedata.ai` to **`interviewer.learningpath.ai`**. Do these in order. Deleting the old certificate while nginx still references it breaks `nginx -t`.
+
+1. **DNS:** add an A record `interviewer` -> `139.99.62.133` in the learningpath.ai zone (grey cloud while certbot runs if the zone is on Cloudflare). Wait for `dig +short interviewer.learningpath.ai` to resolve.
+2. **Replace the nginx site** with an HTTP-only one for the new name (section 2.4), and remove the old one:
+
+   ```bash
+   sudo rm -f /etc/nginx/sites-enabled/<old-site> /etc/nginx/sites-available/<old-site>
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo grep -rl "<old-domain>" /etc/nginx/      # must print nothing
+   ```
+
+3. **Delete only the old certificate**, naming it explicitly. server2 holds about 50 certificates for other projects:
+
+   ```bash
+   sudo certbot certificates
+   sudo certbot delete --cert-name <old-domain>
+   ```
+
+4. **Issue the new certificate:**
+
+   ```bash
+   sudo certbot --nginx -d interviewer.learningpath.ai --agree-tos --non-interactive \
+     -m aniket@thirdeyedata.ai --redirect
+   ```
+
+5. **Update the backend's allowed origin** (no rebuild). `docker-compose.prod.yml` sets `FRONTEND_URL` and `CORS_ORIGINS`, and `backend/.env` has the same two keys. Compose's `environment:` overrides `env_file`, but keep both in agreement:
+
+   ```bash
+   cd ~/interviewer-platform
+   sed -i 's#<old-domain>#interviewer.learningpath.ai#g' docker-compose.prod.yml backend/.env
+   grep -rn "<old-domain>" docker-compose.prod.yml backend/.env      # must print nothing
+   docker compose -f docker-compose.prod.yml up -d --no-build backend
+   docker exec interviewer_backend printenv CORS_ORIGINS FRONTEND_URL
+   ```
+
+6. **Clerk:** add `https://interviewer.learningpath.ai` to the allowed origins and redirect URLs in the Clerk dashboard.
+7. **Cloudflare:** if the record was set to DNS only, turn the proxy back on (orange) and set SSL/TLS mode to **Full (strict)**.
+
+The frontend needs no rebuild for a domain change. It calls the API through the relative path `/api`.
 
 ---
 
@@ -281,11 +381,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 ### 5.4 Backend: smaller and safer Dockerfile and requirements
 
-1. **Add `--preload` to the CMD** (permanent fix for 3.1):
+1. **Set a gunicorn timeout and fix the startup table race in code.** Do not add `--preload` unless `main.py` also calls `database.engine.dispose()` after `create_all` (see 3.1). Use:
 
    ```dockerfile
-   CMD ["gunicorn", "--preload", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000"]
+   CMD ["gunicorn", "--timeout", "180", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000"]
    ```
+
+   To remove the table-creation race properly, guard `create_all` in `main.py` (for example, run it from a one-off startup command or a migration step) instead of running it on every worker import.
+
+   Also find other `async def` endpoints that make blocking calls (Gemini, `requests`, database work with no `await`) and change them to `def`, as was done for `initialize_student_session` (3.4). Blocking calls in `async def` stall the whole worker.
 
 2. **Drop `google-generativeai` if it is not needed.** `services/gemini_client.py` uses the SDK only "when installed" and falls back to native `httpx` REST otherwise. It drags in grpc, protobuf and the Google API client stack. Remove it from `requirements.txt`, then confirm Gemini features (resume screening, question generation, interview evaluation) still work through the `httpx` path.
 
@@ -344,10 +448,11 @@ The repo-root `Dockerfile` (unified nginx + Python image) is not used by `docker
 
 ### Expected order of work
 
+0. Remove the `roleready.py` bind mount from compose (3.4) once the image is rebuilt with the fix included.
 1. 5.5 `.dockerignore` files (minutes, no behaviour change, removes baked-in secrets).
 2. 5.3 remove unused npm packages, commit the lockfile.
 3. 5.1 CPU-only torch, and confirm the model file question.
-4. 5.4 `--preload`, `google-generativeai` decision, cache mounts.
+4. 5.4 gunicorn timeout, `google-generativeai` decision, cache mounts.
 5. One cold rebuild on server2, then compare `docker images` sizes and record the new numbers here.
 
 ---
@@ -364,11 +469,11 @@ See 5.5. After adding `.dockerignore`, rebuild the backend image and delete the 
 
 ### 6.3 Clerk is on development keys
 
-The frontend is built with a `pk_test_...` publishable key. For real use, create a Clerk **production** instance, add `interviewer.thirdeyedata.ai` to it, and replace the key in the compose build args (frontend, needs a rebuild) and the secret key in `backend/.env`.
+The frontend is built with a `pk_test_...` publishable key. For real use, create a Clerk **production** instance, add `interviewer.learningpath.ai` to it, and replace the key in the compose build args (frontend, needs a rebuild) and the secret key in `backend/.env`.
 
 ### 6.4 CORS and URLs
 
-Compose already sets `FRONTEND_URL` and `CORS_ORIGINS` to `https://interviewer.thirdeyedata.ai`. If login or API calls fail after a domain or Cloudflare change, check these first.
+Compose already sets `FRONTEND_URL` and `CORS_ORIGINS` to `https://interviewer.learningpath.ai`. If login or API calls fail after a domain or Cloudflare change, check these first.
 
 ---
 
@@ -378,8 +483,8 @@ Compose already sets `FRONTEND_URL` and `CORS_ORIGINS` to `https://interviewer.t
 docker compose -f docker-compose.prod.yml ps                  # all Up, backend healthy
 docker logs interviewer_backend --since 5m | tail -30          # no tracebacks
 curl -s http://127.0.0.1:8212/health/live                      # {"status":"alive",...}
-curl -I https://interviewer.thirdeyedata.ai                    # 200 over HTTPS
-curl -s https://interviewer.thirdeyedata.ai/health/live
+curl -I https://interviewer.learningpath.ai                    # 200 over HTTPS
+curl -s https://interviewer.learningpath.ai/health/live
 ```
 
 In the browser: sign in with Clerk, open an assessment, and test one Gemini-backed feature and one Vapi voice call. Watch `docker logs -f interviewer_backend` while testing.
