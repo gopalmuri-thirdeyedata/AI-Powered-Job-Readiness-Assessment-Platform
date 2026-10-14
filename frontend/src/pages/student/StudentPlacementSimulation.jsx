@@ -265,7 +265,7 @@ const StudentPlacementSimulation = () => {
                             <button
                                 onClick={handleStartSimulation}
                                 disabled={loading}
-                                className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                                className="w-full sm:w-auto px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                             >
                                 <Award className="w-4 h-4" />
                                 {loading ? 'Initializing Drive...' : 'Launch Placement Drive Simulation'}
@@ -369,7 +369,7 @@ const StudentPlacementSimulation = () => {
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50"
+                                    className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <Send className="w-4 h-4" />
                                     {isSubmitting ? 'Evaluating Section...' : 'Submit Round 1 & Advance to Coding'}
@@ -422,7 +422,7 @@ const StudentPlacementSimulation = () => {
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50"
+                                    className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <Code2 className="w-4 h-4" />
                                     {isSubmitting ? 'Evaluating Code in Sandbox...' : 'Submit Code & Advance to Technical Round'}
@@ -464,7 +464,7 @@ const StudentPlacementSimulation = () => {
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50"
+                                    className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <Send className="w-4 h-4" />
                                     {isSubmitting ? 'Evaluating Technical Response...' : 'Submit Round 3 & Advance to HR Round'}
@@ -506,7 +506,7 @@ const StudentPlacementSimulation = () => {
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50"
+                                    className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <Award className="w-4 h-4" />
                                     {isSubmitting ? 'Finalizing Simulation...' : 'Complete Simulation & Generate Report'}
@@ -574,7 +574,7 @@ const StudentPlacementSimulation = () => {
                         </button>
                         <button
                             onClick={() => setViewMode('SETUP')}
-                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2"
+                            className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 cursor-pointer"
                         >
                             <RotateCcw className="w-4 h-4" />
                             Start Another Drive Simulation

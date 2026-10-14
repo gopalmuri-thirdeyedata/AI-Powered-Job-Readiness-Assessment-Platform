@@ -204,7 +204,7 @@ const StudentProjects = () => {
 
                 <button
                     onClick={handleOpenCreate}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 self-start md:self-auto"
+                    className="px-5 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 self-start md:self-auto cursor-pointer"
                 >
                     <Plus className="w-4 h-4" />
                     Add Project
@@ -237,7 +237,7 @@ const StudentProjects = () => {
                     </p>
                     <button
                         onClick={handleOpenCreate}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs inline-flex items-center gap-2"
+                        className="px-5 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs inline-flex items-center gap-2 cursor-pointer"
                     >
                         <Plus className="w-4 h-4" />
                         Add Your First Project
@@ -574,7 +574,7 @@ const StudentProjects = () => {
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-all shadow-xs flex items-center gap-2 disabled:opacity-50"
+                                    className="px-5 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <Sparkles className="w-4 h-4" />
                                     {isSubmitting ? 'Analyzing & Saving...' : (editingProjectId ? 'Update Project' : 'Save & Analyze Project')}
