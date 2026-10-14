@@ -28,19 +28,19 @@ import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import { useTheme } from '../context/ThemeContext';
 import API_URL from '../apiConfig';
 
-// Navigation definition with per-item accent colors
+// Navigation definition with unified emerald brand accents
 export const navItems = [
-    { label: 'Dashboard',       path: '/student/dashboard',  icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'Role Assessment', path: '/assessment/setup',   icon: Sparkles,        accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'Skill Gap',       path: '/student/skill-gap',  icon: Target,          accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Roadmap',         path: '/student/roadmap',    icon: Compass,         accent: '#06B6D4', glow: 'rgba(6,182,212,0.2)'   },
-    { label: 'Practice',        path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.2)'  },
-    { label: 'Mock Interview',      path: '/student/interview',  icon: MessageSquare,   accent: '#8B5CF6', glow: 'rgba(139,92,246,0.2)'  },
-    { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#F43F5E', glow: 'rgba(244,63,94,0.2)'   },
-    { label: 'Campus Drives',       path: '/student/drives',     icon: Building2,       accent: '#3B82F6', glow: 'rgba(59,130,246,0.2)'  },
-    { label: 'Projects',        path: '/student/projects',   icon: FolderGit2,      accent: '#F59E0B', glow: 'rgba(245,158,11,0.2)'  },
-    { label: 'Resume',          path: '/student/resume',     icon: FileText,        accent: '#A855F7', glow: 'rgba(168,85,247,0.2)'  },
-    { label: 'Profile',         path: '/student/profile',    icon: User,            accent: '#94A3B8', glow: 'rgba(148,163,184,0.15)'},
+    { label: 'Dashboard',            path: '/student/dashboard',  icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Role Assessment',      path: '/assessment/setup',   icon: Sparkles,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Skill Gap',            path: '/student/skill-gap',  icon: Target,          accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Roadmap',              path: '/student/roadmap',    icon: Compass,         accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Mock Interview',       path: '/student/interview',  icon: MessageSquare,   accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Campus Drives',        path: '/student/drives',     icon: Building2,       accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Projects',             path: '/student/projects',   icon: FolderGit2,      accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Resume',               path: '/student/resume',     icon: FileText,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Profile',              path: '/student/profile',    icon: User,            accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
 ];
 
 export const allNavItems = navItems;
@@ -379,7 +379,7 @@ const StudentLayout = () => {
                         {profile && (
                             <Link
                                 to="/student/profile"
-                                className="hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 transition-all bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                className="hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700"
                             >
                                 <div
                                     className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-teal-500"
