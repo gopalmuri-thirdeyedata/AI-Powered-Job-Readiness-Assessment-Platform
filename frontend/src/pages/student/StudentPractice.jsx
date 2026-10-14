@@ -455,7 +455,7 @@ const StudentPractice = () => {
                                 <button
                                     onClick={handleSubmit}
                                     disabled={isSubmitting || (activeQuestion.category === 'APTITUDE' && !selectedOption)}
-                                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-xs"
+                                    className="inline-flex items-center gap-2 px-6 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-xs cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     {isSubmitting ? (
                                         <>
