@@ -268,7 +268,7 @@ const StudentDashboard = () => {
                 {/* Ambient glow decoration */}
                 <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-50 dark:bg-emerald-500/5 rounded-full blur-[90px] pointer-events-none" />
 
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
                     <div>
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs font-semibold mb-3">
                             <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -397,7 +397,7 @@ const StudentDashboard = () => {
             )}
 
             {/* ─── Top 4 High-Impact Metric Cards ────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
                 {/* 1. Total Assessments (Attempted & Completed) */}
                 <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">

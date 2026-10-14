@@ -297,7 +297,7 @@ const StudentLayout = () => {
         >
             {/* ─── Desktop Sidebar ─── */}
             <aside
-                className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-30 transition-all duration-300 ease-in-out"
+                className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-30 transition-all duration-300 ease-in-out overflow-x-hidden"
                 style={{ width: SIDEBAR_W }}
             >
                 <SidebarInner />
@@ -305,8 +305,9 @@ const StudentLayout = () => {
                 {/* Collapse toggle button */}
                 <button
                     onClick={() => setCollapsed(c => !c)}
-                    className="absolute -right-3 top-[68px] w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-md hover:scale-110 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                    className="absolute -right-3 top-[68px] z-30 w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-xs hover:shadow-sm hover:scale-105 active:scale-95 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
                     title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 >
                     {collapsed
                         ? <ChevronRight className="w-3.5 h-3.5" />
@@ -340,22 +341,49 @@ const StudentLayout = () => {
                 <header
                     className="sticky top-0 z-20 flex items-center justify-between h-16 px-4 sm:px-6 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800"
                 >
-                    {/* Left: hamburger (mobile) + breadcrumb (desktop) */}
-                    <div className="flex items-center gap-3">
+                    {/* Left: hamburger (mobile) + brand (collapsed/mobile) + breadcrumb (desktop) */}
+                    <div className="flex items-center gap-3 min-w-0">
                         <button
                             onClick={() => setMobileOpen(true)}
-                            className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors rounded-lg"
+                            className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors rounded-lg cursor-pointer"
+                            aria-label="Open navigation menu"
                         >
                             <Menu className="w-5 h-5" />
                         </button>
 
+                        {/* Mobile brand lockup */}
+                        <div className="lg:hidden flex items-center gap-2 shrink-0">
+                            <Link to="/" className="flex items-center gap-2 focus:outline-none">
+                                <img src="/logo_main.png" alt="ThirdEye Data" className="h-6 w-auto object-contain shrink-0" />
+                                <div className="leading-none">
+                                    <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</span>
+                                </div>
+                            </Link>
+                        </div>
+
+                        {/* Desktop collapsed brand lockup */}
+                        {collapsed && (
+                            <div className="hidden lg:flex items-center gap-2 shrink-0 pr-3 border-r border-slate-200 dark:border-slate-800">
+                                <Link to="/" className="flex items-center gap-2 focus:outline-none group">
+                                    <div className="leading-none">
+                                        <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                            PrepWin
+                                        </div>
+                                        <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
+                                            Student Career Hub
+                                        </div>
+                                    </div>
+                                </Link>
+                            </div>
+                        )}
+
                         {/* Desktop breadcrumb */}
-                        <nav className="hidden lg:flex items-center gap-2 text-xs">
-                            <span className="text-slate-400 dark:text-slate-500 font-medium">Student Hub</span>
+                        <nav className="hidden lg:flex items-center gap-2 text-xs truncate">
+                            <span className="text-slate-400 dark:text-slate-500 font-medium shrink-0">Student Hub</span>
                             {currentPage && (
                                 <>
-                                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    <span className="font-semibold text-emerald-700 dark:text-emerald-400 truncate">
                                         {currentPage.label}
                                     </span>
                                 </>
@@ -364,11 +392,11 @@ const StudentLayout = () => {
                     </div>
 
                     {/* Right: Take Assessment CTA, theme toggle & user pill */}
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 shrink-0">
                         <Link
                             to="/assessment/setup"
                             id="student-topbar-assessment-btn"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                            className="h-9 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer shrink-0"
                             title="Start AI Role Assessment"
                         >
                             <Sparkles className="w-3.5 h-3.5" />
@@ -379,14 +407,15 @@ const StudentLayout = () => {
                             type="button"
                             onClick={toggleTheme}
                             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 cursor-pointer"
+                            className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 cursor-pointer shrink-0"
+                            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                         >
                             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
                         </button>
                         {profile && (
                             <Link
                                 to="/student/profile"
-                                className="hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer text-xs"
+                                className="h-9 hidden sm:inline-flex items-center gap-2 rounded-full px-3 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer text-xs shrink-0"
                             >
                                 <div
                                     className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-xs"
@@ -402,7 +431,7 @@ const StudentLayout = () => {
                 </header>
 
                 {/* Page Content */}
-                <main className="flex-1 px-4 sm:px-6 py-6">
+                <main className="flex-1 px-4 sm:px-6 py-6 pb-24 sm:pb-20">
                     <div className="max-w-7xl mx-auto w-full">
                         <Outlet />
                     </div>
