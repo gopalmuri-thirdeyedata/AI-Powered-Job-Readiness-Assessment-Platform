@@ -56,4 +56,27 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'roleready', 'RoleReadyReport.jsx'), 'utf-8');
         assert.ok(fileContent.includes('/student/dashboard'), 'RoleReadyReport must link to /student/dashboard');
     });
+
+    test('10. StudentLayout.jsx retains functional Take Assessment header button', () => {
+        const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'StudentLayout.jsx'), 'utf-8');
+        assert.ok(fileContent.includes('to="/assessment/setup"'), 'StudentLayout must link to /assessment/setup in header');
+        assert.ok(fileContent.includes('Take Assessment'), 'StudentLayout must render "Take Assessment" button');
+        assert.ok(fileContent.includes('id="student-topbar-assessment-btn"'), 'StudentLayout must retain assessment button ID');
+    });
+
+    test('11. StudentLayout.jsx sidebar excludes redundant Role Assessment item and preserves remaining items', () => {
+        const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'StudentLayout.jsx'), 'utf-8');
+        assert.ok(!fileContent.includes("label: 'Role Assessment'"), 'Sidebar navItems must not include Role Assessment');
+        assert.ok(!fileContent.includes('label: "Role Assessment"'), 'Sidebar navItems must not include Role Assessment');
+        
+        // Confirm all 10 remaining items exist in exact order
+        const expectedItems = [
+            'Dashboard', 'Skill Gap', 'Roadmap', 'Practice', 'Mock Interview',
+            'Placement Simulation', 'Campus Drives', 'Projects', 'Resume', 'Profile'
+        ];
+        for (const item of expectedItems) {
+            assert.ok(fileContent.includes(`label: '${item}'`), `Sidebar must retain ${item}`);
+        }
+    });
 });
+

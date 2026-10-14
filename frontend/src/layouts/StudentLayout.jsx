@@ -31,7 +31,6 @@ import API_URL from '../apiConfig';
 // Navigation definition with unified emerald brand accents
 export const navItems = [
     { label: 'Dashboard',            path: '/student/dashboard',  icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
-    { label: 'Role Assessment',      path: '/assessment/setup',   icon: Sparkles,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Skill Gap',            path: '/student/skill-gap',  icon: Target,          accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Roadmap',              path: '/student/roadmap',    icon: Compass,         accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
