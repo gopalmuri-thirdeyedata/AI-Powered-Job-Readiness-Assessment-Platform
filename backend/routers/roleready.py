@@ -21,7 +21,7 @@ import utils
 from routers.auth import get_current_user, require_hr_or_admin, get_current_tenant
 from routers.student import get_current_student_profile
 from services import roleready_service
-from services.student_resume_analyzer import extract_resume_text, analyze_student_resume
+from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, extract_candidate_name_from_resume
 from services.rag_service import RAGService
 import secrets
 import uuid
@@ -225,7 +225,14 @@ def initialize_student_session(
         extracted_text = extract_resume_text(saved_resume_path)
         if extracted_text:
             resume_raw_text = extracted_text
+            cand_name = extract_candidate_name_from_resume(extracted_text)
+            if cand_name:
+                student_profile.full_name = cand_name
+                db.commit()
+                db.refresh(student_profile)
             analysis = analyze_student_resume(extracted_text, clean_role)
+            if cand_name and isinstance(analysis, dict):
+                analysis["candidate_name"] = cand_name
             resume_snapshot = analysis
 
     # Handle uploaded JD file if provided

@@ -19,11 +19,14 @@ def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: s
         print("Error: VAPI_PRIVATE_KEY is missing.")
         return None
 
-    # Sanitize candidate_name: never speak raw email or domain to candidate
+    # Sanitize candidate_name: never speak raw email, domain, or handle with numbers to candidate
     clean_name = str(candidate_name or "").strip()
     if "@" in clean_name:
         local_user = clean_name.split("@")[0]
         words = re.sub(r"[^a-zA-Z\s]", " ", local_user).split()
+        clean_name = " ".join([w for w in words if len(w) > 1]).title() or "Candidate"
+    elif any(ch.isdigit() for ch in clean_name):
+        words = re.sub(r"[^a-zA-Z\s]", " ", clean_name).split()
         clean_name = " ".join([w for w in words if len(w) > 1]).title() or "Candidate"
     elif clean_name.lower() in ("", "none", "null", "unknown"):
         clean_name = "Candidate"

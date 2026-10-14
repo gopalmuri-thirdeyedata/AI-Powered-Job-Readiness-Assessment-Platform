@@ -5,6 +5,7 @@ including the strict sequential state machine, dynamic JD/Resume synthesis,
 proctoring telemetry, sandboxed execution, and dual-audience reporting.
 """
 import uuid
+import re
 import json
 import hashlib
 import concurrent.futures
@@ -1931,43 +1932,57 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
         int_round.started_at = datetime.utcnow()
         _commit_or_500(db)
 
-    # 1. Candidate Name Resolution (Strict Human Name - Never Raw Email)
+    # 1. Candidate Name Resolution (Strict Real Name - Prioritize Uploaded Resume)
     candidate_name = None
     profile = None
     if session.student_profile_id:
         profile = db.query(StudentProfile).filter(StudentProfile.id == session.student_profile_id).first()
-        if profile and profile.full_name and "@" not in profile.full_name and profile.full_name.strip().lower() not in ("student", "candidate"):
-            candidate_name = profile.full_name.strip()
+
+    # PRIORITY 1: Extract candidate's real name directly from the session resume raw text
+    from services.student_resume_analyzer import extract_candidate_name_from_resume
+    resume_raw = (session.resume_raw_text or "").strip()
+    if resume_raw:
+        cand_name_from_resume = extract_candidate_name_from_resume(resume_raw)
+        if cand_name_from_resume:
+            candidate_name = cand_name_from_resume
+
+    # PRIORITY 2: Check resume snapshot dictionary if present
+    resume_snapshot = session.resume_snapshot or {}
+    if not candidate_name and isinstance(resume_snapshot, dict):
+        for key in ["candidate_name", "name", "full_name", "student_name"]:
+            val = resume_snapshot.get(key)
+            if val and isinstance(val, str) and "@" not in val and len(val.strip()) > 1:
+                clean_val = re.sub(r"[^a-zA-Z\s]", " ", val).strip()
+                if clean_val and clean_val.lower() not in ("candidate", "student", "unknown candidate"):
+                    candidate_name = clean_val.title()
+                    break
+
+    # PRIORITY 3: If session resume text was empty, check student's stored resume in database (StudentResume)
+    if not candidate_name and session.student_profile_id:
+        latest_res = db.query(StudentResume).filter(
+            StudentResume.student_profile_id == session.student_profile_id
+        ).order_by(desc(StudentResume.created_at)).first()
+        if latest_res:
+            res_text = getattr(latest_res, "raw_text", None) or getattr(latest_res, "full_text", None) or ""
+            if res_text:
+                cand_name_from_sr = extract_candidate_name_from_resume(res_text)
+                if cand_name_from_sr:
+                    candidate_name = cand_name_from_sr
+
+    # PRIORITY 4: Check profile full_name ONLY if it is an actual human name (no digits, no '@', not generic)
+    if not candidate_name and profile and profile.full_name:
+        fn = profile.full_name.strip()
+        if "@" not in fn and not any(ch.isdigit() for ch in fn) and fn.lower() not in ("student", "candidate", "unknown"):
+            candidate_name = fn
 
     if not candidate_name and session.candidate_id:
         cand = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
-        if cand and cand.name and "@" not in cand.name and cand.name.strip().lower() not in ("unknown candidate", "candidate"):
-            candidate_name = cand.name.strip()
+        if cand and cand.name:
+            cn = cand.name.strip()
+            if "@" not in cn and not any(ch.isdigit() for ch in cn) and cn.lower() not in ("candidate", "unknown candidate"):
+                candidate_name = cn
 
-    # Fallback to parsed name in resume snapshot if available
-    resume_snapshot = session.resume_snapshot or {}
-    if not candidate_name and isinstance(resume_snapshot, dict):
-        for key in ["name", "candidate_name", "full_name", "student_name"]:
-            val = resume_snapshot.get(key)
-            if val and isinstance(val, str) and "@" not in val and len(val.strip()) > 1:
-                candidate_name = val.strip()
-                break
-
-    # Fallback to top lines of resume raw text (first line of resume is almost always the candidate's name)
-    resume_raw = (session.resume_raw_text or "").strip()
-    if not candidate_name and resume_raw:
-        for line in resume_raw.splitlines()[:6]:
-            line_clean = line.strip()
-            if (
-                3 <= len(line_clean) <= 35
-                and "@" not in line_clean
-                and not any(w in line_clean.lower() for w in ["resume", "curriculum", "cv", "page", "email", "phone", "profile", "summary", "skills", "experience"])
-                and re.match(r"^[A-Za-z]+([ .'-][A-Za-z]+)+$", line_clean)
-            ):
-                candidate_name = line_clean.title()
-                break
-
-    # If still not found, convert email username to clean human name (e.g. gopal.muri -> Gopal Muri)
+    # PRIORITY 5: If still not found, convert email username to clean human name (strip numbers, e.g. gopalmuri1919 -> Gopalmuri)
     if not candidate_name:
         raw_email = (profile.email if profile else None) or (profile.full_name if profile and "@" in profile.full_name else None) or ""
         if "@" in raw_email:
@@ -1982,10 +1997,11 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
     if not candidate_name:
         candidate_name = "Candidate"
 
-    # Update student profile full_name in DB if it was storing raw email
-    if profile and candidate_name != "Candidate" and ("@" in str(profile.full_name) or str(profile.full_name).strip().lower() in ("student", "candidate")):
-        profile.full_name = candidate_name
-        _commit_or_500(db)
+    # Always persist the correct name back into profile.full_name if it was storing raw email or email handle with digits
+    if profile and candidate_name != "Candidate":
+        if "@" in str(profile.full_name) or any(ch.isdigit() for ch in str(profile.full_name)) or str(profile.full_name).strip().lower() in ("student", "candidate", ""):
+            profile.full_name = candidate_name
+            _commit_or_500(db)
 
     role = session.target_role or (session.extracted_jd_data or {}).get("role_title") or "Software Engineer"
     company = session.target_company or "Target Company"

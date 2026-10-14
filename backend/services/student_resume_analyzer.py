@@ -27,9 +27,39 @@ def extract_resume_text(file_path: str) -> str:
         except Exception:
             return ""
 
+def extract_candidate_name_from_resume(raw_text: str) -> str:
+    """
+    Extracts the candidate's actual full name from the top lines of a resume.
+    In almost all resumes (PDF/DOCX), the candidate's name is in the first 1-8 non-empty lines.
+    """
+    if not raw_text:
+        return ""
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    for line in lines[:8]:
+        # Handle lines where candidate name and titles/contacts are separated by dashes, pipes, bullets, spaces, or tabs
+        parts = re.split(r'[-–—|•\t]+|\s{2,}', line)
+        for part in parts:
+            part_clean = part.strip()
+            if not part_clean:
+                continue
+            lower_part = part_clean.lower()
+            if any(bad in lower_part for bad in ["@", "http", "www.", "github", "linkedin", "leetcode", "phone", "curriculum", "resume", "education", "experience", "skills", "projects", "summary", "+91", "tel:"]):
+                continue
+            # Remove numbers and non-letter symbols
+            cleaned = re.sub(r"[^A-Za-z\s\.\-']", "", part_clean).strip()
+            words = cleaned.split()
+            # Candidate name typically has 2 to 4 words (e.g., "Gopal Muri", "Jane Doe")
+            if 2 <= len(words) <= 4 and all(len(w) >= 2 for w in words):
+                return " ".join(words).title()
+            if len(words) == 1 and 3 <= len(words[0]) <= 25 and words[0].lower() not in ("student", "candidate", "developer", "engineer", "software", "curriculum", "vitae"):
+                return words[0].title()
+    return ""
+
 def _fallback_heuristic_analysis(raw_text: str) -> Dict[str, Any]:
     """Deterministic, rule-based extraction when LLM is unavailable or times out."""
     lower_text = raw_text.lower()
+    extracted_candidate_name = extract_candidate_name_from_resume(raw_text)
+
     
     # Common tech skills dictionary
     tech_keywords = [
@@ -111,6 +141,7 @@ def _fallback_heuristic_analysis(raw_text: str) -> Dict[str, Any]:
     overall_score = round((ats_score * 0.5) + (min(100.0, len(extracted_tech) * 7.0) * 0.3) + (dsa_score * 0.2), 1)
 
     return {
+        "candidate_name": extracted_candidate_name,
         "overall_score": overall_score,
         "ats_score": ats_score,
         "technical_skills": [s.title() for s in extracted_tech],
@@ -155,6 +186,7 @@ IMPORTANT INSTRUCTIONS:
 - NEVER invent, assume, or hallucinate any experience, achievements, metrics, skills, projects, or certifications that are NOT in the text.
 - If an item or metric is absent, explicitly mark it as missing in 'missing_information'.
 - Base all scores strictly on the evidence in the resume text.
+- Extract the candidate's actual full name from the top header of the resume.
 
 Resume Text:
 \"\"\"
@@ -163,6 +195,7 @@ Resume Text:
 
 Respond with a single VALID JSON object (and nothing else) with the exact structure below:
 {{
+  "candidate_name": "<full name of candidate extracted from the header of the resume, e.g. Gopal Muri>",
   "overall_score": <float 0-100>,
   "ats_score": <float 0-100>,
   "technical_skills": [<list of strings extracted from resume>],
@@ -237,8 +270,12 @@ def _clean_and_validate_analysis(data: Dict[str, Any], raw_text: str) -> Dict[st
     
     overall_score = float(data.get("overall_score", fallback["overall_score"]))
     ats_score = float(data.get("ats_score", fallback["ats_score"]))
+    candidate_name = data.get("candidate_name") or fallback.get("candidate_name") or ""
+    if candidate_name:
+        candidate_name = re.sub(r"[^A-Za-z\s\.\-']", "", str(candidate_name)).strip().title()
 
     return {
+        "candidate_name": candidate_name or fallback.get("candidate_name", ""),
         "overall_score": min(100.0, max(10.0, round(overall_score, 1))),
         "ats_score": min(100.0, max(10.0, round(ats_score, 1))),
         "technical_skills": data.get("technical_skills") or fallback["technical_skills"],

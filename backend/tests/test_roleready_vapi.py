@@ -89,5 +89,10 @@ def test_vapi_init_success_with_session(db_session):
     assert "questions" in data
     assert len(data["questions"]) >= 3
     assert data["role"] == "Full Stack Engineer"
-    assert isinstance(data["candidateName"], str) and len(data["candidateName"]) > 0
+    assert data["candidateName"] == "Gopal Muri"
+    assert "@" not in data["candidateName"]
     assert "duration" in data
+
+    # Verify student profile full_name was updated to the extracted resume name
+    db_session.refresh(profile)
+    assert profile.full_name == "Gopal Muri"
