@@ -303,28 +303,28 @@ const StudentDashboard = () => {
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                         <Link
                             to="/assessment/setup"
-                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02]"
+                            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                         >
                             <Sparkles className="w-4 h-4" />
                             <span>Start New Assessment</span>
                         </Link>
                         <Link
                             to="/student/practice"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all hover:scale-[1.02] shadow-xs"
+                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <Code2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Solve DSA</span>
                         </Link>
                         <Link
                             to="/student/simulation"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all hover:scale-[1.02] shadow-xs"
+                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                             <span>Simulate Drive</span>
                         </Link>
                         <Link
                             to="/student/resume"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all hover:scale-[1.02] shadow-xs"
+                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                             <span>Resume</span>
@@ -359,7 +359,7 @@ const StudentDashboard = () => {
                     </div>
                     <Link
                         to={assessmentHistory.active_session.continue_url}
-                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-amber-500/25 transition-all hover:scale-[1.02] shrink-0"
+                        className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all shrink-0 cursor-pointer"
                     >
                         <PlayCircle className="w-4 h-4" />
                         <span>Continue Assessment</span>
@@ -615,7 +615,7 @@ const StudentDashboard = () => {
 
                             <Link
                                 to="/assessment/setup"
-                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all hover:scale-[1.02] shrink-0"
+                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0"
                             >
                                 <Sparkles className="w-3.5 h-3.5" />
                                 <span>Start Assessment</span>
@@ -645,7 +645,7 @@ const StudentDashboard = () => {
                                     <div className="mt-6 flex justify-center">
                                         <Link
                                             to="/assessment/setup"
-                                            className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02]"
+                                            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                                         >
                                             <Sparkles className="w-4 h-4" />
                                             <span>Take Your First Assessment</span>
@@ -979,7 +979,7 @@ const StudentDashboard = () => {
                                     <div className="mt-6 flex justify-center">
                                         <Link
                                             to="/assessment/setup"
-                                            className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-purple-600/25 transition-all hover:scale-[1.02]"
+                                            className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                                         >
                                             <Sparkles className="w-4 h-4" />
                                             <span>Start An Assessment</span>

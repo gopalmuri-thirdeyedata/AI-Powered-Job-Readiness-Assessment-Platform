@@ -98,13 +98,14 @@ const CareerCopilotDrawer = () => {
             {!isOpen && (
                 <button
                     onClick={() => setIsOpen(true)}
-                    className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full shadow-2xl shadow-emerald-950/60 border border-emerald-400/40 flex items-center gap-2.5 transition-all transform hover:scale-105 group font-medium text-sm"
+                    className="fixed bottom-6 right-6 z-40 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-full shadow-lg shadow-emerald-950/40 border border-emerald-400/30 flex items-center gap-2 sm:gap-2.5 transition-all transform hover:scale-105 group font-medium text-xs sm:text-sm cursor-pointer"
+                    aria-label="Open Career Copilot"
                 >
-                    <span className="relative flex h-3 w-3">
+                    <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-emerald-400"></span>
                     </span>
-                    <Bot className="w-5 h-5 text-emerald-100 group-hover:rotate-12 transition-transform" />
+                    <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-100 group-hover:rotate-12 transition-transform" />
                     <span className="tracking-wide">Career Copilot</span>
                 </button>
             )}

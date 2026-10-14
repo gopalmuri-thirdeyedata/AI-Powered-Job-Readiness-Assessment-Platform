@@ -201,25 +201,32 @@ const StudentLayout = () => {
         <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800">
             {/* Brand */}
             <div
-                className={`flex items-center h-16 border-b border-slate-200/80 dark:border-slate-800 px-3 shrink-0 ${forMobile ? 'gap-3' : collapsed ? 'justify-center' : 'gap-3 px-4'}`}
+                className={`flex items-center h-16 border-b border-slate-200/80 dark:border-slate-800 px-3 shrink-0 ${forMobile ? 'gap-3 px-4' : collapsed ? 'justify-center' : 'gap-3 px-4'}`}
             >
-                <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-md bg-gradient-to-tr from-emerald-600 to-emerald-500 text-white"
-                >
-                    <Sparkles className="w-4 h-4 text-white" />
-                </div>
-                {(!collapsed || forMobile) && (
-                    <div className="leading-none">
-                        <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</div>
-                        <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
-                            Student Career Hub
-                        </div>
-                    </div>
-                )}
+                <Link to="/" className="flex items-center gap-2.5 group focus:outline-none shrink-0" title="PrepWin Home">
+                    <img
+                        src="/logo_main.png"
+                        alt="ThirdEye Data"
+                        className={`${collapsed && !forMobile ? 'h-7 w-auto' : 'h-7 w-auto'} object-contain shrink-0 transition-transform group-hover:scale-[1.02]`}
+                    />
+                    {(!collapsed || forMobile) && (
+                        <>
+                            <div className="w-px h-5 bg-slate-200 dark:bg-slate-800 shrink-0" />
+                            <div className="leading-none">
+                                <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                    PrepWin
+                                </div>
+                                <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
+                                    Student Career Hub
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </Link>
                 {forMobile && (
                     <button
                         onClick={() => setMobileOpen(false)}
-                        className="ml-auto p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors rounded-lg"
+                        className="ml-auto p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors rounded-lg cursor-pointer"
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -361,7 +368,7 @@ const StudentLayout = () => {
                         <Link
                             to="/assessment/setup"
                             id="student-topbar-assessment-btn"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-all shadow-xs"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer"
                             title="Start AI Role Assessment"
                         >
                             <Sparkles className="w-3.5 h-3.5" />
@@ -372,17 +379,17 @@ const StudentLayout = () => {
                             type="button"
                             onClick={toggleTheme}
                             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700"
+                            className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 cursor-pointer"
                         >
-                            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
                         </button>
                         {profile && (
                             <Link
                                 to="/student/profile"
-                                className="hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700"
+                                className="hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer text-xs"
                             >
                                 <div
-                                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-teal-500"
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-xs"
                                 >
                                     {profile.full_name?.charAt(0)?.toUpperCase() || 'S'}
                                 </div>

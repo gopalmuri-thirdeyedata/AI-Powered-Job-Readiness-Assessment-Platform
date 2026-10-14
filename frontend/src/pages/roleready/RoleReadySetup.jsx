@@ -240,7 +240,7 @@ const RoleReadySetup = () => {
                 {/* Header Title Section with Dashboard Link */}
                 <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
                     <div className="space-y-1.5">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
                             <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                             <span>AI-POWERED EVALUATION</span>
                         </div>
@@ -255,7 +255,7 @@ const RoleReadySetup = () => {
                     <Link
                         to="/student/dashboard"
                         id="setup-view-dashboard-btn"
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-all shadow-2xs hover:shadow-xs self-start md:self-auto shrink-0"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-all shadow-2xs hover:shadow-xs self-start md:self-auto shrink-0 cursor-pointer"
                     >
                         <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                         <span>View Past Tests & Dashboard</span>
