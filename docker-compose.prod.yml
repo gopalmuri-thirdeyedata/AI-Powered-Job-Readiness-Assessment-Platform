@@ -43,6 +43,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      - DATABASE_URL=mysql+pymysql://hiringai_user:InterviewerPass2026@db:3306/hiringai
       - DB_HOST=db
       - DB_PORT=3306
       - DB_USER=hiringai_user
@@ -50,7 +51,7 @@ services:
       - DB_NAME=hiringai
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=https://interviewer.thirdeyedata.ai
-      - CORS_ORIGINS=https://interviewer.thirdeyedata.ai
+      - CORS_ORIGINS=https://interviewer.thirdeyedata.ai,http://localhost:8212,http://127.0.0.1:8212
     volumes:
       - interviewer_media:/app/media
     networks:
