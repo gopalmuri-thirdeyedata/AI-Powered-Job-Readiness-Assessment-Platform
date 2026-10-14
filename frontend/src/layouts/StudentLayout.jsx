@@ -199,40 +199,6 @@ const StudentLayout = () => {
     /* ─── Sidebar Inner Content ─── */
     const SidebarInner = ({ forMobile = false }) => (
         <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800">
-            {/* Brand */}
-            <div
-                className={`flex items-center h-16 border-b border-slate-200/80 dark:border-slate-800 px-3 shrink-0 ${forMobile ? 'gap-3 px-4' : collapsed ? 'justify-center' : 'gap-3 px-4'}`}
-            >
-                <Link to="/" className="flex items-center gap-2.5 group focus:outline-none shrink-0" title="PrepWin Home">
-                    <img
-                        src="/logo_main.png"
-                        alt="ThirdEye Data"
-                        className={`${collapsed && !forMobile ? 'h-7 w-auto' : 'h-7 w-auto'} object-contain shrink-0 transition-transform group-hover:scale-[1.02]`}
-                    />
-                    {(!collapsed || forMobile) && (
-                        <>
-                            <div className="w-px h-5 bg-slate-200 dark:bg-slate-800 shrink-0" />
-                            <div className="leading-none">
-                                <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                                    PrepWin
-                                </div>
-                                <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
-                                    Student Career Hub
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </Link>
-                {forMobile && (
-                    <button
-                        onClick={() => setMobileOpen(false)}
-                        className="ml-auto p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors rounded-lg cursor-pointer"
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
-                )}
-            </div>
-
             {/* Nav Items */}
             <nav className={`flex-1 py-3 overflow-y-auto student-scrollbar ${collapsed && !forMobile ? 'flex flex-col items-center' : ''}`}>
                 {navItems.map(item => (
@@ -292,160 +258,179 @@ const StudentLayout = () => {
 
     return (
         <div
-            className="min-h-screen flex font-sans bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+            className="min-h-screen flex flex-col font-sans bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
             style={{ fontFamily: "'Inter', 'Plus Jakarta Sans', system-ui, sans-serif" }}
         >
-            {/* ─── Desktop Sidebar ─── */}
-            <aside
-                className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-30 transition-all duration-300 ease-in-out overflow-x-hidden"
-                style={{ width: SIDEBAR_W }}
+            {/* ─── Top Bar (Global across full width) ─── */}
+            <header
+                className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 sm:px-6 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800"
             >
-                <SidebarInner />
-
-                {/* Collapse toggle button */}
-                <button
-                    onClick={() => setCollapsed(c => !c)}
-                    className="absolute -right-3 top-[68px] z-30 w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-xs hover:shadow-sm hover:scale-105 active:scale-95 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
-                    title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                    aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                >
-                    {collapsed
-                        ? <ChevronRight className="w-3.5 h-3.5" />
-                        : <ChevronLeft className="w-3.5 h-3.5" />
-                    }
-                </button>
-            </aside>
-
-            {/* ─── Mobile Overlay Drawer ─── */}
-            {mobileOpen && (
-                <div className="lg:hidden fixed inset-0 z-50 flex">
-                    {/* Backdrop */}
-                    <div
-                        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs"
-                        onClick={() => setMobileOpen(false)}
-                    />
-                    {/* Drawer */}
-                    <aside
-                        className="relative z-10 w-64 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200"
+                {/* Left: Hamburger (mobile) + Brand Logo & Title + Breadcrumb */}
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <button
+                        onClick={() => setMobileOpen(true)}
+                        className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors rounded-lg cursor-pointer shrink-0"
+                        aria-label="Open navigation menu"
                     >
-                        <SidebarInner forMobile />
-                    </aside>
-                </div>
-            )}
+                        <Menu className="w-5 h-5" />
+                    </button>
 
-            {/* ─── Main Column ─── */}
-            <div
-                className={`flex flex-col flex-1 min-h-screen transition-all duration-300 ease-in-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
-            >
-                {/* Top Bar */}
-                <header
-                    className="sticky top-0 z-20 flex items-center justify-between h-16 px-4 sm:px-6 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800"
-                >
-                    {/* Left: hamburger (mobile) + brand (collapsed/mobile) + breadcrumb (desktop) */}
-                    <div className="flex items-center gap-3 min-w-0">
-                        <button
-                            onClick={() => setMobileOpen(true)}
-                            className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors rounded-lg cursor-pointer"
-                            aria-label="Open navigation menu"
-                        >
-                            <Menu className="w-5 h-5" />
-                        </button>
-
-                        {/* Mobile brand lockup */}
-                        <div className="lg:hidden flex items-center gap-2 shrink-0">
-                            <Link to="/" className="flex items-center gap-2 focus:outline-none">
-                                <img src="/logo_main.png" alt="ThirdEye Data" className="h-6 w-auto object-contain shrink-0" />
-                                <div className="leading-none">
-                                    <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</span>
-                                </div>
-                            </Link>
+                    {/* Brand Lockup: ALWAYS VISIBLE in both expanded & collapsed states */}
+                    <Link
+                        to="/"
+                        className="flex items-center gap-2.5 group focus:outline-none shrink-0"
+                        title="PrepWin Home"
+                    >
+                        <img
+                            src="/logo_main.png"
+                            alt="ThirdEye Data"
+                            className="h-7 w-auto object-contain shrink-0 transition-transform group-hover:scale-[1.02]"
+                        />
+                        <div className="w-px h-5 bg-slate-200 dark:bg-slate-800 shrink-0" />
+                        <div className="leading-none shrink-0">
+                            <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                PrepWin
+                            </div>
+                            <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
+                                Student Career Hub
+                            </div>
                         </div>
+                    </Link>
 
-                        {/* Desktop collapsed brand lockup */}
-                        {collapsed && (
-                            <div className="hidden lg:flex items-center gap-2 shrink-0 pr-3 border-r border-slate-200 dark:border-slate-800">
-                                <Link to="/" className="flex items-center gap-2 focus:outline-none group">
+                    {/* Desktop breadcrumb with divider */}
+                    <div className="w-px h-5 bg-slate-200 dark:bg-slate-800 shrink-0 hidden md:block" />
+                    <nav className="hidden md:flex items-center gap-2 text-xs min-w-0 truncate">
+                        <span className="text-slate-400 dark:text-slate-500 font-medium shrink-0">Student Hub</span>
+                        {currentPage && (
+                            <>
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span className="font-semibold text-emerald-700 dark:text-emerald-400 truncate">
+                                    {currentPage.label}
+                                </span>
+                            </>
+                        )}
+                    </nav>
+                </div>
+
+                {/* Right: Take Assessment CTA, theme toggle & user pill */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                    <Link
+                        to="/assessment/setup"
+                        id="student-topbar-assessment-btn"
+                        className="h-9 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer shrink-0"
+                        title="Start AI Role Assessment"
+                    >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Take Assessment</span>
+                    </Link>
+
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                        className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 cursor-pointer shrink-0"
+                        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                    >
+                        {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+                    </button>
+                    {profile && (
+                        <Link
+                            to="/student/profile"
+                            className="h-9 hidden sm:inline-flex items-center gap-2 rounded-full px-3 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer text-xs shrink-0"
+                        >
+                            <div
+                                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-xs"
+                            >
+                                {profile.full_name?.charAt(0)?.toUpperCase() || 'S'}
+                            </div>
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 leading-none max-w-[120px] truncate">
+                                {profile.full_name || 'Student'}
+                            </span>
+                        </Link>
+                    )}
+                </div>
+            </header>
+
+            {/* ─── Body: Sidebar + Main Content ─── */}
+            <div className="flex-1 flex relative">
+                {/* ─── Desktop Sidebar (Below header) ─── */}
+                <aside
+                    className="hidden lg:flex flex-col fixed left-0 top-16 bottom-0 z-20 transition-all duration-300 ease-in-out"
+                    style={{ width: SIDEBAR_W }}
+                >
+                    <div className="flex flex-col h-full overflow-x-hidden">
+                        <SidebarInner />
+                    </div>
+
+                    {/* Collapse toggle button: centered on sidebar boundary, overflow-visible */}
+                    <button
+                        onClick={() => setCollapsed(c => !c)}
+                        className="absolute -right-3 top-3 z-30 w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-xs hover:shadow-sm hover:scale-105 active:scale-95 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    >
+                        {collapsed
+                            ? <ChevronRight className="w-3.5 h-3.5" />
+                            : <ChevronLeft className="w-3.5 h-3.5" />
+                        }
+                    </button>
+                </aside>
+
+                {/* ─── Mobile Overlay Drawer ─── */}
+                {mobileOpen && (
+                    <div className="lg:hidden fixed inset-0 z-50 flex">
+                        {/* Backdrop */}
+                        <div
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs"
+                            onClick={() => setMobileOpen(false)}
+                        />
+                        {/* Drawer */}
+                        <aside
+                            className="relative z-10 w-64 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200 bg-white dark:bg-slate-900"
+                        >
+                            {/* Mobile Drawer Header */}
+                            <div className="flex items-center justify-between h-16 border-b border-slate-200/80 dark:border-slate-800 px-4 shrink-0">
+                                <Link to="/" className="flex items-center gap-2 focus:outline-none" onClick={() => setMobileOpen(false)}>
+                                    <img src="/logo_main.png" alt="ThirdEye Data" className="h-6 w-auto object-contain shrink-0" />
                                     <div className="leading-none">
-                                        <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                                            PrepWin
-                                        </div>
-                                        <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
-                                            Student Career Hub
-                                        </div>
+                                        <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</span>
                                     </div>
                                 </Link>
-                            </div>
-                        )}
-
-                        {/* Desktop breadcrumb */}
-                        <nav className="hidden lg:flex items-center gap-2 text-xs truncate">
-                            <span className="text-slate-400 dark:text-slate-500 font-medium shrink-0">Student Hub</span>
-                            {currentPage && (
-                                <>
-                                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                    <span className="font-semibold text-emerald-700 dark:text-emerald-400 truncate">
-                                        {currentPage.label}
-                                    </span>
-                                </>
-                            )}
-                        </nav>
-                    </div>
-
-                    {/* Right: Take Assessment CTA, theme toggle & user pill */}
-                    <div className="flex items-center gap-2.5 shrink-0">
-                        <Link
-                            to="/assessment/setup"
-                            id="student-topbar-assessment-btn"
-                            className="h-9 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer shrink-0"
-                            title="Start AI Role Assessment"
-                        >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Take Assessment</span>
-                        </Link>
-
-                        <button
-                            type="button"
-                            onClick={toggleTheme}
-                            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 cursor-pointer shrink-0"
-                            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                        >
-                            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-                        </button>
-                        {profile && (
-                            <Link
-                                to="/student/profile"
-                                className="h-9 hidden sm:inline-flex items-center gap-2 rounded-full px-3 transition-all bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer text-xs shrink-0"
-                            >
-                                <div
-                                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-xs"
+                                <button
+                                    onClick={() => setMobileOpen(false)}
+                                    className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors rounded-lg cursor-pointer"
                                 >
-                                    {profile.full_name?.charAt(0)?.toUpperCase() || 'S'}
-                                </div>
-                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 leading-none">
-                                    {profile.full_name || 'Student'}
-                                </span>
-                            </Link>
-                        )}
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="flex-1 flex flex-col overflow-y-auto">
+                                <SidebarInner forMobile />
+                            </div>
+                        </aside>
                     </div>
-                </header>
+                )}
 
-                {/* Page Content */}
-                <main className="flex-1 px-4 sm:px-6 py-6 pb-24 sm:pb-20">
-                    <div className="max-w-7xl mx-auto w-full">
-                        <Outlet />
-                    </div>
-                </main>
-
-                {/* Career Copilot Interactive Drawer */}
-                <CareerCopilotDrawer />
-
-                {/* Minimal Footer */}
-                <footer
-                    className="shrink-0 py-4 px-6 text-center text-xs text-slate-400 border-t border-slate-200/80 dark:border-slate-800"
+                {/* ─── Main Column ─── */}
+                <div
+                    className={`flex flex-col flex-1 min-h-[calc(100vh-4rem)] transition-all duration-300 ease-in-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
                 >
-                    © 2026 ThirdEye Data — PrepWin Student Career &amp; Placement Platform
-                </footer>
+                    {/* Page Content */}
+                    <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-28 sm:pb-24">
+                        <div className="max-w-7xl mx-auto w-full">
+                            <Outlet />
+                        </div>
+                    </main>
+
+                    {/* Career Copilot Interactive Drawer */}
+                    <CareerCopilotDrawer />
+
+                    {/* Minimal Footer with bottom padding clearance on mobile */}
+                    <footer
+                        className="shrink-0 py-4 px-6 text-center text-xs text-slate-400 border-t border-slate-200/80 dark:border-slate-800 pb-16 sm:pb-4"
+                    >
+                        © 2026 ThirdEye Data — PrepWin Student Career &amp; Placement Platform
+                    </footer>
+                </div>
             </div>
         </div>
     );
