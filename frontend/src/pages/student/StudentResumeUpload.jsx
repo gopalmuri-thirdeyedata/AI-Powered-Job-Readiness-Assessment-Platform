@@ -163,10 +163,10 @@ const StudentResumeUpload = () => {
                         <button
                             type="submit"
                             disabled={!selectedFile || isUploading}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all ${
+                            className={`h-11 px-6 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all ${
                                 !selectedFile || isUploading
                                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-xs cursor-pointer'
                             }`}
                         >
                             {isUploading ? (

@@ -210,7 +210,7 @@ const StudentProfile = () => {
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder="e.g. Alex Kumar"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
@@ -221,7 +221,7 @@ const StudentProfile = () => {
                                 type="email"
                                 value={profile?.email || ''}
                                 disabled
-                                className="w-full bg-slate-100 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                className="h-11 w-full bg-slate-100 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400 cursor-not-allowed"
                             />
                         </div>
                     </div>
@@ -241,7 +241,7 @@ const StudentProfile = () => {
                             <select
                                 value={targetRole}
                                 onChange={(e) => setTargetRole(e.target.value)}
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             >
                                 {COMMON_ROLES.map((r) => (
                                     <option key={r} value={r} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
@@ -259,7 +259,7 @@ const StudentProfile = () => {
                                     value={customRole}
                                     onChange={(e) => setCustomRole(e.target.value)}
                                     placeholder="Enter your custom target role"
-                                    className="w-full mt-2.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                    className="h-11 w-full mt-2.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                                 />
                             )}
                         </div>
@@ -270,13 +270,13 @@ const StudentProfile = () => {
                                 Target Company <span className="text-slate-400 font-normal lowercase">(optional)</span>
                             </label>
                             <div className="relative">
-                                <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                                <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                                 <input
                                     type="text"
                                     value={targetCompany}
                                     onChange={(e) => setTargetCompany(e.target.value)}
                                     placeholder="e.g. Google, Microsoft, Startup (Optional)"
-                                    className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                    className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                                 />
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
@@ -301,7 +301,7 @@ const StudentProfile = () => {
                                 value={education}
                                 onChange={(e) => setEducation(e.target.value)}
                                 placeholder="e.g. B.Tech Computer Science"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
@@ -315,7 +315,7 @@ const StudentProfile = () => {
                                 value={graduationYear}
                                 onChange={(e) => setGraduationYear(e.target.value)}
                                 placeholder="e.g. 2026"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
@@ -330,7 +330,7 @@ const StudentProfile = () => {
                                 value={cgpa}
                                 onChange={(e) => setCgpa(e.target.value)}
                                 placeholder="e.g. 8.5"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                     </div>
@@ -357,12 +357,12 @@ const StudentProfile = () => {
                                 }
                             }}
                             placeholder="Add a skill (e.g. React, Python, Docker) and press Add"
-                            className="flex-1 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                            className="h-11 flex-1 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                         />
                         <button
                             type="button"
                             onClick={handleAddSkill}
-                            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold flex items-center gap-1 transition-colors"
+                            className="h-11 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                         >
                             <Plus className="w-4 h-4" /> Add
                         </button>
@@ -381,7 +381,7 @@ const StudentProfile = () => {
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveSkill(skill)}
-                                        className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 p-0.5 rounded transition-colors"
+                                        className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
                                     >
                                         <X className="w-3 h-3" />
                                     </button>
@@ -396,7 +396,7 @@ const StudentProfile = () => {
                     <button
                         type="submit"
                         disabled={isSaving}
-                        className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-xs transition-all"
+                        className="h-11 px-8 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-xs transition-all cursor-pointer disabled:cursor-not-allowed"
                     >
                         {isSaving ? (
                             <>
