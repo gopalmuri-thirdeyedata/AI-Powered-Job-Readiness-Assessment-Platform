@@ -8,82 +8,121 @@
 /* ─── ThirdEye / PrepWin Design Tokens ────────── */
 /* Light mode (default) */
 :root {
-    /* Brand */
-    --brand:         #16A34A;
-    --brand-dark:    #15803D;
-    --brand-light:   #DCFCE7;
-    --brand-faint:   #F0FDF4;
+    /* Explicit Semantic Tokens */
+    --brand-primary:   #059669;
+    --brand-hover:     #047857;
+    --brand-light:     #ECFDF5;
+    --brand-faint:     rgba(5, 150, 105, 0.05);
 
-    /* Page surfaces */
-    --rr-bg:         #F7F9FC;
-    --rr-surface:    #FFFFFF;
-    --rr-elevated:   #FFFFFF;
-    --rr-card:       #FFFFFF;
-    --rr-input:      #F8FAFC;
-    --rr-border:     #E2E8F0;
-    --rr-border-md:  #CBD5E1;
+    --bg-main:         #F8FAFC;
+    --bg-surface:      #FFFFFF;
+    --bg-card:         #FFFFFF;
+    --bg-input:        #F8FAFC;
+    --border-default:  #E2E8F0;
+    --border-subtle:   #F1F5F9;
+    --border-strong:   #CBD5E1;
 
-    /* Text */
-    --rr-text:       #0F172A;
-    --rr-text-2:     #334155;
-    --rr-muted:      #64748B;
-    --rr-faint:      #94A3B8;
+    --text-primary:    #0F172A;
+    --text-secondary:  #64748B;
+    --text-muted:      #94A3B8;
 
-    /* Semantic */
-    --rr-success:    #16A34A;
-    --rr-warning:    #D97706;
-    --rr-error:      #DC2626;
-    --rr-info:       #2563EB;
+    --semantic-info:   #2563EB;
+    --semantic-warn:   #D97706;
+    --semantic-error:  #DC2626;
 
-    /* Student Platform Tokens — Light-First (matches PrepWin Light Theme) */
-    --s-bg:        #F7F9FC;
-    --s-surface:   #FFFFFF;
-    --s-elevated:  #FFFFFF;
-    --s-card:      #FFFFFF;
-    --s-border:    #E2E8F0;
-    --s-border-md: #CBD5E1;
-    --s-emerald:   #10B981;
-    --s-emerald-d: #059669;
-    --s-emerald-g: rgba(16,185,129,0.08);
-    --s-purple:    #8B5CF6;
-    --s-blue:      #2563EB;
-    --s-amber:     #D97706;
-    --s-cyan:      #0891B2;
-    --s-rose:      #E11D48;
-    --s-text:      #0F172A;
-    --s-muted:     #64748B;
-    --s-faint:     #94A3B8;
+    /* Backward Compatibility Aliases for Legacy Code & Components */
+    --brand:           var(--brand-primary);
+    --brand-dark:      var(--brand-hover);
+    --brand-light:     var(--brand-light);
+    --brand-faint:     var(--brand-faint);
+
+    --rr-bg:           var(--bg-main);
+    --rr-surface:      var(--bg-surface);
+    --rr-elevated:     var(--bg-surface);
+    --rr-card:         var(--bg-card);
+    --rr-input:        var(--bg-input);
+    --rr-border:       var(--border-default);
+    --rr-border-md:    var(--border-strong);
+    --rr-text:         var(--text-primary);
+    --rr-text-2:       #334155;
+    --rr-muted:        var(--text-secondary);
+    --rr-faint:        var(--text-muted);
+    --rr-success:      var(--brand-primary);
+    --rr-warning:      var(--semantic-warn);
+    --rr-error:        var(--semantic-error);
+    --rr-info:         var(--semantic-info);
+
+    --s-bg:            var(--bg-main);
+    --s-surface:       var(--bg-surface);
+    --s-elevated:      var(--bg-surface);
+    --s-card:          var(--bg-card);
+    --s-border:        var(--border-default);
+    --s-border-md:     var(--border-strong);
+    --s-emerald:       var(--brand-primary);
+    --s-emerald-d:     var(--brand-hover);
+    --s-emerald-g:     rgba(5, 150, 105, 0.08);
+    --s-purple:        #8B5CF6;
+    --s-blue:          var(--semantic-info);
+    --s-amber:         var(--semantic-warn);
+    --s-cyan:          #0891B2;
+    --s-rose:          #E11D48;
+    --s-text:          var(--text-primary);
+    --s-muted:         var(--text-secondary);
+    --s-faint:         var(--text-muted);
 }
 
 /* Dark mode overrides */
 .dark {
-    --rr-bg:        #0B1220;
-    --rr-surface:   #111B2E;
-    --rr-elevated:  #16233B;
-    --rr-card:      #111B2E;
-    --rr-input:     #0B1220;
-    --rr-border:    #1E293B;
-    --rr-border-md: #334155;
+    --brand-primary:   #10B981;
+    --brand-hover:     #059669;
+    --brand-light:     rgba(16, 185, 129, 0.15);
+    --brand-faint:     rgba(16, 185, 129, 0.06);
 
-    --rr-text:      #F8FAFC;
-    --rr-text-2:    #CBD5E1;
-    --rr-muted:     #94A3B8;
-    --rr-faint:     #64748B;
+    --bg-main:         #0B1220;
+    --bg-surface:      #111B2E;
+    --bg-card:         #111B2E;
+    --bg-input:        #0F172A;
+    --border-default:  #1E293B;
+    --border-subtle:   #16233B;
+    --border-strong:   #334155;
 
-    --brand-light:  rgba(22,163,74,0.15);
-    --brand-faint:  rgba(22,163,74,0.08);
+    --text-primary:    #F8FAFC;
+    --text-secondary:  #94A3B8;
+    --text-muted:      #64748B;
 
-    /* Student Platform Dark Mode */
-    --s-bg:        #0B1220;
-    --s-surface:   #111B2E;
-    --s-elevated:  #16233B;
-    --s-card:      #111B2E;
-    --s-border:    #1E293B;
-    --s-border-md: #334155;
-    --s-emerald-g: rgba(16,185,129,0.15);
-    --s-text:      #F8FAFC;
-    --s-muted:     #94A3B8;
-    --s-faint:     #64748B;
+    --semantic-info:   #60A5FA;
+    --semantic-warn:   #FBBF24;
+    --semantic-error:  #F87171;
+
+    --brand:           var(--brand-primary);
+    --brand-dark:      var(--brand-hover);
+    --brand-light:     var(--brand-light);
+    --brand-faint:     var(--brand-faint);
+
+    --rr-bg:           var(--bg-main);
+    --rr-surface:      var(--bg-surface);
+    --rr-elevated:     #16233B;
+    --rr-card:         var(--bg-card);
+    --rr-input:        var(--bg-input);
+    --rr-border:       var(--border-default);
+    --rr-border-md:    var(--border-strong);
+    --rr-text:         var(--text-primary);
+    --rr-text-2:       #CBD5E1;
+    --rr-muted:        var(--text-secondary);
+    --rr-faint:        var(--text-muted);
+
+    --s-bg:            var(--bg-main);
+    --s-surface:       var(--bg-surface);
+    --s-elevated:      #16233B;
+    --s-card:          var(--bg-card);
+    --s-border:        var(--border-default);
+    --s-border-md:     var(--border-strong);
+    --s-emerald:       var(--brand-primary);
+    --s-emerald-d:     var(--brand-hover);
+    --s-emerald-g:     rgba(16, 185, 129, 0.15);
+    --s-text:          var(--text-primary);
+    --s-muted:         var(--text-secondary);
+    --s-faint:         var(--text-muted);
 }
 
 
@@ -115,6 +154,55 @@
 }
 
 @layer components {
+
+    /* ─── Standardized PrepWin UI Component Classes ─────────── */
+    .btn-primary {
+        @apply h-11 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm shadow-xs hover:shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none;
+    }
+
+    .btn-secondary {
+        @apply h-11 px-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200 font-semibold text-sm transition-all shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none;
+    }
+
+    .btn-ghost {
+        @apply h-9 px-3 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/70 font-medium text-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500;
+    }
+
+    .card-surface {
+        @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/90 rounded-2xl p-6 shadow-xs transition-colors;
+    }
+
+    .card-metric {
+        @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all;
+    }
+
+    .card-well {
+        @apply bg-slate-50 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-3.5 transition-colors;
+    }
+
+    .input-base {
+        @apply h-11 px-4 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-medium;
+    }
+
+    .textarea-base {
+        @apply min-h-[120px] p-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xl text-sm font-sans text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 leading-relaxed resize-y transition-all;
+    }
+
+    .badge-emerald {
+        @apply px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 inline-flex items-center gap-1.5;
+    }
+
+    .badge-amber {
+        @apply px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 inline-flex items-center gap-1.5;
+    }
+
+    .badge-rose {
+        @apply px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 inline-flex items-center gap-1.5;
+    }
+
+    .badge-slate {
+        @apply px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1.5;
+    }
 
     /* Solid Brand Green Button (Used in Navbar 'Talk To Us') */
     .btn-brand-green {

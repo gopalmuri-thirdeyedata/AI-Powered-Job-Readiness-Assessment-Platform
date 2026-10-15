@@ -23,11 +23,11 @@ import studentApi from '../../services/studentApi';
 
 const CATEGORY_CONFIG = {
     DSA: { label: 'DSA & Algorithms', color: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', icon: Code2 },
-    TECHNICAL_SKILL: { label: 'Technical Stack', color: 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/20', icon: Layers },
+    TECHNICAL_SKILL: { label: 'Technical Stack', color: 'bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-500/20', icon: Layers },
     APTITUDE: { label: 'Aptitude & Reasoning', color: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20', icon: Brain },
     SYSTEM_DESIGN: { label: 'System Design', color: 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20', icon: BookOpen },
     RESUME: { label: 'Resume & Portfolio', color: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20', icon: FileText },
-    MOCK_INTERVIEW: { label: 'Mock Interview', color: 'bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-500/20', icon: Compass }
+    MOCK_INTERVIEW: { label: 'Mock Interview', color: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', icon: Compass }
 };
 
 const StudentRoadmap = () => {
@@ -204,7 +204,7 @@ const StudentRoadmap = () => {
                         <button
                             key={w.week_number}
                             onClick={() => setActiveWeek(w.week_number)}
-                            className={`px-4 py-2.5 rounded-xl font-semibold text-xs transition-all whitespace-nowrap flex items-center gap-2 ${
+                            className={`px-4 py-2 rounded-xl font-semibold text-xs transition-all whitespace-nowrap flex items-center gap-2 ${
                                 activeWeek === w.week_number
                                     ? 'bg-emerald-600 text-white shadow-xs'
                                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200/90 dark:border-slate-800 shadow-xs'

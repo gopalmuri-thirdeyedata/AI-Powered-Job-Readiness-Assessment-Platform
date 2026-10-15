@@ -124,7 +124,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
 
     return (
         <div className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 font-sans">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
                 {/* Header */}
                 <div className="p-6 bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                     <div className="flex items-center gap-3">

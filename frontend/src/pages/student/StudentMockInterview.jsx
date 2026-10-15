@@ -277,7 +277,7 @@ const StudentMockInterview = () => {
                             <button
                                 onClick={handleStartInterview}
                                 disabled={loading}
-                                className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                                className="w-full sm:w-auto px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                             >
                                 <Sparkles className="w-4 h-4" />
                                 {loading ? 'Initializing Session...' : 'Start Mock Interview (4 Turns)'}
@@ -382,7 +382,7 @@ const StudentMockInterview = () => {
                                     <button
                                         type="submit"
                                         disabled={isSubmitting || !studentResponse.trim()}
-                                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50"
+                                        className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                     >
                                         <Send className="w-4 h-4" />
                                         {isSubmitting ? 'Evaluating Response...' : 'Submit Answer'}
@@ -456,7 +456,7 @@ const StudentMockInterview = () => {
                             <div className="flex justify-end pt-2">
                                 <button
                                     onClick={handleProceedToNext}
-                                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2"
+                                    className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 cursor-pointer"
                                 >
                                     {turnFeedback.is_finished ? 'View Complete Interview Report' : 'Proceed to Next Question'}
                                     <ArrowRight className="w-4 h-4" />
@@ -556,7 +556,7 @@ const StudentMockInterview = () => {
                             </button>
                             <button
                                 onClick={() => setViewMode('SETUP')}
-                                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2"
+                                className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 cursor-pointer"
                             >
                                 <RotateCcw className="w-4 h-4" />
                                 Start Another Mock Interview
@@ -581,7 +581,7 @@ const StudentMockInterview = () => {
                         </div>
                         <button
                             onClick={() => setViewMode('SETUP')}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium text-xs transition-all shadow-xs"
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-medium text-xs transition-all shadow-xs cursor-pointer"
                         >
                             Start New Session
                         </button>

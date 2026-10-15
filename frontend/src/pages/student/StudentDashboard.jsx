@@ -254,7 +254,7 @@ const StudentDashboard = () => {
 
     if (error) {
         return (
-            <div className="max-w-xl mx-auto bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 rounded-3xl p-8 text-center shadow-lg">
+            <div className="max-w-xl mx-auto bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 rounded-2xl p-8 text-center shadow-lg">
                 <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center justify-center mx-auto mb-4">
                     <AlertTriangle className="w-7 h-7 text-rose-600 dark:text-rose-400" />
                 </div>
@@ -306,17 +306,17 @@ const StudentDashboard = () => {
         <div className="space-y-6 animate-in fade-in duration-300 pb-12">
             {/* ─── Dashboard View Segmented Switcher ────────────────── */}
             <div className="flex items-center justify-between flex-wrap gap-4 pb-1">
-                <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
                     <button
                         onClick={() => handleTabChange('performance')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'performance' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs border border-slate-200/60 dark:border-slate-700/60' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                        className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'performance' ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs border border-emerald-200/80 dark:border-emerald-500/20' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                     >
                         <BarChart3 className="w-3.5 h-3.5" />
                         <span>Performance & Analytics</span>
                     </button>
                     <button
                         onClick={() => handleTabChange('readiness')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'readiness' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs border border-slate-200/60 dark:border-slate-700/60' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                        className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'readiness' ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs border border-emerald-200/80 dark:border-emerald-500/20' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                     >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>Readiness & Profile Hub</span>
@@ -330,11 +330,11 @@ const StudentDashboard = () => {
             ) : (
                 <div className="space-y-8 animate-in fade-in duration-200">
                     {/* ─── Hero Header & Quick Actions ───────────────────── */}
-                    <div className="relative rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-sm overflow-hidden">
+                    <div className="relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-sm overflow-hidden">
                 {/* Ambient glow decoration */}
                 <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-50 dark:bg-emerald-500/5 rounded-full blur-[90px] pointer-events-none" />
 
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
                     <div>
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs font-semibold mb-3">
                             <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -369,28 +369,28 @@ const StudentDashboard = () => {
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                         <Link
                             to="/assessment/setup"
-                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02]"
+                            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                         >
                             <Sparkles className="w-4 h-4" />
                             <span>Start New Assessment</span>
                         </Link>
                         <Link
                             to="/student/practice"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all hover:scale-[1.02] shadow-xs"
+                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <Code2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Solve DSA</span>
                         </Link>
                         <Link
                             to="/student/simulation"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all hover:scale-[1.02] shadow-xs"
+                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                             <span>Simulate Drive</span>
                         </Link>
                         <Link
                             to="/student/resume"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all hover:scale-[1.02] shadow-xs"
+                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                             <span>Resume</span>
@@ -401,7 +401,7 @@ const StudentDashboard = () => {
 
             {/* ─── Unfinished Assessment Alert Banner ─────────────── */}
             {assessmentHistory?.active_session && (
-                <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5 shadow-xs">
+                <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5 shadow-xs">
                     <div className="flex items-start gap-3.5">
                         <div className="w-11 h-11 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
                             <Clock className="w-5 h-5 animate-pulse" />
@@ -425,7 +425,7 @@ const StudentDashboard = () => {
                     </div>
                     <Link
                         to={assessmentHistory.active_session.continue_url}
-                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-amber-500/25 transition-all hover:scale-[1.02] shrink-0"
+                        className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all shrink-0 cursor-pointer"
                     >
                         <PlayCircle className="w-4 h-4" />
                         <span>Continue Assessment</span>
@@ -435,7 +435,7 @@ const StudentDashboard = () => {
 
             {/* ─── Onboarding Progress Banner ─────────────────────── */}
             {onboardingStatus && !onboardingStatus.is_onboarded && (
-                <div className="bg-gradient-to-r from-emerald-50 via-white to-teal-50 dark:from-emerald-950/40 dark:via-slate-900/90 dark:to-slate-900 border border-emerald-200 dark:border-emerald-500/30 rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-sm relative overflow-hidden">
+                <div className="bg-gradient-to-r from-emerald-50 via-white to-teal-50 dark:from-emerald-950/40 dark:via-slate-900/90 dark:to-slate-900 border border-emerald-200 dark:border-emerald-500/30 rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-sm relative overflow-hidden">
                     <div className="flex items-start gap-4 relative z-10">
                         <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-200 dark:border-emerald-500/40 flex items-center justify-center text-emerald-700 dark:text-emerald-400 shrink-0">
                             <Sparkles className="w-6 h-6" />
@@ -463,9 +463,9 @@ const StudentDashboard = () => {
             )}
 
             {/* ─── Top 4 High-Impact Metric Cards ────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
                 {/* 1. Total Assessments (Attempted & Completed) */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Assessments
@@ -505,7 +505,7 @@ const StudentDashboard = () => {
                 </div>
 
                 {/* 2. Latest Assessment Score & Date */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-purple-300 dark:hover:border-purple-500/40 transition-all duration-200">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-purple-300 dark:hover:border-purple-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Latest Assessment
@@ -549,7 +549,7 @@ const StudentDashboard = () => {
                 </div>
 
                 {/* 3. Placement Readiness Hero Card */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Placement Readiness
@@ -584,7 +584,7 @@ const StudentDashboard = () => {
                 </div>
 
                 {/* 4. Resume ATS Score */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-blue-300 dark:hover:border-blue-500/40 transition-all duration-200">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-blue-300 dark:hover:border-blue-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Resume Score
@@ -681,7 +681,7 @@ const StudentDashboard = () => {
 
                             <Link
                                 to="/assessment/setup"
-                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all hover:scale-[1.02] shrink-0"
+                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0"
                             >
                                 <Sparkles className="w-3.5 h-3.5" />
                                 <span>Start Assessment</span>
@@ -700,7 +700,7 @@ const StudentDashboard = () => {
 
                         if (allRecords.length === 0) {
                             return (
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-10 text-center shadow-xs">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-10 text-center shadow-xs">
                                     <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto mb-4">
                                         <ClipboardList className="w-8 h-8" />
                                     </div>
@@ -711,7 +711,7 @@ const StudentDashboard = () => {
                                     <div className="mt-6 flex justify-center">
                                         <Link
                                             to="/assessment/setup"
-                                            className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02]"
+                                            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                                         >
                                             <Sparkles className="w-4 h-4" />
                                             <span>Take Your First Assessment</span>
@@ -730,7 +730,7 @@ const StudentDashboard = () => {
                         }
 
                         return (
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-xs overflow-hidden">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
                                 {/* Desktop Table */}
                                 <div className="hidden md:block overflow-x-auto">
                                     <table className="w-full text-left text-xs">
@@ -906,7 +906,7 @@ const StudentDashboard = () => {
             {(section === 'all' || section === 'progress') && (
                 <div className="space-y-6">
                     {/* Progress Trends Bar Chart / Visual Timeline */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-xs">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
                             <div>
                                 <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -971,7 +971,7 @@ const StudentDashboard = () => {
                     </div>
 
                     {/* Areas for Improvement */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-xs">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs">
                         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                             <div>
                                 <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1043,7 +1043,7 @@ const StudentDashboard = () => {
                         const completed = (assessmentHistory?.assessments || []).filter(a => a.is_completed);
                         if (completed.length === 0) {
                             return (
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-10 text-center shadow-xs">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-10 text-center shadow-xs">
                                     <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 mx-auto mb-4">
                                         <Award className="w-8 h-8" />
                                     </div>
@@ -1054,7 +1054,7 @@ const StudentDashboard = () => {
                                     <div className="mt-6 flex justify-center">
                                         <Link
                                             to="/assessment/setup"
-                                            className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-purple-600/25 transition-all hover:scale-[1.02]"
+                                            className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                                         >
                                             <Sparkles className="w-4 h-4" />
                                             <span>Start An Assessment</span>
@@ -1067,7 +1067,7 @@ const StudentDashboard = () => {
                         return (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 {completed.map((sess) => (
-                                    <div key={sess.session_uuid || sess.id} className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col justify-between">
+                                    <div key={sess.session_uuid || sess.id} className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
                                         <div>
                                             <div className="flex items-center justify-between gap-2 mb-3">
                                                 <span className="text-xs font-bold text-slate-900 dark:text-white">
@@ -1288,7 +1288,7 @@ const StudentDashboard = () => {
 
             {/* ─── Readiness Score Breakdown (6 Dimensions) ────────── */}
             {readiness_breakdown && Object.keys(readiness_breakdown).length > 0 && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-sm">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm">
                     <div className="flex items-center justify-between mb-5">
                         <div className="flex items-center gap-2">
                             <BarChart3 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -1337,7 +1337,7 @@ const StudentDashboard = () => {
 
             {/* ─── Career Copilot Suggested Action Prompts ─────────── */}
             {copilotSuggestions.length > 0 && (
-                <div className="bg-gradient-to-br from-emerald-50/60 via-white to-slate-50 dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900 border border-emerald-200/90 dark:border-emerald-500/30 rounded-3xl p-6 shadow-sm">
+                <div className="bg-gradient-to-br from-emerald-50/60 via-white to-slate-50 dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900 border border-emerald-200/90 dark:border-emerald-500/30 rounded-2xl p-6 shadow-sm">
                     <div className="flex items-center gap-2.5 mb-2">
                         <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
                             <Bot className="w-4 h-4" />
@@ -1371,7 +1371,7 @@ const StudentDashboard = () => {
             {/* ─── Strengths & Areas to Improve Grid ───────────────── */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Your Strengths */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-sm">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm">
                     <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                         <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                             <CheckCircle2 className="w-5 h-5" />
@@ -1400,7 +1400,7 @@ const StudentDashboard = () => {
                 </div>
 
                 {/* Areas to Improve */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-sm">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm">
                     <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                         <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
                             <AlertTriangle className="w-5 h-5" />
@@ -1430,7 +1430,7 @@ const StudentDashboard = () => {
             </div>
 
             {/* ─── Resume AI Recommendations ──────────────────────── */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm">
                 <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-500/15 border border-purple-200 dark:border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
