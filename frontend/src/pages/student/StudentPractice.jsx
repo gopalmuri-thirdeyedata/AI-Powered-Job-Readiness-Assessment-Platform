@@ -1,21 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Code2, 
-    Brain, 
-    CheckCircle2, 
-    XCircle, 
-    Play, 
-    RotateCcw, 
-    ChevronRight, 
-    AlertTriangle, 
-    Clock, 
-    Award, 
-    Check, 
-    Layers, 
-    Filter,
+import {
+    Code2,
+    CheckCircle2,
+    XCircle,
+    Play,
+    Check,
     RefreshCw,
-    Sparkles,
-    Terminal
+    Terminal,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 

@@ -1,21 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Award, 
-    CheckCircle2, 
-    AlertCircle, 
-    Clock, 
-    ArrowRight, 
-    Code2, 
-    FileQuestion, 
-    Bot, 
-    User, 
-    RotateCcw, 
-    History, 
-    Sparkles, 
-    ChevronRight, 
-    ShieldCheck, 
-    TrendingUp,
-    Send
+import {
+    Award,
+    AlertCircle,
+    Code2,
+    RotateCcw,
+    History,
+    Sparkles,
+    ShieldCheck,
+    Send,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 

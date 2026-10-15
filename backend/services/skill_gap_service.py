@@ -7,11 +7,8 @@ and generating actionable career path guidance.
 
 from typing import List, Dict, Any, Optional
 from services.skill_suggestion import (
-    normalize_skill,
-    deduplicate_and_normalize_skills,
-    CANONICAL_SKILL_MAP
+    deduplicate_and_normalize_skills
 )
-from services import ai_generator
 
 # ==============================================================================
 # CANONICAL TARGET ROLES TAXONOMY & BENCHMARKS

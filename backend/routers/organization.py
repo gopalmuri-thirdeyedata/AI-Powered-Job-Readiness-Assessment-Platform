@@ -8,7 +8,7 @@ import os
 import models
 import database
 import utils
-from routers.auth import get_current_user, get_current_tenant, require_organization_admin, require_hr_or_admin
+from routers.auth import get_current_tenant, require_organization_admin, require_hr_or_admin
 from services import clerk_service
 
 router = APIRouter(

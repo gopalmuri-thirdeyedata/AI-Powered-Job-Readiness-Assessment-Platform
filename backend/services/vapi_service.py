@@ -32,10 +32,8 @@ def build_assistant_payload(candidate_name: str, role: str, resume_summary: str 
             f"Question {i+1} [{q.get('category', 'Technical')}]: {q.get('question', q) if isinstance(q, dict) else q}"
             for i, q in enumerate(questions_list)
         ])
-        first_q = questions_list[0].get('question', questions_list[0]) if isinstance(questions_list[0], dict) else str(questions_list[0])
     else:
         formatted_questions = f"1. Tell me about yourself and your experience with {role}.\n2. Explain core architecture patterns you utilize.\n3. How do you approach complex technical debugging?\n4. Describe a system design problem you solved.\n5. What are your production readiness best practices?"
-        first_q = f"Could you introduce yourself and walk me through your background and technical experience for the {role} position?"
 
     first_message = (
         f"Hello {candidate_name}, welcome, and thank you for joining this technical interview for the {role} position. "

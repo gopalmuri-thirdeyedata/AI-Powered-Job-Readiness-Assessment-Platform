@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    FolderGit2, 
-    Plus, 
-    ExternalLink, 
-    Github, 
-    Sparkles, 
-    CheckCircle2, 
-    AlertCircle, 
-    Edit2, 
-    Trash2, 
-    Copy, 
-    Check, 
-    Code, 
-    Layers, 
-    ShieldCheck, 
-    Lightbulb, 
-    HelpCircle, 
+import {
+    FolderGit2,
+    Plus,
+    ExternalLink,
+    Github,
+    Sparkles,
+    CheckCircle2,
+    AlertCircle,
+    Edit2,
+    Trash2,
+    Copy,
+    Check,
+    Layers,
+    HelpCircle,
     TrendingUp,
     X,
-    FileText
+    FileText,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 

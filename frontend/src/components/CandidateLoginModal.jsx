@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight, X, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, ArrowRight, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const CandidateLoginModal = ({ isOpen, onClose }) => {

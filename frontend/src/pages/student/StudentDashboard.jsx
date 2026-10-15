@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { 
+import {
     LayoutDashboard,
-    Award, 
-    FileText, 
-    Target, 
-    Building2, 
-    CheckCircle2, 
-    AlertTriangle, 
-    ArrowUpRight, 
-    Sparkles, 
-    TrendingUp, 
+    Award,
+    FileText,
+    CheckCircle2,
+    AlertTriangle,
+    ArrowUpRight,
+    Sparkles,
+    TrendingUp,
     RefreshCw,
     Compass,
     Code2,
@@ -23,12 +21,8 @@ import {
     ClipboardList,
     Clock,
     PlayCircle,
-    Calendar,
-    ChevronRight,
-    Check,
-    RotateCcw,
     XCircle,
-    ArrowRight
+    ArrowRight,
 } from 'lucide-react';
 import { useUser } from '@clerk/clerk-react';
 import studentApi from '../../services/studentApi';

@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
 import {
-    Plus, Trash2, Edit2, CheckCircle2, AlertCircle,
-    Award, BarChart2, Layers, Check, X, HelpCircle
+    Plus,
+    Trash2,
+    Edit2,
+    CheckCircle2,
+    AlertCircle,
+    Layers,
+    Check,
+    X,
+    HelpCircle,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 const QUESTION_TYPES = [
     { id: 'mcq', label: 'Multiple Choice', desc: 'Single correct answer from multiple options' },

@@ -2,12 +2,9 @@ import re
 import os
 import time
 import pypdf
-import requests
-import json
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from . import gemini_client
 
 load_dotenv()

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, Info, X, Trash2, ArrowRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, X, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfirmationModal = ({

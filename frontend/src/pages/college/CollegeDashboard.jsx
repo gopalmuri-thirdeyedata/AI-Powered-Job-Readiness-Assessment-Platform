@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-    Users, 
-    Award, 
-    AlertTriangle, 
-    Building2, 
-    CheckCircle2, 
-    TrendingUp, 
-    ArrowUpRight, 
-    RefreshCw, 
-    Sparkles, 
-    Target, 
-    BookOpen, 
-    Info 
+import {
+    Users,
+    Award,
+    AlertTriangle,
+    Building2,
+    CheckCircle2,
+    TrendingUp,
+    ArrowUpRight,
+    RefreshCw,
+    Sparkles,
+    Target,
+    BookOpen,
 } from 'lucide-react';
 import collegeApi from '../../services/collegeApi';
 

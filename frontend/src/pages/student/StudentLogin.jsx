@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { 
-    GraduationCap, 
-    Lock, 
-    Mail, 
-    User, 
-    ArrowRight, 
-    AlertTriangle, 
+import {
+    Lock,
+    Mail,
+    User,
+    ArrowRight,
+    AlertTriangle,
     Sparkles,
     ShieldCheck,
     Building2,
@@ -14,7 +13,7 @@ import {
     Award,
     Bot,
     ChevronRight,
-    Zap
+    Zap,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 import { isStudentTaskCompletedSync, markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';

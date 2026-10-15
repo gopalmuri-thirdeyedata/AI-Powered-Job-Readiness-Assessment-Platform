@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Calendar, 
-    CheckCircle2, 
-    Clock, 
-    Sparkles, 
-    RotateCcw, 
-    Target, 
-    Layers, 
-    BookOpen, 
-    Code2, 
-    Brain, 
-    FileText, 
-    Compass, 
-    ChevronRight,
+import {
+    Calendar,
+    CheckCircle2,
+    Clock,
+    Sparkles,
+    RotateCcw,
+    Layers,
+    BookOpen,
+    Code2,
+    Brain,
+    FileText,
+    Compass,
     RefreshCw,
     Filter,
     Check,
-    AlertCircle
+    AlertCircle,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import studentApi from '../../services/studentApi';
 
 const CATEGORY_CONFIG = {

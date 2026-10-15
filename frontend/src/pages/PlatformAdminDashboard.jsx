@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Building2, Users, Briefcase, UserCheck, Plus, Search,
-    CheckCircle2, AlertTriangle, Shield, Check, X, ArrowUpRight,
-    Power, RefreshCw, Trash2
+    Building2,
+    Users,
+    UserCheck,
+    Plus,
+    Search,
+    CheckCircle2,
+    AlertTriangle,
+    Shield,
+    X,
+    RefreshCw,
+    Trash2,
 } from 'lucide-react';
 import API_URL from '../apiConfig';
 import ConfirmationModal from '../components/ConfirmationModal';

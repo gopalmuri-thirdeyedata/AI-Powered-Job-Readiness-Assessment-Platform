@@ -2,9 +2,11 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    LayoutDashboard, FileText, Code2, Users,
-    Mic, ChevronLeft, ChevronRight, LogOut, Settings,
-    BrainCircuit, UserCheck, Layers, BarChart3, X
+    LayoutDashboard,
+    Users,
+    ChevronLeft,
+    ChevronRight,
+    X,
 } from 'lucide-react';
 import GlobalNavbar from '../components/GlobalNavbar';
 

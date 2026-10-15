@@ -8,18 +8,11 @@ import {
     CheckCircle2,
     ShieldCheck,
     Sparkles,
-    FileText,
-    Building2,
     Lock,
     Award,
-    ChevronRight,
-    Check,
     GraduationCap,
-    Clock,
-    Layers,
-    BarChart3
 } from 'lucide-react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClerk, useUser } from '@clerk/clerk-react';
 import PublicNavbar from '../components/PublicNavbar';
 import ClerkAuthModal from '../components/ClerkAuthModal';

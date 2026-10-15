@@ -1,22 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    MessageSquare, 
-    Bot, 
-    User, 
-    Sparkles, 
-    Send, 
-    CheckCircle2, 
-    AlertCircle, 
-    TrendingUp, 
-    Award, 
-    Clock, 
-    History, 
-    ArrowRight, 
-    RotateCcw, 
-    ChevronRight, 
-    ShieldCheck, 
+import {
+    MessageSquare,
+    Bot,
+    User,
+    Sparkles,
+    Send,
+    CheckCircle2,
+    AlertCircle,
+    TrendingUp,
+    History,
+    ArrowRight,
+    RotateCcw,
     Lightbulb,
-    Target
+    Target,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 

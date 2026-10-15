@@ -4,7 +4,7 @@ Provisions `student_profiles` and `student_resumes` tables safely without droppi
 """
 import os
 import sys
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from dotenv import load_dotenv
 
 # Ensure backend root is on sys.path

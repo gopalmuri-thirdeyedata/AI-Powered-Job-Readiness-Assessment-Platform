@@ -1,8 +1,19 @@
 import React, { useState } from 'react';
 import {
-    Plus, Trash2, Edit2, CheckCircle2, AlertCircle,
-    Award, BarChart2, Layers, Check, X, Code2, Eye, EyeOff,
-    Terminal, FileText, ChevronRight, HelpCircle, Lock, Unlock, Search
+    Plus,
+    Trash2,
+    Edit2,
+    AlertCircle,
+    Award,
+    Layers,
+    Check,
+    X,
+    Code2,
+    Eye,
+    Terminal,
+    Lock,
+    Unlock,
+    Search,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 

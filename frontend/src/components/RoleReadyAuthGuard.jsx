@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useUser, useClerk } from '@clerk/clerk-react';
+import { useUser } from '@clerk/clerk-react';
 import API_URL from '../apiConfig';
 import { syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
 

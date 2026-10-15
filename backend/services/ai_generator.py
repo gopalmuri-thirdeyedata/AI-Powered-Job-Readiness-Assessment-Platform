@@ -1,4 +1,3 @@
-import requests
 import json
 import re
 from dotenv import load_dotenv
@@ -320,7 +319,6 @@ def generate_java_test_calls(code: str, test_cases: list):
     """
     # Detect if we need special handling for ListNode (based on code context)
     needs_list_node = "ListNode" in code
-    needs_tree_node = "TreeNode" in code
 
     calls = []
     for tc in test_cases:

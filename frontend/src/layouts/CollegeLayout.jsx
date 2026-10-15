@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-    LayoutDashboard, 
-    Users, 
-    Building2, 
-    GraduationCap, 
-    LogOut, 
-    ChevronRight, 
-    Menu, 
+import {
+    LayoutDashboard,
+    Users,
+    Building2,
+    GraduationCap,
+    LogOut,
+    Menu,
     X,
     Shield,
-    ArrowUpRight
+    ArrowUpRight,
 } from 'lucide-react';
 
 const CollegeLayout = () => {

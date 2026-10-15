@@ -10,7 +10,6 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 import models
-from services import ai_generator
 
 # ==============================================================================
 # CANONICAL INTERVIEW QUESTION TEMPLATES & EVALUATION RUBRICS

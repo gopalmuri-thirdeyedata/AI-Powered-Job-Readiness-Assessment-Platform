@@ -17,14 +17,13 @@ import schemas, models, database, utils
 from routers.auth import get_current_user
 from services.student_resume_analyzer import extract_resume_text, analyze_student_resume
 from services.readiness_service import calculate_placement_readiness, refresh_profile_readiness
-from services.skill_gap_service import TARGET_ROLES_CATALOG, analyze_skill_gap, get_target_role_benchmark
+from services.skill_gap_service import TARGET_ROLES_CATALOG, analyze_skill_gap
 from services.roadmap_service import generate_or_update_roadmap, get_roadmap_details
 from services.practice_service import get_topics_overview, get_sanitized_questions, evaluate_practice_submission
 from services.student_interview_service import (
     start_mock_interview,
     process_interview_turn,
-    finalize_mock_interview,
-    get_role_questions
+    finalize_mock_interview
 )
 from services.project_analyzer_service import analyze_student_project
 from services.placement_simulation_service import (

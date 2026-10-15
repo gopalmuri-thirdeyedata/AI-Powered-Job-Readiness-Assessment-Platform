@@ -62,7 +62,6 @@ def analyze_student_project(
 
     has_db = any(k in combined_text for k in ["sql", "mysql", "postgres", "mongodb", "database", "orm", "redis"])
     has_api = any(k in combined_text for k in ["api", "rest", "graphql", "fastapi", "express", "django", "endpoint"])
-    has_frontend = any(k in combined_text for k in ["react", "vue", "angular", "next.js", "tailwind", "frontend", "ui"])
     has_auth = any(k in combined_text for k in ["auth", "jwt", "oauth", "clerk", "session", "security"])
     has_devops = any(k in combined_text for k in ["docker", "kubernetes", "aws", "deploy", "ci/cd", "pipeline", "nginx"])
 

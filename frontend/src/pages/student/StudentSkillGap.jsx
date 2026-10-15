@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Target, 
-    CheckCircle2, 
-    XCircle, 
-    AlertTriangle, 
-    TrendingUp, 
-    Sparkles, 
-    BookOpen, 
-    Compass, 
-    Award, 
-    Layers, 
+import {
+    Target,
+    CheckCircle2,
+    XCircle,
+    TrendingUp,
+    Sparkles,
+    Compass,
+    Award,
+    Layers,
     ArrowRight,
     RefreshCw,
     Plus,
     X,
-    Building2
+    Building2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import studentApi from '../../services/studentApi';

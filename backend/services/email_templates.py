@@ -238,7 +238,6 @@ def get_completion_email_template(
     """
     
     # Theme Colors
-    primary_color = "#2563EB"
     bg_color = "#F8FAFC"
     text_color = "#1E293B"
 

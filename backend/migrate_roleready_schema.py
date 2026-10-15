@@ -4,7 +4,7 @@ Provisions `recruitment_batches`, `candidate_invitations`, `roleready_sessions`,
 """
 import os
 import sys
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

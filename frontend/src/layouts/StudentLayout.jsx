@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard,
-    ClipboardList,
     FileText,
     User,
     LogOut,
@@ -20,13 +19,11 @@ import {
     ChevronRight,
     Sun,
     Moon,
-    TrendingUp
 } from 'lucide-react';
 import { useUser, useClerk } from '@clerk/clerk-react';
 import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import { useTheme } from '../context/ThemeContext';
-import API_URL from '../apiConfig';
 import useStudentTaskStatus, { clearStudentTaskCompleted, syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
 
 // Navigation definition with unified emerald brand accents
@@ -96,18 +93,6 @@ const NavItem = ({ item, collapsed, onClick }) => {
         </Link>
     );
 };
-
-/* ─── In-layout page skeleton (sidebar and header stay put while a page loads) ─── */
-const PageSkeleton = () => (
-    <div className="space-y-5 animate-pulse" aria-busy="true" aria-label="Loading page">
-        <div className="h-8 w-64 rounded-xl bg-slate-200/70 dark:bg-slate-800" />
-        <div className="h-4 w-96 max-w-full rounded-lg bg-slate-200/60 dark:bg-slate-800/80" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-            {[0, 1, 2].map(i => <div key={i} className="h-32 rounded-2xl bg-slate-200/60 dark:bg-slate-800/80" />)}
-        </div>
-        <div className="h-64 rounded-2xl bg-slate-200/50 dark:bg-slate-800/70" />
-    </div>
-);
 
 /* ─── Main Layout ─────────────────────────────────── */
 const StudentLayout = () => {
@@ -405,7 +390,7 @@ const StudentLayout = () => {
                     style={{ width: SIDEBAR_W }}
                 >
                     <div className="flex flex-col h-full overflow-x-hidden">
-                        <SidebarInner />
+                        {renderSidebar()}
                     </div>
 
                     {/* Collapse toggle button: centered on sidebar boundary, overflow-visible */}
@@ -450,7 +435,7 @@ const StudentLayout = () => {
                                 </button>
                             </div>
                             <div className="flex-1 flex flex-col overflow-y-auto">
-                                <SidebarInner forMobile />
+                                {renderSidebar(true)}
                             </div>
                         </aside>
                     </div>

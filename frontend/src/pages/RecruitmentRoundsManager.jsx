@@ -1,10 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import {
-    BrainCircuit, Code2, Users, Send, CheckCircle,
-    Layers, Clock, BarChart3, Mail, BookOpen, AlertCircle,
-    Search, UserPlus, ListFilter, Briefcase, PenTool, Sparkles
+    BrainCircuit,
+    Code2,
+    Users,
+    Send,
+    CheckCircle,
+    Clock,
+    BarChart3,
+    Mail,
+    BookOpen,
+    AlertCircle,
+    Search,
+    UserPlus,
+    ListFilter,
+    Briefcase,
+    PenTool,
+    Sparkles,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import ConfirmationModal from '../components/ConfirmationModal';
 import ManualAptitudeBuilder from '../components/ManualAptitudeBuilder';
 import ManualCodingBuilder from '../components/ManualCodingBuilder';

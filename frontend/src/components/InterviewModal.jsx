@@ -1,6 +1,5 @@
 import React from 'react';
 import { X, Clock, User, Bot, Calendar, FileText } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 const InterviewModal = ({ candidate, onClose }) => {
     if (!candidate) return null;

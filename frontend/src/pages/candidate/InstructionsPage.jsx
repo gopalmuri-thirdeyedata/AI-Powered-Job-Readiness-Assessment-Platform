@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, Clock, AlertTriangle, Play, FileText } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, Play } from 'lucide-react';
 import API_URL from '../../apiConfig';
 
 const InstructionsPage = () => {

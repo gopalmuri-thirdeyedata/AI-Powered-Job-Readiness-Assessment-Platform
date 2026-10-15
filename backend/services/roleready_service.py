@@ -21,15 +21,13 @@ from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
-import models
 from models import (
     RoleReadySession, 
     RoleReadyRoundAttempt, 
     RoleReadySessionState, 
     RecruitmentBatch, 
     CandidateInvitation, 
-    JobDescription, 
-    Candidate,
+    Candidate, 
     StudentProfile,
     StudentResume
 )

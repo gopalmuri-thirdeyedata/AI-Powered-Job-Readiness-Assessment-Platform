@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout } from 'lucide-react';
 
 const CandidateLayout = () => {
     const navigate = useNavigate();

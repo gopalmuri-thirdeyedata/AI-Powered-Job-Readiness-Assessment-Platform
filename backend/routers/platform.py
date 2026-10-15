@@ -6,7 +6,7 @@ import re
 
 import models
 import database
-from routers.auth import require_platform_admin, get_current_user
+from routers.auth import require_platform_admin
 from services import clerk_service
 from routers.settings import DEFAULT_CONFIG
 

@@ -9,8 +9,7 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 import models
-from services import ai_generator
-from services.skill_gap_service import analyze_skill_gap, get_target_role_benchmark
+from services.skill_gap_service import analyze_skill_gap
 
 def build_deterministic_curriculum(
     target_role: str,

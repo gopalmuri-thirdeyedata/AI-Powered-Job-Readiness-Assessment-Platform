@@ -1,15 +1,45 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { 
-    TrendingUp, Users, Award, BarChart3, PieChart as PieIcon, 
-    Target, BrainCircuit, ShieldAlert, FileText, CheckCircle,
-    SlidersHorizontal, Star, Activity, Clock, RefreshCw, Sparkles,
-    Download, FileSpreadsheet, FileDown, AlertTriangle, ChevronRight,
-    Search, ArrowUpDown, Filter, Eye, Cpu, Zap, Calendar, ExternalLink,
-    CheckCircle2, XCircle, HelpCircle, ChevronDown, Check
+import {
+    Users,
+    Award,
+    BarChart3,
+    PieChart as PieIcon,
+    Target,
+    BrainCircuit,
+    ShieldAlert,
+    FileText,
+    CheckCircle,
+    SlidersHorizontal,
+    Activity,
+    RefreshCw,
+    Sparkles,
+    Download,
+    FileSpreadsheet,
+    FileDown,
+    AlertTriangle,
+    ChevronRight,
+    Search,
+    ArrowUpDown,
+    Filter,
+    Eye,
+    Cpu,
+    Zap,
+    Calendar,
+    CheckCircle2,
+    ChevronDown,
+    Check,
 } from 'lucide-react';
-import { 
-    ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-    Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    PieChart,
+    Pie,
+    Cell,
 } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -17,7 +47,6 @@ import * as XLSX from 'xlsx';
 import API_URL from '../apiConfig';
 import CandidateDetailDrawer from '../components/analytics/CandidateDetailDrawer';
 
-const BRAND_GREEN = '#5d8c2c';
 const FUNNEL_COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#6366f1', '#a855f7', '#10b981', '#5d8c2c'];
 const RECOMMENDATION_COLORS = {
     'Strong Hire': '#10b981',

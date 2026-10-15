@@ -6,18 +6,15 @@ import {
     AlertTriangle,
     HelpCircle,
     Sparkles,
-    TrendingUp,
     Layers,
     Calendar,
-    Target,
     Code,
     Cpu,
     BookOpen,
     Briefcase,
     Award,
     Binary,
-    ShieldAlert,
-    RefreshCw
+    RefreshCw,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 

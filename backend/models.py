@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, JSON, Float, DateTime, Text, Enum as SqlEnum
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, JSON, Float, DateTime, Text
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func

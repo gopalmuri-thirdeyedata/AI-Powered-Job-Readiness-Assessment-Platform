@@ -1,19 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { 
-    Award, 
-    CheckCircle2, 
-    AlertTriangle, 
-    ArrowRight, 
-    FileText, 
-    BrainCircuit, 
-    Code2, 
-    MessageSquare, 
-    TrendingUp, 
-    Share2, 
-    Printer, 
-    Sparkles, 
-    Building2,
+import {
+    Award,
+    CheckCircle2,
+    AlertTriangle,
+    ArrowRight,
+    BrainCircuit,
+    Code2,
+    MessageSquare,
+    TrendingUp,
+    Printer,
+    Sparkles,
     RefreshCw,
     LayoutDashboard,
     ChevronDown,
@@ -24,7 +21,7 @@ import {
     ShieldCheck,
     ShieldAlert,
     Target,
-    CalendarDays
+    CalendarDays,
 } from 'lucide-react';
 import rolereadyApi from '../../services/rolereadyApi';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';

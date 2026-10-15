@@ -1,11 +1,19 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-    MoreHorizontal, ChevronDown, CheckCircle, XCircle, Clock,
-    AlertCircle, FileText, Download, Mail, Filter, Search, RotateCw,
-    Info, Trash2, ArrowRight, Square, CheckSquare, Briefcase, BarChart2,
-    Sparkles, BookOpen, UserCircle, X, RefreshCcw
+    ChevronDown,
+    CheckCircle,
+    Clock,
+    FileText,
+    Download,
+    Search,
+    RotateCw,
+    Info,
+    Square,
+    CheckSquare,
+    Briefcase,
+    BarChart2,
+    X,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import AnalyticsModal from './AnalyticsModal';
 import InterviewModal from './InterviewModal';
 import ScoreBreakdownModal from './ScoreBreakdownModal';

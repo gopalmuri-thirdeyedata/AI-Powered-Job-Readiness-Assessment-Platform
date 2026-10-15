@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    X, Mail, Briefcase, CheckCircle2, Clock, 
-    Sparkles, Copy, Check, ExternalLink,
-    Code, BookOpen, MessageSquare, FileCheck, Phone,
-    Calendar, Hash, CheckCircle, ArrowRight
+import {
+    X,
+    Mail,
+    Briefcase,
+    Sparkles,
+    Copy,
+    Check,
+    ExternalLink,
+    Code,
+    BookOpen,
+    MessageSquare,
+    FileCheck,
+    Phone,
+    Calendar,
+    Hash,
 } from 'lucide-react';
 
 export default function CandidateDetailDrawer({ candidate, isOpen, onClose }) {

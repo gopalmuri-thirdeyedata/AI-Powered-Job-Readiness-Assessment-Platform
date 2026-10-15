@@ -1,8 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Save, Building2, Shield, Bell, Mail, Settings, CheckCircle,
-    Sparkles, CheckCircle2, ArrowRight, ArrowDown, ShieldCheck, Check, Layers, Cpu,
-    UserPlus, Trash2, Users, AlertCircle
+    Save,
+    Building2,
+    Shield,
+    Bell,
+    Mail,
+    Settings,
+    CheckCircle,
+    Sparkles,
+    CheckCircle2,
+    ArrowRight,
+    ArrowDown,
+    ShieldCheck,
+    Check,
+    Layers,
+    Cpu,
+    UserPlus,
+    Trash2,
+    AlertCircle,
 } from 'lucide-react';
 import ConfirmationModal from '../components/ConfirmationModal';
 import API_URL from '../apiConfig';
@@ -739,19 +754,6 @@ const Input = ({ label, value, disabled, suffix, onChange }) => (
                 </span>
             )}
         </div>
-    </div>
-);
-
-const Select = ({ label, options, value, onChange }) => (
-    <div className="space-y-1.5 w-full">
-        <label className="block text-sm font-semibold text-gray-700">{label}</label>
-        <select 
-            value={value} 
-            onChange={(e) => onChange && onChange(e.target.value)}
-            className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-950 font-bold focus:ring-2 focus:ring-green-500 outline-none cursor-pointer"
-        >
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-        </select>
     </div>
 );
 

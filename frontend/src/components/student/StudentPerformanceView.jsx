@@ -8,7 +8,6 @@ import {
     TrendingDown,
     Activity,
     BarChart3,
-    Filter,
     ArrowUpRight,
     Eye,
     RefreshCw,
@@ -25,8 +24,7 @@ import {
     HelpCircle,
     Zap,
     Compass,
-    BookOpen,
-    ArrowRight
+    ArrowRight,
 } from 'lucide-react';
 import {
     ResponsiveContainer,

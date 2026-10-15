@@ -1,19 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
-import { 
-    Award, 
-    ShieldCheck, 
-    Clock, 
-    ArrowRight, 
-    AlertTriangle, 
-    RefreshCw, 
-    Building2, 
-    Briefcase,
+import {
+    Award,
+    ShieldCheck,
+    ArrowRight,
+    AlertTriangle,
+    RefreshCw,
     BrainCircuit,
     Code2,
     MessageSquare,
     Sun,
-    Moon
+    Moon,
 } from 'lucide-react';
 import rolereadyApi from '../../services/rolereadyApi';
 import { useTheme } from '../../context/ThemeContext';

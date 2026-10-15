@@ -2,8 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@monaco-editor/react';
 import {
-    Play, CheckCircle, Clock, Terminal, ChevronRight, ChevronLeft,
-    Code, Check, AlertTriangle, Plus, X, RotateCcw, MonitorPlay, ChevronDown
+    Play,
+    CheckCircle,
+    Clock,
+    Terminal,
+    ChevronRight,
+    ChevronLeft,
+    Code,
+    Check,
+    AlertTriangle,
+    Plus,
+    X,
+    MonitorPlay,
+    ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useProctoring from '../../hooks/useProctoring';

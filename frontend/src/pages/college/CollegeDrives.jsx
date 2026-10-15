@@ -1,19 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Building2, 
-    Plus, 
-    Users, 
-    Calendar, 
-    Award, 
-    CheckCircle2, 
-    X, 
-    AlertTriangle, 
-    RefreshCw, 
-    DollarSign, 
-    Check, 
-    Clock, 
+import {
+    Building2,
+    Plus,
+    Users,
+    X,
+    RefreshCw,
     ChevronRight,
-    Search
 } from 'lucide-react';
 import collegeApi from '../../services/collegeApi';
 

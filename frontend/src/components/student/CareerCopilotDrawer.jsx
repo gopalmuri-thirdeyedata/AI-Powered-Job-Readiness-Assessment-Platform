@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-    Bot, 
-    User, 
-    Send, 
-    X, 
-    Sparkles, 
-    Trash2, 
-    MessageSquare, 
-    ChevronDown, 
-    Lightbulb, 
-    ShieldCheck 
+import {
+    Bot,
+    User,
+    Send,
+    X,
+    Sparkles,
+    Trash2,
+    ChevronDown,
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 

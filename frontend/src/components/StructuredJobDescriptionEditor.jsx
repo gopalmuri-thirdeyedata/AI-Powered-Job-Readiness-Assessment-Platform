@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Sparkles, Save, CheckCircle, AlertTriangle, RefreshCw,
-    Briefcase, FileText, Target, Award, ListPlus, ChevronDown, Check, Plus
+    Sparkles,
+    Save,
+    CheckCircle,
+    AlertTriangle,
+    RefreshCw,
+    Briefcase,
+    FileText,
+    Target,
+    Award,
+    ListPlus,
+    Check,
 } from 'lucide-react';
 import SkillTagInput from './SkillTagInput';
 import API_URL from '../apiConfig';

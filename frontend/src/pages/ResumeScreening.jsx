@@ -1,10 +1,29 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
-    Upload, FileText, Brain, Loader2, CheckCircle, AlertCircle,
-    Filter, ChevronRight, X, Sparkles, ChevronDown, ChevronUp,
-    Search, Play, Minus, ArrowRight, FolderOpen, FilePlus, Cloud, HardDrive,
-    Layers, Edit3, Bookmark, Check, Files, Target, Plus, Tag, RefreshCw
+    Upload,
+    FileText,
+    Brain,
+    Loader2,
+    CheckCircle,
+    AlertCircle,
+    X,
+    Sparkles,
+    ChevronDown,
+    ChevronUp,
+    Search,
+    Play,
+    ArrowRight,
+    FolderOpen,
+    FilePlus,
+    Cloud,
+    Edit3,
+    Check,
+    Files,
+    Target,
+    Plus,
+    Tag,
+    RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import API_URL from '../apiConfig';

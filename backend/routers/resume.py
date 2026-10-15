@@ -1184,7 +1184,6 @@ def screen_resume_stream(
 
             # Post-processing: Handle Top N cutoff in DB
             valid_screened.sort(key=lambda x: x.get("score", 0), reverse=True)
-            top_candidates = valid_screened[:top_n]
             cutoff_candidates = valid_screened[top_n:]
 
             for cut in cutoff_candidates:
@@ -1607,7 +1606,6 @@ def rescreen_unscored_candidates(
     )
 
     for candidate in unscored:
-        resume_path = candidate.resume_file
         full_text = candidate.full_text or ""
 
         # Compute keyword score from stored full_text
@@ -1634,7 +1632,7 @@ def rescreen_unscored_candidates(
                 "key_skills_match": analysis.get("key_skills_match", matched_skills),
                 "missing_skills": analysis.get("missing_skills", missing_skills)
             }
-        except Exception as e:
+        except Exception:
             # Fallback to keyword score
             score = keyword_score
             reasoning = f"AI unavailable. Score based on keyword matching: {keyword_score}%"

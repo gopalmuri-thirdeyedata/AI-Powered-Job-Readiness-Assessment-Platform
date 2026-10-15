@@ -96,7 +96,6 @@ def validate_manual_coding_questions(questions: List[Dict[str, Any]]) -> List[Di
 
         cleaned_tcs = []
         has_public = False
-        has_hidden = False
 
         for tc_idx, tc in enumerate(raw_tc_list, start=1):
             if not isinstance(tc, dict):
@@ -114,9 +113,7 @@ def validate_manual_coding_questions(questions: List[Dict[str, Any]]) -> List[Di
                 raise ValueError(f"Problem #{idx}, Test Case #{tc_idx}: Expected output cannot be empty.")
 
             is_hidden = bool(tc.get("is_hidden") or tc.get("hidden") or False)
-            if is_hidden:
-                has_hidden = True
-            else:
+            if not is_hidden:
                 has_public = True
 
             tc_clean = {

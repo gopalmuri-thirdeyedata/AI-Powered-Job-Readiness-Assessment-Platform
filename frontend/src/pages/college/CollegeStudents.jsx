@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Users, 
-    Search, 
-    Filter, 
-    FileText, 
-    Award, 
-    AlertTriangle, 
-    CheckCircle2, 
-    RefreshCw, 
-    ChevronDown, 
-    Building2 
+import {
+    Users,
+    Search,
+    Filter,
+    CheckCircle2,
+    RefreshCw,
 } from 'lucide-react';
 import collegeApi from '../../services/collegeApi';
 

@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Vapi from '@vapi-ai/web';
-import { 
-    Clock, 
-    CheckCircle2, 
-    Lock, 
-    Play, 
-    Code2, 
-    MessageSquare, 
-    BrainCircuit, 
-    AlertTriangle, 
-    Terminal, 
+import {
+    Clock,
+    CheckCircle2,
+    Lock,
+    Play,
+    Code2,
+    MessageSquare,
+    BrainCircuit,
+    AlertTriangle,
+    Terminal,
     ArrowRight,
     Sparkles,
     ShieldAlert,
@@ -23,20 +23,14 @@ import {
     MicOff,
     Video,
     ShieldCheck,
-    Check,
     AlertCircle,
     RotateCcw,
     Award,
-    Volume2,
-    Eye,
     Shield,
     XCircle,
     CheckCircle,
-    Bot,
     User,
-    Radio,
-    Loader2,
-    PhoneOff
+    PhoneOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Editor } from '@monaco-editor/react';

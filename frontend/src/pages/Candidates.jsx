@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
 import {
-    Search, Filter, MoreHorizontal, User, Mail, CheckCircle, XCircle, Clock,
-    Eye, FileText, ArrowRight, Send, Bell, Pause, Trash2, Users, Download, ChevronDown
+    MoreHorizontal,
+    User,
+    Mail,
+    CheckCircle,
+    XCircle,
+    Clock,
+    Eye,
+    FileText,
+    ArrowRight,
+    Send,
+    Bell,
+    Trash2,
+    Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CandidateTable from '../components/CandidateTable';
@@ -251,66 +262,6 @@ const FixedActionMenu = ({ position, candidate, onClose, onAction }) => {
                 </div>
             </motion.div>
         </>
-    );
-};
-
-const CandidateRow = ({ candidate, delay, onOpenMenu }) => {
-    const { name, email, role, status, stage } = candidate;
-
-    return (
-        <motion.tr
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay }}
-            className="border-b border-gray-100 hover:bg-gradient-to-r hover:from-blue-50/30 hover:to-transparent transition-all group cursor-pointer"
-        >
-            <td className="px-6 py-4">
-                <div className="flex items-center gap-4">
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-200 flex items-center justify-center text-sm font-bold text-white shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all">
-                        {name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                        <div className="font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{name}</div>
-                        <div className="text-gray-500 text-xs flex items-center gap-1.5 mt-0.5">
-                            <Mail className="w-3 h-3" />
-                            {email}
-                        </div>
-                    </div>
-                </div>
-            </td>
-            <td className="px-6 py-4">
-                <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-gray-400" />
-                    <span className="text-gray-700 font-medium">{role}</span>
-                </div>
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap">
-                <span className={`inline-flex items-center whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border-2 shadow-sm ${status === 'Hired' || status === 'Qualified' ? 'bg-green-50 border-green-200 text-green-700' :
-                    status === 'Rejected' ? 'bg-red-50 border-red-200 text-red-700' :
-                        status === 'In Progress' ? 'bg-blue-50 border-blue-200 text-blue-700' :
-                            'bg-green-50 border-green-200 text-green-700'
-                    }`}>
-                    {status === 'Hired' && <CheckCircle className="w-3 h-3 mr-1.5" />}
-                    {status === 'Rejected' && <XCircle className="w-3 h-3 mr-1.5" />}
-                    {status === 'In Progress' && <Clock className="w-3 h-3 mr-1.5" />}
-                    {status}
-                </span>
-            </td>
-            <td className="px-6 py-4">
-                <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-300 text-gray-700 bg-white shadow-sm">
-                    <Clock className="w-3.5 h-3.5 mr-2 text-gray-500" />
-                    {stage}
-                </span>
-            </td>
-            <td className="px-6 py-4 text-right">
-                <button
-                    onClick={(e) => onOpenMenu(e, candidate)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-900 active:bg-gray-200"
-                >
-                    <MoreHorizontal className="w-5 h-5" />
-                </button>
-            </td>
-        </motion.tr>
     );
 };
 
