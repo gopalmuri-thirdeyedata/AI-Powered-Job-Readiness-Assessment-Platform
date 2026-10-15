@@ -1,5 +1,4 @@
 
-import os
 
 def get_invitation_email_template(
     candidate_name: str,

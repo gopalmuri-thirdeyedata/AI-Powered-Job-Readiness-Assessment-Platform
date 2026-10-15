@@ -5,11 +5,13 @@ import CandidateLoginModal from './CandidateLoginModal';
 import { UserButton } from '@clerk/clerk-react';
 import API_URL from '../apiConfig';
 import { useTheme } from '../context/ThemeContext';
+import useStudentTaskStatus from '../hooks/useStudentTaskStatus';
 
 const GlobalNavbar = ({ onToggleMobileMenu }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { theme, toggleTheme } = useTheme();
+    const { hasCompletedTask } = useStudentTaskStatus();
 
     const handleNotificationClick = async (notification) => {
         // 1. Mark as Read
@@ -173,12 +175,14 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
 
                     {profile.role === 'STUDENT' && (
                         <>
-                            <Link
-                                to="/student/dashboard"
-                                className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/student') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-                            >
-                                Student Dashboard
-                            </Link>
+                            {hasCompletedTask && (
+                                <Link
+                                    to="/student/dashboard"
+                                    className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/student') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+                                >
+                                    Student Dashboard
+                                </Link>
+                            )}
                             <Link
                                 to="/assessment/setup"
                                 data-fallback="/student/dashboard"

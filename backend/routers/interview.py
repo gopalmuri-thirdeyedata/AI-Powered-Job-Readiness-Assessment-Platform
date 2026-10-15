@@ -81,9 +81,72 @@ def initialize_interview(
             except Exception as save_err:
                 print(f"Failed to cache questions to assessment: {save_err}")
         
+    # Resolve candidate real name directly from resume (never use raw email or email handle with digits)
+    from services.student_resume_analyzer import extract_candidate_name_from_resume
+    import re, os
+
+    resolved_name = None
+    # 1. Check if candidate.name is already a clean human name (no '@', no digits, not generic)
+    if candidate.name and "@" not in candidate.name and not any(ch.isdigit() for ch in candidate.name):
+        clean = candidate.name.strip()
+        if clean.lower() not in ("candidate", "unknown candidate", "unknown", "student", "none"):
+            resolved_name = clean.title()
+
+    # 2. Check candidate.analysis_data for extracted name
+    if not resolved_name and isinstance(candidate.analysis_data, dict):
+        for k in ["candidate_name", "name", "full_name"]:
+            val = candidate.analysis_data.get(k)
+            if val and isinstance(val, str) and "@" not in val and not any(ch.isdigit() for ch in val):
+                c = val.strip()
+                if c.lower() not in ("candidate", "unknown candidate", "unknown", "student"):
+                    resolved_name = c.title()
+                    break
+
+    # 3. Check candidate.full_text directly using resume name extractor
+    if not resolved_name and candidate.full_text:
+        from_resume = extract_candidate_name_from_resume(candidate.full_text)
+        if from_resume:
+            resolved_name = from_resume
+
+    # 4. If resume_file is on disk, extract from physical file
+    if not resolved_name and candidate.resume_file:
+        file_path = os.path.join("media/resumes", candidate.resume_file) if not os.path.isabs(candidate.resume_file) else candidate.resume_file
+        if os.path.exists(file_path):
+            try:
+                from services.student_resume_analyzer import extract_resume_text
+                raw_text = extract_resume_text(file_path)
+                from_file = extract_candidate_name_from_resume(raw_text)
+                if from_file:
+                    resolved_name = from_file
+            except Exception:
+                pass
+
+    # 5. Fallback: clean email username (strip numbers, e.g. gopalmuri1919 -> Gopal Muri)
+    if not resolved_name:
+        raw_email = candidate.email or current_user.email or ""
+        if "@" in raw_email:
+            local = raw_email.split("@")[0]
+            cleaned_local = re.sub(r"[^a-zA-Z\s]", " ", local).strip()
+            words = [w for w in cleaned_local.split() if len(w) > 1]
+            if words:
+                resolved_name = " ".join(words).title()
+            elif cleaned_local:
+                resolved_name = cleaned_local.title()
+
+    if not resolved_name:
+        resolved_name = "Candidate"
+
+    # Persist the clean real name back to candidate.name in DB
+    if candidate.name != resolved_name and resolved_name != "Candidate":
+        candidate.name = resolved_name
+        try:
+            db.commit()
+        except Exception:
+            pass
+
     # 3. Create Ephemeral Assistant with 5 Questions
     assistant_id = vapi_service.create_ephemeral_assistant(
-        candidate_name=candidate.name,
+        candidate_name=resolved_name,
         role=role,
         resume_summary=resume_summary,
         custom_instructions=custom_instructions,
@@ -151,30 +214,48 @@ def submit_interview(
         "completed_at": str(datetime.now())
     }
     
-    # 3.5. AI Evaluation - Generate scores from transcript
-    # 3.5. AI Evaluation — generate scores from transcript
-    try:
-        from services.interview_evaluation import evaluate_interview_transcript
-        scores = evaluate_interview_transcript(
-            transcript=transcript,
-            candidate_name=candidate.name,
-            role=candidate.role or "Unknown",
-            resume_summary=str(candidate.analysis_data) if candidate.analysis_data else ""
-        )
-        current_data["interview"]["scores"] = scores
-        candidate.score = scores.get("overall_score", 0)
-    except Exception as e:
-        print(f"Interview evaluation failed: {e}")
-        import traceback
-        traceback.print_exc()
-        current_data["interview"]["scores"] = {
+    # 3.5. AI Evaluation — generate scores from transcript (Fast-path if malpractice)
+    is_malpractice = (
+        "malpractice" in str(interview_status).lower() or
+        bool(request.get("is_malpractice")) or
+        "malpractice" in str(request.get("reason", "")).lower()
+    )
+
+    if is_malpractice:
+        scores = {
             "technical_accuracy": 0,
             "communication_clarity": 0,
             "problem_solving": 0,
             "depth_of_knowledge": 0,
             "overall_score": 0,
-            "feedback": "Evaluation unavailable"
+            "feedback": f"Interview terminated due to malpractice: {interview_status}"
         }
+        current_data["interview"]["scores"] = scores
+        candidate.score = 0
+        candidate.status = "Disqualified"
+    else:
+        try:
+            from services.interview_evaluation import evaluate_interview_transcript
+            scores = evaluate_interview_transcript(
+                transcript=transcript,
+                candidate_name=candidate.name,
+                role=candidate.role or "Unknown",
+                resume_summary=str(candidate.analysis_data) if candidate.analysis_data else ""
+            )
+            current_data["interview"]["scores"] = scores
+            candidate.score = scores.get("overall_score", 0)
+        except Exception as e:
+            print(f"Interview evaluation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            current_data["interview"]["scores"] = {
+                "technical_accuracy": 0,
+                "communication_clarity": 0,
+                "problem_solving": 0,
+                "depth_of_knowledge": 0,
+                "overall_score": 0,
+                "feedback": "Evaluation unavailable"
+            }
 
     candidate.analysis_data = current_data
 

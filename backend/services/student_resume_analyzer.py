@@ -4,9 +4,8 @@ Extracts structured dimensions from resumes without fabricating achievements or 
 Reuses existing RAG text extraction and LLM clients (Gemini) with robust fallback.
 """
 
-import json
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 from pathlib import Path
 from services.rag_service import RAGService
 from services import gemini_client
@@ -292,3 +291,46 @@ def _clean_and_validate_analysis(data: Dict[str, Any], raw_text: str) -> Dict[st
         "missing_information": data.get("missing_information") or fallback["missing_information"],
         "recommendations": data.get("recommendations") or fallback["recommendations"],
     }
+
+
+def persist_student_resume_version(db, profile, file_path: str, file_name: str, raw_text: str, analysis: Dict[str, Any]):
+    """
+    Saves an already-computed analysis as the student's next StudentResume version (V1, V2, ...),
+    merges extracted skills into the profile and refreshes placement readiness. No AI call is made,
+    so every flow that analyzes a resume (Resume page, RoleReady setup) shares one saved result.
+    If the newest version holds identical text, it is returned unchanged instead of adding a duplicate.
+    """
+    import models
+    from services.readiness_service import calculate_placement_readiness
+
+    latest = db.query(models.StudentResume).filter(
+        models.StudentResume.student_profile_id == profile.id
+    ).order_by(models.StudentResume.version.desc()).first()
+
+    if latest and (latest.full_text or "").strip() == (raw_text or "").strip():
+        return latest
+
+    student_resume = models.StudentResume(
+        student_profile_id=profile.id,
+        version=(latest.version + 1) if latest else 1,
+        file_path=file_path,
+        file_name=file_name,
+        full_text=raw_text,
+        overall_score=analysis["overall_score"],
+        ats_score=analysis["ats_score"],
+        analysis_data=analysis,
+        strengths=analysis["strengths"],
+        weaknesses=analysis["weaknesses"],
+        missing_information=analysis["missing_information"],
+        recommendations=analysis["recommendations"]
+    )
+    db.add(student_resume)
+
+    profile.current_skills = list(set(profile.current_skills or []).union(analysis.get("technical_skills") or []))
+    readiness = calculate_placement_readiness(profile, student_resume)
+    profile.readiness_score = readiness["overall_score"]
+    profile.readiness_breakdown = readiness["breakdown"]
+
+    db.commit()
+    db.refresh(student_resume)
+    return student_resume

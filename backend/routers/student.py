@@ -3,12 +3,11 @@ Student Career & Placement Platform API Router (Phase 1).
 Provides endpoints for Student Profile, Resume Upload & Analysis, Target Role/Company, Placement Readiness Score, and Dashboard.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
-from typing import List, Optional, Dict, Any
-import shutil
+from typing import List, Optional
 import os
 import re
 from pathlib import Path
@@ -17,7 +16,7 @@ from datetime import datetime
 import schemas, models, database, utils
 from routers.auth import get_current_user
 from services.student_resume_analyzer import extract_resume_text, analyze_student_resume
-from services.readiness_service import calculate_placement_readiness
+from services.readiness_service import calculate_placement_readiness, refresh_profile_readiness
 from services.skill_gap_service import TARGET_ROLES_CATALOG, analyze_skill_gap, get_target_role_benchmark
 from services.roadmap_service import generate_or_update_roadmap, get_roadmap_details
 from services.practice_service import get_topics_overview, get_sanitized_questions, evaluate_practice_submission
@@ -1027,8 +1026,7 @@ def update_daily_task_status(
     """
     task = db.query(models.StudentDailyTask).filter(
         models.StudentDailyTask.id == task_id,
-        models.StudentDailyTask.student_profile_id == profile.id,
-        models.StudentDailyTask.organization_id == profile.organization_id
+        models.StudentDailyTask.student_profile_id == profile.id
     ).first()
 
     if not task:
@@ -1053,6 +1051,7 @@ def update_daily_task_status(
 
     db.commit()
     db.refresh(task)
+    refresh_profile_readiness(db, profile)
 
     return schemas.DailyTaskResponse(
         id=task.id,
@@ -1121,6 +1120,7 @@ def submit_practice_attempt_endpoint(
             selected_option=payload.selected_option,
             db=db
         )
+        refresh_profile_readiness(db, profile)
         return schemas.PracticeSubmissionResponse(**result)
     except ValueError as e:
         raise HTTPException(
@@ -1195,8 +1195,7 @@ def submit_mock_interview_turn_endpoint(
     """
     interview = db.query(models.StudentMockInterview).filter(
         models.StudentMockInterview.id == interview_id,
-        models.StudentMockInterview.student_profile_id == profile.id,
-        models.StudentMockInterview.organization_id == profile.organization_id
+        models.StudentMockInterview.student_profile_id == profile.id
     ).first()
 
     if not interview:
@@ -1230,8 +1229,7 @@ def complete_mock_interview_endpoint(
     """
     interview = db.query(models.StudentMockInterview).filter(
         models.StudentMockInterview.id == interview_id,
-        models.StudentMockInterview.student_profile_id == profile.id,
-        models.StudentMockInterview.organization_id == profile.organization_id
+        models.StudentMockInterview.student_profile_id == profile.id
     ).first()
 
     if not interview:
@@ -1242,6 +1240,7 @@ def complete_mock_interview_endpoint(
 
     if interview.status != "COMPLETED":
         interview = finalize_mock_interview(interview, db)
+        refresh_profile_readiness(db, profile)
 
     turns = db.query(models.StudentMockInterviewTurn).filter(
         models.StudentMockInterviewTurn.mock_interview_id == interview.id
@@ -1286,8 +1285,7 @@ def get_mock_interview_history_endpoint(
     Retrieves student's previous mock interview sessions.
     """
     interviews = db.query(models.StudentMockInterview).filter(
-        models.StudentMockInterview.student_profile_id == profile.id,
-        models.StudentMockInterview.organization_id == profile.organization_id
+        models.StudentMockInterview.student_profile_id == profile.id
     ).order_by(models.StudentMockInterview.created_at.desc()).all()
 
     results = []
@@ -1321,8 +1319,7 @@ def get_mock_interview_detail_endpoint(
     """
     interview = db.query(models.StudentMockInterview).filter(
         models.StudentMockInterview.id == interview_id,
-        models.StudentMockInterview.student_profile_id == profile.id,
-        models.StudentMockInterview.organization_id == profile.organization_id
+        models.StudentMockInterview.student_profile_id == profile.id
     ).first()
 
     if not interview:
@@ -1379,8 +1376,7 @@ def get_student_projects_endpoint(
     Strict tenant and student isolation.
     """
     projects = db.query(models.StudentProject).filter(
-        models.StudentProject.student_profile_id == profile.id,
-        models.StudentProject.organization_id == profile.organization_id
+        models.StudentProject.student_profile_id == profile.id
     ).order_by(models.StudentProject.created_at.desc()).all()
     return projects
 
@@ -1433,8 +1429,7 @@ def get_student_project_endpoint(
     """
     project = db.query(models.StudentProject).filter(
         models.StudentProject.id == project_id,
-        models.StudentProject.student_profile_id == profile.id,
-        models.StudentProject.organization_id == profile.organization_id
+        models.StudentProject.student_profile_id == profile.id
     ).first()
 
     if not project:
@@ -1457,8 +1452,7 @@ def update_student_project_endpoint(
     """
     project = db.query(models.StudentProject).filter(
         models.StudentProject.id == project_id,
-        models.StudentProject.student_profile_id == profile.id,
-        models.StudentProject.organization_id == profile.organization_id
+        models.StudentProject.student_profile_id == profile.id
     ).first()
 
     if not project:
@@ -1507,8 +1501,7 @@ def delete_student_project_endpoint(
     """
     project = db.query(models.StudentProject).filter(
         models.StudentProject.id == project_id,
-        models.StudentProject.student_profile_id == profile.id,
-        models.StudentProject.organization_id == profile.organization_id
+        models.StudentProject.student_profile_id == profile.id
     ).first()
 
     if not project:
@@ -1533,8 +1526,7 @@ def analyze_student_project_endpoint(
     """
     project = db.query(models.StudentProject).filter(
         models.StudentProject.id == project_id,
-        models.StudentProject.student_profile_id == profile.id,
-        models.StudentProject.organization_id == profile.organization_id
+        models.StudentProject.student_profile_id == profile.id
     ).first()
 
     if not project:
@@ -1639,7 +1631,6 @@ def get_active_simulation_endpoint(
     """
     sim = db.query(models.StudentPlacementSimulation).filter(
         models.StudentPlacementSimulation.student_profile_id == profile.id,
-        models.StudentPlacementSimulation.organization_id == profile.organization_id,
         models.StudentPlacementSimulation.status == "IN_PROGRESS"
     ).order_by(models.StudentPlacementSimulation.created_at.desc()).first()
 
@@ -1657,8 +1648,7 @@ def get_simulation_history_endpoint(
     Lists all past simulation drives for this student.
     """
     sims = db.query(models.StudentPlacementSimulation).filter(
-        models.StudentPlacementSimulation.student_profile_id == profile.id,
-        models.StudentPlacementSimulation.organization_id == profile.organization_id
+        models.StudentPlacementSimulation.student_profile_id == profile.id
     ).order_by(models.StudentPlacementSimulation.created_at.desc()).all()
 
     return [_format_simulation_response(s) for s in sims]
@@ -1676,8 +1666,7 @@ def get_simulation_detail_endpoint(
     """
     sim = db.query(models.StudentPlacementSimulation).filter(
         models.StudentPlacementSimulation.id == simulation_id,
-        models.StudentPlacementSimulation.student_profile_id == profile.id,
-        models.StudentPlacementSimulation.organization_id == profile.organization_id
+        models.StudentPlacementSimulation.student_profile_id == profile.id
     ).first()
 
     if not sim:
@@ -1701,8 +1690,7 @@ def submit_simulation_round_endpoint(
     """
     sim = db.query(models.StudentPlacementSimulation).filter(
         models.StudentPlacementSimulation.id == simulation_id,
-        models.StudentPlacementSimulation.student_profile_id == profile.id,
-        models.StudentPlacementSimulation.organization_id == profile.organization_id
+        models.StudentPlacementSimulation.student_profile_id == profile.id
     ).first()
 
     if not sim:
@@ -1917,8 +1905,7 @@ def get_student_drive_applications_endpoint(
     Lists all placement drive applications submitted by the authenticated student.
     """
     applications = db.query(models.PlacementDriveApplication).filter(
-        models.PlacementDriveApplication.student_profile_id == profile.id,
-        models.PlacementDriveApplication.organization_id == profile.organization_id
+        models.PlacementDriveApplication.student_profile_id == profile.id
     ).order_by(models.PlacementDriveApplication.applied_at.desc()).all()
 
     results = []

@@ -107,7 +107,7 @@ const CandidateAptitudeAssessment = () => {
             // Non-terminal: auto-hide banner after 6s
             warningTimerRef.current = setTimeout(() => setShowWarning(false), 6000);
         } else {
-            // Terminal (3rd violation): show warning 4s, then auto-submit
+            // Terminal (3rd violation): fast auto-submit (500ms brief visual cue)
             terminalFiredRef.current = true;
             warningTimerRef.current = setTimeout(() => {
                 setShowWarning(false);
@@ -115,7 +115,7 @@ const CandidateAptitudeAssessment = () => {
                 setShowTerminalOverlay(true);
                 // Use ref so we always call the LATEST handleSubmit (no stale closure)
                 if (handleSubmitRef.current) handleSubmitRef.current(`Malpractice - ${reason}`);
-            }, 4000);
+            }, 500);
         }
     }, []);
 

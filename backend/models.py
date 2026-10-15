@@ -258,7 +258,7 @@ class StudentRoadmap(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     target_role = Column(String(100), nullable=False)
     title = Column(String(255), nullable=False)
     summary = Column(Text, nullable=True)
@@ -279,7 +279,7 @@ class StudentDailyTask(Base):
     id = Column(Integer, primary_key=True, index=True)
     roadmap_id = Column(Integer, ForeignKey("student_roadmaps.id", ondelete="CASCADE"), index=True, nullable=False)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     week_number = Column(Integer, nullable=False)
     day_number = Column(Integer, nullable=False)
     title = Column(String(255), nullable=False)
@@ -319,7 +319,7 @@ class StudentPracticeAttempt(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     question_id = Column(Integer, ForeignKey("student_practice_questions.id", ondelete="CASCADE"), index=True, nullable=False)
     category = Column(String(50), nullable=False)
     topic = Column(String(100), nullable=False)
@@ -343,7 +343,7 @@ class StudentMockInterview(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     interview_type = Column(String(50), nullable=False)  # TECHNICAL, HR, MIXED
     target_role = Column(String(100), nullable=False)
     status = Column(String(30), default="IN_PROGRESS", nullable=False)  # IN_PROGRESS, COMPLETED, ABANDONED
@@ -367,7 +367,7 @@ class StudentMockInterviewTurn(Base):
     id = Column(Integer, primary_key=True, index=True)
     mock_interview_id = Column(Integer, ForeignKey("student_mock_interviews.id", ondelete="CASCADE"), index=True, nullable=False)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     turn_number = Column(Integer, nullable=False)
     question_text = Column(Text, nullable=False)
     student_response = Column(Text, nullable=True)
@@ -385,7 +385,7 @@ class StudentProject(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     tech_stack = Column(JSON, default=[], nullable=True)
@@ -408,7 +408,7 @@ class StudentPlacementSimulation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     target_role = Column(String(100), nullable=False)
     status = Column(String(30), default="IN_PROGRESS", nullable=False)  # IN_PROGRESS, COMPLETED, ABANDONED
     current_round = Column(Integer, default=1, nullable=False)  # 1: Aptitude, 2: Coding, 3: Tech Interview, 4: HR
@@ -435,7 +435,7 @@ class StudentPlacementSimulationRound(Base):
     id = Column(Integer, primary_key=True, index=True)
     simulation_id = Column(Integer, ForeignKey("student_placement_simulations.id", ondelete="CASCADE"), index=True, nullable=False)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     round_number = Column(Integer, nullable=False)  # 1, 2, 3, 4
     round_type = Column(String(50), nullable=False)  # APTITUDE, CODING, TECHNICAL_INTERVIEW, HR_INTERVIEW
     status = Column(String(30), default="PENDING", nullable=False)  # PENDING, IN_PROGRESS, COMPLETED
@@ -455,7 +455,7 @@ class StudentCopilotMessage(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     role = Column(String(20), nullable=False)  # USER, ASSISTANT, SYSTEM
     content = Column(Text, nullable=False)
     intent = Column(String(50), nullable=True)  # ROADMAP_HELP, SKILL_GAP, INTERVIEW_PREP, GENERAL
@@ -493,7 +493,7 @@ class PlacementDriveApplication(Base):
     id = Column(Integer, primary_key=True, index=True)
     drive_id = Column(Integer, ForeignKey("placement_drives.id", ondelete="CASCADE"), index=True, nullable=False)
     student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
     status = Column(String(30), default="APPLIED", nullable=False)  # APPLIED, SHORTLISTED, REJECTED, PLACED
     notes = Column(Text, nullable=True)
     applied_at = Column(DateTime(timezone=True), server_default=func.now())

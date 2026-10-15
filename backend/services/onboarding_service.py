@@ -4,7 +4,7 @@ Handles progressive onboarding steps, diagnostic career intake,
 and baseline readiness initialization.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 from sqlalchemy.orm import Session
 import models
 from services.readiness_service import calculate_placement_readiness

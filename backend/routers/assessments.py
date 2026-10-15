@@ -672,6 +672,33 @@ def submit_assessment(
     if assessment.status == models.AssessmentStatus.completed:
         raise HTTPException(status_code=400, detail="Assessment already submitted")
     
+    # --- FAST-PATH FOR MALPRACTICE TERMINATION ---
+    is_malpractice = False
+    status_str = str(payload.status or "").lower()
+    if "malpractice" in status_str:
+        is_malpractice = True
+    elif payload.answers and isinstance(payload.answers, dict) and "malpractice" in str(payload.answers.get("reason", "")).lower():
+        is_malpractice = True
+
+    if is_malpractice:
+        assessment.score = 0.0
+        assessment.status = models.AssessmentStatus.completed
+        assessment.completed_at = datetime.utcnow()
+        assessment.evaluation_details = {
+            "disqualified": True,
+            "reason": str(payload.status or "Malpractice Termination"),
+            "score": 0.0
+        }
+        assessment.submission_data = payload.answers or {}
+        if assessment.candidate_id:
+            cand = db.query(models.Candidate).filter(models.Candidate.id == assessment.candidate_id).first()
+            if cand:
+                cand.score = 0.0
+                cand.status = "Disqualified"
+        db.commit()
+        db.refresh(assessment)
+        return assessment
+
     # --- SCORING LOGIC ---
     calculated_score = 0.0
     correct_count = 0

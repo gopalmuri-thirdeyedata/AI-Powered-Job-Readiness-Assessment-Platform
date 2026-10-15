@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard,
@@ -27,6 +27,7 @@ import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import { useTheme } from '../context/ThemeContext';
 import API_URL from '../apiConfig';
+import useStudentTaskStatus, { clearStudentTaskCompleted, syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
 
 // Navigation definition with per-item accent colors
 export const navItems = [
@@ -97,6 +98,18 @@ const NavItem = ({ item, collapsed, onClick }) => {
     );
 };
 
+/* ─── In-layout page skeleton (sidebar and header stay put while a page loads) ─── */
+const PageSkeleton = () => (
+    <div className="space-y-5 animate-pulse" aria-busy="true" aria-label="Loading page">
+        <div className="h-8 w-64 rounded-xl bg-slate-200/70 dark:bg-slate-800" />
+        <div className="h-4 w-96 max-w-full rounded-lg bg-slate-200/60 dark:bg-slate-800/80" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            {[0, 1, 2].map(i => <div key={i} className="h-32 rounded-2xl bg-slate-200/60 dark:bg-slate-800/80" />)}
+        </div>
+        <div className="h-64 rounded-2xl bg-slate-200/50 dark:bg-slate-800/70" />
+    </div>
+);
+
 /* ─── Main Layout ─────────────────────────────────── */
 const StudentLayout = () => {
     const location = useLocation();
@@ -108,6 +121,19 @@ const StudentLayout = () => {
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const { hasCompletedTask, isLoading: isTaskStatusLoading } = useStudentTaskStatus(user);
+
+    // Gating for new students: if assessment task is not completed, redirect from dashboard to assessment setup
+    useEffect(() => {
+        if (!isTaskStatusLoading && !hasCompletedTask && (location.pathname === '/student/dashboard' || location.pathname === '/student')) {
+            navigate('/assessment/setup', { replace: true });
+        }
+    }, [isTaskStatusLoading, hasCompletedTask, location.pathname, navigate]);
+
+    // Read the current path without making it an effect dependency: navigating between pages must
+    // not re-sync the session and refetch the profile.
+    const pathnameRef = useRef(location.pathname);
+    pathnameRef.current = location.pathname;
 
     useEffect(() => {
         let isCancelled = false;
@@ -115,39 +141,17 @@ const StudentLayout = () => {
         const initAuth = async () => {
             // 1. Sync Clerk student session if user is logged in via Clerk
             if (user) {
-                try {
-                    const email = user.primaryEmailAddress?.emailAddress;
-                    if (email) {
-                        const response = await fetch(`${API_URL}/api/auth/clerk-sync/`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                email,
-                                clerk_user_id: user.id,
-                                role_intent: 'student'
-                            })
-                        });
-                        if (response.ok) {
-                            const data = await response.json();
-                            if (data.access) {
-                                localStorage.setItem('token', data.access);
-                                localStorage.setItem('studentToken', data.access);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.warn("Clerk student sync caught:", e);
-                }
+                await syncStudentSessionWithBackend(user);
             }
 
             // 2. Validate token availability
             const token = localStorage.getItem('studentToken') || localStorage.getItem('token');
-            if (!token && !user && isClerkLoaded && location.pathname !== '/student/login') {
+            if (!token && !user && isClerkLoaded && pathnameRef.current !== '/student/login') {
                 navigate('/student/login');
                 return;
             }
 
-            if (location.pathname !== '/student/login') {
+            if (pathnameRef.current !== '/student/login') {
                 try {
                     const data = await studentApi.getProfile();
                     if (!isCancelled) {
@@ -174,16 +178,51 @@ const StudentLayout = () => {
         initAuth();
 
         return () => { isCancelled = true; };
-    }, [user, isClerkLoaded, location.pathname, navigate]);
+    }, [user, isClerkLoaded, navigate]);
 
-    // Close mobile drawer on route change
-    useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+    // Close mobile drawer and start each page at the top on route change
+    useEffect(() => {
+        setMobileOpen(false);
+        window.scrollTo({ top: 0, left: 0 });
+    }, [location.pathname]);
+
+    // Download the other student pages in the background so sidebar clicks open instantly
+    useEffect(() => {
+        const warm = () => {
+            [
+                () => import('../pages/student/StudentDashboard'),
+                () => import('../pages/student/StudentSkillGap'),
+                () => import('../pages/student/StudentRoadmap'),
+                () => import('../pages/student/StudentPractice'),
+                () => import('../pages/student/StudentMockInterview'),
+                () => import('../pages/student/StudentPlacementSimulation'),
+                () => import('../pages/student/StudentDrives'),
+                () => import('../pages/student/StudentProjects'),
+                () => import('../pages/student/StudentResumeUpload'),
+                () => import('../pages/student/StudentProfile'),
+            ].forEach(load => load().catch(() => {}));
+        };
+        if (typeof window.requestIdleCallback === 'function') {
+            const id = window.requestIdleCallback(warm, { timeout: 4000 });
+            return () => window.cancelIdleCallback(id);
+        }
+        const t = setTimeout(warm, 1500);
+        return () => clearTimeout(t);
+    }, []);
 
     // Login page renders without layout chrome
     if (location.pathname === '/student/login') return <Outlet />;
 
     const handleLogout = async () => {
-        studentApi.logout();
+        clearStudentTaskCompleted();
+        if (studentApi && typeof studentApi.logout === 'function') {
+            studentApi.logout();
+        } else {
+            localStorage.removeItem('studentToken');
+            localStorage.removeItem('token');
+            localStorage.removeItem('student_user_email');
+            localStorage.removeItem('student_completed_assessment');
+        }
         try {
             if (clerk && clerk.signOut) {
                 await clerk.signOut();
@@ -191,13 +230,21 @@ const StudentLayout = () => {
         } catch (e) {
             console.error("Clerk signout error:", e);
         }
-        navigate('/student/login');
+        navigate('/?auth=student');
     };
 
-    const currentPage = allNavItems.find(n => n.path === location.pathname);
+    // Filter nav items: new students who haven't completed the task do not see the Dashboard link
+    const effectiveNavItems = navItems.filter(item => {
+        if (item.path === '/student/dashboard') {
+            return hasCompletedTask;
+        }
+        return true;
+    });
+
+    const currentPage = effectiveNavItems.find(n => n.path === location.pathname);
 
     /* ─── Sidebar Inner Content ─── */
-    const SidebarInner = ({ forMobile = false }) => (
+    const renderSidebar = (forMobile = false) => (
         <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800">
             {/* Brand */}
             <div
@@ -228,7 +275,7 @@ const StudentLayout = () => {
 
             {/* Nav Items */}
             <nav className={`flex-1 py-3 overflow-y-auto student-scrollbar ${collapsed && !forMobile ? 'flex flex-col items-center' : ''}`}>
-                {navItems.map(item => (
+                {effectiveNavItems.map(item => (
                     <NavItem
                         key={item.path}
                         item={item}
@@ -290,10 +337,10 @@ const StudentLayout = () => {
         >
             {/* ─── Desktop Sidebar ─── */}
             <aside
-                className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-30 transition-all duration-300 ease-in-out"
+                className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-30 transition-[width] duration-200 ease-out"
                 style={{ width: SIDEBAR_W }}
             >
-                <SidebarInner />
+                {renderSidebar()}
 
                 {/* Collapse toggle button */}
                 <button
@@ -320,14 +367,14 @@ const StudentLayout = () => {
                     <aside
                         className="relative z-10 w-64 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200"
                     >
-                        <SidebarInner forMobile />
+                        {renderSidebar(true)}
                     </aside>
                 </div>
             )}
 
             {/* ─── Main Column ─── */}
             <div
-                className={`flex flex-col flex-1 min-h-screen transition-all duration-300 ease-in-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
+                className={`flex flex-col flex-1 min-h-screen min-w-0 transition-[margin-left] duration-200 ease-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
             >
                 {/* Top Bar */}
                 <header
@@ -397,7 +444,11 @@ const StudentLayout = () => {
                 {/* Page Content */}
                 <main className="flex-1 px-4 sm:px-6 py-6">
                     <div className="max-w-7xl mx-auto w-full">
-                        <Outlet />
+                        <Suspense fallback={<PageSkeleton />}>
+                            <div key={location.pathname} className="s-animate-fade-in">
+                                <Outlet />
+                            </div>
+                        </Suspense>
                     </div>
                 </main>
 

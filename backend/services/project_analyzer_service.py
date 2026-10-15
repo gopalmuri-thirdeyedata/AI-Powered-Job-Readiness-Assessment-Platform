@@ -6,7 +6,6 @@ Strictly isolated from frozen recruiter services.
 """
 
 from typing import List, Dict, Any, Optional
-import re
 
 
 def analyze_student_project(

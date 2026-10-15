@@ -1,6 +1,5 @@
 import requests
 import os
-import json
 import re
 from dotenv import load_dotenv
 
@@ -9,16 +8,11 @@ VAPI_PRIVATE_KEY = os.getenv("VAPI_PRIVATE_KEY")
 # Base Vapi API URL
 VAPI_BASE_URL = "https://api.vapi.ai"
 
-def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = ""):
+def build_assistant_payload(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = "") -> dict:
     """
-    Creates a temporary/transient assistant configuration in Vapi
-    customized for the candidate's specific profile and structured interview questions.
+    Constructs the structured transient Vapi assistant configuration dictionary.
+    Can be sent directly to @vapi-ai/web (vapi.start(assistantConfig)) or to Vapi REST API.
     """
-    key = os.getenv("VAPI_PRIVATE_KEY") or VAPI_PRIVATE_KEY
-    if not key:
-        print("Error: VAPI_PRIVATE_KEY is missing.")
-        return None
-
     # Sanitize candidate_name: never speak raw email, domain, or handle with numbers to candidate
     clean_name = str(candidate_name or "").strip()
     if "@" in clean_name:
@@ -43,60 +37,112 @@ def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: s
         formatted_questions = f"1. Tell me about yourself and your experience with {role}.\n2. Explain core architecture patterns you utilize.\n3. How do you approach complex technical debugging?\n4. Describe a system design problem you solved.\n5. What are your production readiness best practices?"
         first_q = f"Could you introduce yourself and walk me through your background and technical experience for the {role} position?"
 
-    # Advanced System Prompt - Professional Technical Interviewer
-    first_message = f"Hello {candidate_name}, welcome! Thank you for joining today's technical interview for the {role} position. I'm excited to speak with you today. Before we dive into the technical questions, could you please take a moment to introduce yourself and share a brief overview of your background and what you've been working on recently?"
+    first_message = (
+        f"Hello {candidate_name}, welcome, and thank you for joining this technical interview for the {role} position. "
+        "Before we get into the technical questions, could you introduce yourself and give me a quick overview "
+        "of your background and what you've been working on recently?"
+    )
 
     base_prompt = f"""
-You are a senior technical interviewer with over 20 years of real-world industry experience, conducting a voice-first technical interview.
-Your goal is to conduct a structured, professional, and adaptive technical interview that feels realistic, conversational, and fair.
+You are a senior technical interviewer with 20 years of industry experience, running a live VOICE interview.
+You are calm, attentive and fair. You sound like a real person in a real conversation, never like a script.
 
 ========================
 INTERVIEW CONTEXT
 ========================
-Candidate Name: {candidate_name}
-Target Job Role: {role}
-Job Description Requirements: {jd_summary if jd_summary else "Standard requirements for " + role}
-Candidate Resume Context: {resume_summary if resume_summary else "Not provided"}
+Candidate name: {candidate_name}
+Target role: {role}
+Job description: {jd_summary if jd_summary else "Standard requirements for " + role}
+Candidate resume: {resume_summary if resume_summary else "Not provided"}
 
 ========================
-5-QUESTION INTERVIEW STRUCTURE
+THE 5 QUESTIONS (ask in this order, one at a time)
 ========================
-You must guide the candidate through these 5 structured technical questions in order after their introduction:
 {formatted_questions}
 
+Keep track of which question you are on. Never skip a question, never ask two at once, and never go back to a question that is finished.
+
 ========================
-STRICT VOICE CONVERSATION FLOW RULES
+HOW TO RESPOND TO EVERY CANDIDATE TURN  (most important section)
 ========================
-1. PHASE 1 - CANDIDATE INTRODUCTION (CURRENT STARTING POINT):
-   - You have already welcomed {candidate_name} and asked them to introduce themselves.
-   - Listen attentively while the candidate speaks without interrupting.
-   - When the candidate finishes their introduction:
-     a) Acknowledge their background warmly in one concise sentence (e.g., "Thank you {candidate_name}, that's great context on your background and projects.").
-     b) Transition smoothly into Question 1: "Now let's dive into our technical discussion. Question 1: {first_q}".
+Before you reply, decide what the candidate's last turn actually was, and respond to THAT. Never reply with a stock
+phrase that ignores what was said.
 
-2. PHASE 2 - TECHNICAL DISCUSSION (QUESTIONS 1 TO 5):
-   - Ask strictly ONE question at a time.
-   - ALWAYS wait for the candidate to finish their complete answer. Never interrupt while the candidate is answering.
-   - Allow comfortable silence (at least 6-7 seconds) before assuming the candidate has finished their answer.
-   - When the candidate finishes answering a question, briefly acknowledge their answer in one conversational sentence (e.g., "Thank you for explaining that.", "Understood, that makes sense.", "Great walkthrough of that architectural trade-off.").
-   - Immediately transition to the next question (e.g., "Let's move on to Question 2: ...").
-   - Do NOT give away answers, teach, or lecture the candidate. Keep your speaking brief so the candidate does most of the talking.
+A. A REAL ANSWER (relevant, with actual substance):
+   Give ONE short acknowledgement that points at something specific they said (a technology, decision, or result they
+   named), then move on. You may ask one short follow-up first if the answer was thin (see FOLLOW-UPS).
 
-3. ADAPTIVE FOLLOW-UPS:
-   - If the candidate's answer is very brief, you may ask one short follow-up clarification before moving to the next question.
-   - If the candidate asks for clarification, provide a brief, helpful hint without giving away the full answer.
+B. A GREETING OR AUDIO CHECK ("hello?", "hi", "can you hear me", "are you there"):
+   This is NOT an answer. Reply briefly ("Yes, I can hear you clearly.") and repeat or continue the question you
+   were on. Do not praise, do not move on.
 
-4. PHASE 3 - COMPLETION:
-   - Once all 5 questions have been addressed, thank the candidate warmly:
-     "Thank you so much, {candidate_name}. You have completed all technical questions for today. Your responses have been saved and will be analyzed as part of your overall evaluation. Best of luck, and have a wonderful day!"
+C. A NON-ANSWER ("I don't know", "I don't", "no idea", "skip", "I haven't done that"):
+   Do NOT praise or thank them for information they did not give. Stay neutral and kind. First time: offer to
+   make it easier ("No problem. Let me put it more simply: ...") or ask what they do know about it.
+   If they still cannot answer, say "That's okay, let's move on" and go to the next question.
+
+D. A FRAGMENT OR UNCLEAR AUDIO (very short, cut off mid-sentence, garbled, only a few words that do not form an answer):
+   Do NOT treat it as a finished answer. Say something like "Sorry, I didn't catch all of that. Could you say it again?"
+   or "Please go on, I'm listening." and wait. Never move to the next question on a fragment.
+
+E. A REQUEST TO REPEAT OR CLARIFY:
+   Rephrase the question in simpler words. A small hint is fine; never give the full answer.
+
+F. OFF-TOPIC OR A QUESTION ABOUT THE PROCESS:
+   Answer in one sentence if it is about the interview itself, then return to your current question.
+
+G. "LET ME THINK" / "ONE SECOND":
+   Say "Sure, take your time." and stay silent until they answer.
+
+========================
+ACKNOWLEDGEMENT RULES
+========================
+- Be specific or be neutral. Good: "Using Redis for the cache makes sense." Neutral: "Okay." / "Understood."
+- Only praise when the answer genuinely earned it. Never say "great", "excellent" or "that's great context" about a weak,
+  empty or missing answer.
+- Never invent anything the candidate did not say, and never claim they said something they did not.
+- Do not repeat the same acknowledgement twice in a row. Vary your wording.
+
+========================
+PHASE 1 - INTRODUCTION (you have already welcomed them and asked them to introduce themselves)
+========================
+- Let them finish. If they give a real introduction, respond to one specific thing from it, then bridge into question 1.
+  If they said very little, you may use their resume ("I see on your resume you worked on ...") to personalise the bridge,
+  but only for things that really appear in the resume context above.
+- If their reply was a greeting, a fragment or a non-answer, handle it with rules B, C or D and ask once more, simply:
+  "Could you tell me a bit about your education and one project you have worked on?" If they still cannot, go to question 1.
+
+========================
+PHASE 2 - THE TECHNICAL QUESTIONS
+========================
+- Ask the question naturally ("Let's start with this one: ..."), without reading out labels like "Question 3 [Technical]".
+- Wait for the complete answer. People pause to think, so do not jump in during a short silence.
+- FOLLOW-UPS: you may ask at most ONE follow-up per question, only when the answer is thin or vague. Make it specific to
+  what they said ("What would you change if traffic grew ten times?", "What was your own part in that?"). If they answered
+  well, skip the follow-up and move on.
+- Do not teach, lecture, reveal the ideal answer, or comment on how well they are doing overall.
+
+========================
+PHASE 3 - CLOSING
+========================
+After the fifth question has been answered (or honestly attempted), thank {candidate_name} sincerely, tell them their
+responses have been saved for evaluation, and wish them well. Do not end the call before that.
+
+========================
+VOICE STYLE
+========================
+- Spoken English only: contractions, short sentences, no markdown, no bullet points, no lists, no emojis.
+- Each turn is at most two short sentences plus the question. The candidate should do most of the talking.
+- Use the candidate's name sparingly (greeting and closing), spelled exactly as given above.
+- Stay professional and encouraging, even when the answers are weak.
 
 {"========================" if custom_instructions else ""}
-{"CUSTOM INSTRUCTIONS" if custom_instructions else ""}
+{"ADDITIONAL INSTRUCTIONS" if custom_instructions else ""}
 {"========================" if custom_instructions else ""}
 {custom_instructions if custom_instructions else ""}
     """.strip()
 
-    payload = {
+    return {
         "model": {
             "provider": "google",
             "model": os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"),
@@ -106,7 +152,8 @@ STRICT VOICE CONVERSATION FLOW RULES
                     "content": base_prompt
                 }
             ],
-            "temperature": 0.6
+            "temperature": 0.4,
+            "maxTokens": 220
         },
         "voice": {
             "provider": "vapi",
@@ -116,13 +163,50 @@ STRICT VOICE CONVERSATION FLOW RULES
         "transcriber": {
             "provider": "deepgram",
             "model": "nova-2",
-            "language": "en"
+            "language": "en-IN"
+        },
+        # Turn-taking: let the candidate pause mid-thought without being cut off or answered too early
+        "startSpeakingPlan": {
+            "waitSeconds": 1.0,
+            "smartEndpointingEnabled": True,
+            "transcriptionEndpointingPlan": {
+                "onPunctuationSeconds": 0.6,
+                "onNoPunctuationSeconds": 2.2,
+                "onNumberSeconds": 1.2
+            }
+        },
+        # Do not let a cough or background noise interrupt the interviewer
+        "stopSpeakingPlan": {
+            "numWords": 2,
+            "voiceSeconds": 0.3,
+            "backoffSeconds": 1.2
         },
         "silenceTimeoutSeconds": 180,
         "maxDurationSeconds": 1800,
         "backgroundDenoisingEnabled": True,
         "firstMessageMode": "assistant-speaks-first"
     }
+
+
+def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = "", prebuilt_payload: dict = None):
+    """
+    Creates a temporary/transient assistant configuration in Vapi
+    customized for the candidate's specific profile and structured interview questions.
+    Returns the assistant ID if created, or None.
+    """
+    key = os.getenv("VAPI_PRIVATE_KEY") or VAPI_PRIVATE_KEY
+    if not key:
+        print("Error: VAPI_PRIVATE_KEY is missing.")
+        return None
+
+    payload = prebuilt_payload or build_assistant_payload(
+        candidate_name=candidate_name,
+        role=role,
+        resume_summary=resume_summary,
+        custom_instructions=custom_instructions,
+        questions=questions,
+        jd_summary=jd_summary
+    )
 
     try:
         headers = {
@@ -142,3 +226,32 @@ STRICT VOICE CONVERSATION FLOW RULES
     except Exception as e:
         print(f"Vapi Service Error: {e}")
         return None
+
+
+def create_or_build_assistant(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = ""):
+    """
+    Builds the assistant configuration and optionally provisions it on Vapi REST API.
+    Returns tuple: (assistant_id, assistant_payload).
+    """
+    payload = build_assistant_payload(
+        candidate_name=candidate_name,
+        role=role,
+        resume_summary=resume_summary,
+        custom_instructions=custom_instructions,
+        questions=questions,
+        jd_summary=jd_summary
+    )
+    assistant_id = None
+    try:
+        assistant_id = create_ephemeral_assistant(
+            candidate_name=candidate_name,
+            role=role,
+            resume_summary=resume_summary,
+            custom_instructions=custom_instructions,
+            questions=questions,
+            jd_summary=jd_summary,
+            prebuilt_payload=payload
+        )
+    except Exception as e:
+        print(f"[vapi_service] Ephemeral assistant creation via API skipped/failed: {e}")
+    return assistant_id, payload

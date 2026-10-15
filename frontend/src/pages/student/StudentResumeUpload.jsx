@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Upload, 
-    FileText, 
-    CheckCircle, 
-    AlertTriangle, 
-    HelpCircle, 
-    Sparkles, 
-    TrendingUp, 
-    Layers, 
+import {
+    Upload,
+    FileText,
+    CheckCircle,
+    AlertTriangle,
+    HelpCircle,
+    Sparkles,
+    TrendingUp,
+    Layers,
     Calendar,
     Target,
     Code,
@@ -36,14 +36,20 @@ const StudentResumeUpload = () => {
         setIsLoadingAnalysis(true);
         try {
             const data = await studentApi.getResume(ver);
-            setCurrentAnalysis(data);
-            setActiveVersion(data.version);
+            if (data && data.version) {
+                setCurrentAnalysis(data);
+                setActiveVersion(data.version);
+            } else {
+                setCurrentAnalysis(null);
+                setActiveVersion(null);
+            }
         } catch (err) {
             // If 404, student simply hasn't uploaded a resume yet
             if (err.response?.status !== 404) {
                 console.error('Failed to load resume analysis:', err);
             }
             setCurrentAnalysis(null);
+            setActiveVersion(null);
         } finally {
             setIsLoadingAnalysis(false);
         }
@@ -97,7 +103,7 @@ const StudentResumeUpload = () => {
         }
     };
 
-    const analysis = currentAnalysis?.analysis_json || {};
+    const analysis = currentAnalysis?.analysis_json || currentAnalysis || {};
 
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
@@ -163,11 +169,10 @@ const StudentResumeUpload = () => {
                         <button
                             type="submit"
                             disabled={!selectedFile || isUploading}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all ${
-                                !selectedFile || isUploading
+                            className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all ${!selectedFile || isUploading
                                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                                     : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
-                            }`}
+                                }`}
                         >
                             {isUploading ? (
                                 <>
@@ -334,7 +339,7 @@ const StudentResumeUpload = () => {
                                 <div className="flex flex-wrap gap-1.5">
                                     {((analysis.technical_skills?.skills || analysis.technical_skills) || []).length > 0 ? (
                                         ((analysis.technical_skills?.skills || analysis.technical_skills)).map((s, i) => (
-                                             <span key={i} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium">
+                                            <span key={i} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium">
                                                 {s}
                                             </span>
                                         ))
@@ -352,7 +357,7 @@ const StudentResumeUpload = () => {
                                 <div className="flex flex-wrap gap-1.5">
                                     {((analysis.soft_skills?.skills || analysis.soft_skills) || []).length > 0 ? (
                                         ((analysis.soft_skills?.skills || analysis.soft_skills)).map((s, i) => (
-                                             <span key={i} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium">
+                                            <span key={i} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium">
                                                 {s}
                                             </span>
                                         ))
@@ -409,7 +414,7 @@ const StudentResumeUpload = () => {
                                     {((analysis.projects?.items || analysis.projects) || []).length > 0 ? (
                                         ((analysis.projects?.items || analysis.projects)).map((proj, i) => (
                                             <div key={i} className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 rounded-lg p-3 text-xs">
-                                                <p className="font-semibold text-slate-900 dark:text-white">{proj.name || `Project ${i+1}`}</p>
+                                                <p className="font-semibold text-slate-900 dark:text-white">{proj.name || `Project ${i + 1}`}</p>
                                                 {proj.description && <p className="text-slate-600 dark:text-slate-300 mt-1 line-clamp-2">{proj.description}</p>}
                                                 {proj.technologies && Array.isArray(proj.technologies) && (
                                                     <div className="flex flex-wrap gap-1 mt-2">

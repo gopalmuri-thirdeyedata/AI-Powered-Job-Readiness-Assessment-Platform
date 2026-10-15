@@ -136,10 +136,15 @@ def _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode) -
 
 def _generate(prompt, system_prompt, temperature, json_mode) -> str:
     api_key = get_gemini_api_key()
-    try:
-        import google.generativeai as genai  # optional dependency
-    except ImportError:
-        genai = None
+    # The REST path disables Gemini 2.5's internal "thinking" (it adds seconds to every structured JSON
+    # call: ~40% of the latency measured on interview scoring). The installed SDK cannot set that, so the
+    # SDK is opt-in only (GEMINI_USE_SDK=1) instead of silently taking over whenever it is installed.
+    genai = None
+    if os.getenv("GEMINI_USE_SDK", "").strip().lower() in ("1", "true", "yes"):
+        try:
+            import google.generativeai as genai  # optional dependency
+        except ImportError:
+            genai = None
 
     last_error: Optional[Exception] = None
     for attempt in range(len(RETRY_BACKOFF_SECONDS) + 1):

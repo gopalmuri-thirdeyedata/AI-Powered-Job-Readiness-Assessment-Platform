@@ -52,6 +52,18 @@ export const studentApi = {
         return response.data;
     },
 
+    logout() {
+        try {
+            localStorage.removeItem('studentToken');
+            localStorage.removeItem('token');
+            localStorage.removeItem('student_user_email');
+            localStorage.removeItem('user_profile');
+            localStorage.removeItem('student_completed_assessment');
+        } catch (e) {
+            console.error('Failed to clear student session storage:', e);
+        }
+    },
+
     // Profile
     async getProfile() {
         const response = await axios.get(`${API_URL}/api/student/profile`, {
@@ -440,6 +452,7 @@ export const studentApi = {
 
     logout() {
         localStorage.removeItem('studentToken');
+        localStorage.removeItem('student_completed_assessment');
         // If current role is STUDENT in user_profile, clean up user_profile too
         try {
             const profile = JSON.parse(localStorage.getItem('user_profile') || '{}');

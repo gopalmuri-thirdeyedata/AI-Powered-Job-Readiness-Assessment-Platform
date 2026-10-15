@@ -92,6 +92,9 @@ const CareerCopilotDrawer = () => {
         }
     };
 
+    // Career Copilot disabled and removed from view
+    return null;
+
     return (
         <>
             {/* Floating Copilot Launcher Button */}

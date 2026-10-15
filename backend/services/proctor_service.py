@@ -1,8 +1,14 @@
 import os
 import base64
 import io
-import numpy as np
-from PIL import Image
+try:
+    import numpy as np
+    from PIL import Image
+    VISION_LIBS_AVAILABLE = True
+except ImportError:
+    np = None
+    Image = None
+    VISION_LIBS_AVAILABLE = False
 from pathlib import Path
 
 
@@ -40,6 +46,8 @@ def get_model():
     On GPU server: change ACTIVE_MODEL to yolov8s.pt or yolo11s.pt — zero other changes needed.
     """
     global _model
+    if not VISION_LIBS_AVAILABLE:
+        return None
     if _model is None:
         try:
             from ultralytics import YOLO

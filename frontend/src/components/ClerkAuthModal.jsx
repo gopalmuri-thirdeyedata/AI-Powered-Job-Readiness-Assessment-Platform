@@ -1,15 +1,22 @@
-import { SignIn, useClerk } from '@clerk/clerk-react';
+import { SignIn, SignUp, useClerk } from '@clerk/clerk-react';
 import { X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import API_URL from '../apiConfig';
+import { syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
 
-export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redirectUrl }) {
+export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redirectUrl, initialAuthType = 'signIn' }) {
     const { user } = useClerk();
     const navigate = useNavigate();
     const wasSignedInRef = useRef(!!user);
     const userTypedRef = useRef(false);
     const modalRef = useRef(null);
+
+    const [authType, setAuthType] = useState(initialAuthType);
+
+    useEffect(() => {
+        setAuthType(initialAuthType);
+    }, [initialAuthType, isOpen]);
 
     const [emailError, setEmailError] = useState(null);
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
@@ -18,13 +25,19 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
 
     const targetDestination = redirectUrl || (mode === 'student' ? '/assessment/setup' : '/admin/dashboard');
 
-    // Automatically redirect upon successful authentication
+    // Automatically synchronize session and redirect upon successful authentication
     useEffect(() => {
         if (user && isOpen) {
-            onClose();
-            navigate(targetDestination, { replace: true });
+            const handlePostAuth = async () => {
+                if (mode === 'student') {
+                    await syncStudentSessionWithBackend(user);
+                }
+                onClose();
+                navigate(targetDestination, { replace: true });
+            };
+            handlePostAuth();
         }
-    }, [user, isOpen, onClose, navigate, targetDestination]);
+    }, [user, isOpen, onClose, navigate, targetDestination, mode]);
 
     // Aggressively remove Clerk "Last used" badges and clear browser autofill until user interacts
     useEffect(() => {
@@ -241,7 +254,18 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
             }
         };
 
+        const onFooterClick = (e) => {
+            const link = e.target && e.target.closest && e.target.closest('.cl-footerActionLink, a[href*="sign-up"], a[href*="sign-in"]');
+            if (link) {
+                e.preventDefault();
+                e.stopPropagation();
+                setAuthType(prev => (prev === 'signIn' ? 'signUp' : 'signIn'));
+                setEmailError(null);
+            }
+        };
+
         container.addEventListener('click', onCaptureClick, { capture: true });
+        container.addEventListener('click', onFooterClick, { capture: true });
         container.addEventListener('keydown', onCaptureKeyDown, { capture: true });
         container.addEventListener('submit', onCaptureSubmit, { capture: true });
         container.addEventListener('input', onInputChange, { capture: true });
@@ -249,6 +273,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
 
         return () => {
             container.removeEventListener('click', onCaptureClick, { capture: true });
+            container.removeEventListener('click', onFooterClick, { capture: true });
             container.removeEventListener('keydown', onCaptureKeyDown, { capture: true });
             container.removeEventListener('submit', onCaptureSubmit, { capture: true });
             container.removeEventListener('input', onInputChange, { capture: true });
@@ -273,26 +298,27 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
         elements: {
             rootBox: "w-full mx-auto",
             cardBox: "w-full shadow-none",
-            card: "shadow-none border-0 bg-transparent w-full pt-1 pb-3 px-6 sm:px-7",
-            header: "text-center pb-0.5 pt-0.5",
-            headerTitle: "text-lg sm:text-xl font-bold text-gray-900 tracking-tight",
-            headerSubtitle: "text-xs sm:text-sm text-gray-500 mt-0.5 font-normal",
-            socialButtonsBlockButton: "h-10 border border-gray-200 bg-white hover:bg-gray-50/80 rounded-xl shadow-2xs hover:shadow-xs transition-all text-gray-700 font-medium text-sm",
-            socialButtonsBlockButtonText: "font-medium text-gray-700 text-sm",
-            socialButtonsProviderIcon: "w-5 h-5 mr-2",
-            dividerRow: "my-2 sm:my-2.5",
+            card: "shadow-none border-0 bg-transparent w-full pt-1 pb-1 px-6 sm:px-7",
+            header: "text-center pb-0 pt-0",
+            headerTitle: "text-lg font-bold text-gray-900 tracking-tight",
+            headerSubtitle: "text-xs text-gray-500 mt-0.5 font-normal",
+            socialButtonsBlockButton: "h-9 border border-gray-200 bg-white hover:bg-gray-50/80 rounded-xl shadow-2xs hover:shadow-xs transition-all text-gray-700 font-medium text-xs sm:text-sm",
+            socialButtonsBlockButtonText: "font-medium text-gray-700 text-xs sm:text-sm",
+            socialButtonsProviderIcon: "w-4 h-4 mr-2",
+            dividerRow: "my-1.5 sm:my-2",
             dividerText: "text-xs text-gray-400 font-medium",
             dividerLine: "bg-gray-200",
             badge: "!hidden",
             socialButtonsBlockButtonBadge: "!hidden",
             socialButtonsBadge: "!hidden",
-            formFieldLabel: "text-xs font-semibold text-gray-700 mb-1",
-            formFieldInput: "h-10 px-3.5 text-sm bg-white border border-gray-300 rounded-xl focus:border-green-600 focus:ring-2 focus:ring-green-600/20 transition-all text-gray-900 shadow-2xs hover:border-gray-400 [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:#111827]",
+            formFieldLabel: "text-xs font-semibold text-gray-700 mb-0.5",
+            formFieldRow: "mb-2",
+            formFieldInput: "h-9 px-3 text-xs sm:text-sm bg-white border border-gray-300 rounded-xl focus:border-green-600 focus:ring-2 focus:ring-green-600/20 transition-all text-gray-900 shadow-2xs hover:border-gray-400 [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:#111827]",
             formFieldAction: "text-xs font-semibold text-green-600 hover:text-green-700 transition-colors",
-            formButtonPrimary: "h-10 bg-primary hover:bg-green-700 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all text-sm active:scale-[0.99]",
-            footerAction: "hidden", // Completely hide public signup prompts as this is invite-only
-            footerActionLink: "hidden",
-            footer: "pt-2 border-t border-gray-100",
+            formButtonPrimary: "h-9.5 bg-primary hover:bg-green-700 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all text-xs sm:text-sm active:scale-[0.99] mt-1.5",
+            footerAction: "!hidden",
+            footerActionLink: "!hidden",
+            footer: "pt-0 border-0",
             identityPreviewText: "text-sm font-medium text-gray-900",
             identityPreviewEditButton: "text-xs text-green-600 hover:text-green-700 font-semibold",
             formResendCodeLink: "text-xs text-green-600 hover:text-green-700 font-medium",
@@ -309,7 +335,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                     onClick={onClose}
                 />
 
-                <div className="relative z-10 w-full max-w-[460px] mx-auto">
+                <div className="relative z-10 w-full max-w-[440px] mx-auto">
                     <div className="relative bg-white rounded-2xl shadow-2xl p-8 text-center border border-gray-100">
                         <button
                             onClick={onClose}
@@ -324,7 +350,10 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                             You're already authenticated as <span className="font-semibold text-gray-900">{user.primaryEmailAddress?.emailAddress}</span>
                         </p>
                         <button
-                            onClick={() => {
+                            onClick={async () => {
+                                if (mode === 'student') {
+                                    await syncStudentSessionWithBackend(user);
+                                }
                                 onClose();
                                 navigate(targetDestination);
                             }}
@@ -339,19 +368,19 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
     }
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             {/* Lighter backdrop */}
             <div
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
             />
 
             {/* Modal card container */}
-            <div ref={modalRef} className="relative z-10 w-full max-w-[460px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div ref={modalRef} className="relative z-10 w-full max-w-[440px] my-auto bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-[calc(100vh-2rem)] overflow-y-auto overflow-x-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Close button */}
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-20 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                    className="absolute top-3.5 right-3.5 z-20 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
                     title="Close"
                     aria-label="Close modal"
                 >
@@ -359,19 +388,23 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                 </button>
 
                 {/* Brand Header */}
-                <div className="pt-4.5 pb-0 flex flex-col items-center justify-center">
-                    <div className="flex items-center gap-1.5 h-8">
+                <div className="pt-4.5 pb-0.5 flex flex-col items-center justify-center">
+                    <div className="flex items-center gap-2">
                         <img 
                             src="/logo_main.png" 
                             alt="ThirdEye Data" 
-                            className="h-7 w-auto object-contain shrink-0" 
+                            style={{ height: '26px', width: 'auto' }}
+                            className="object-contain shrink-0" 
                         />
-                        <span className="text-[15px] font-bold text-[#5d8c2c] tracking-tight leading-none translate-y-[4.5px]">
+                        <span className="text-[15px] font-bold text-[#5d8c2c] tracking-tight leading-none">
                             PrepWin
                         </span>
                     </div>
                     <span className="text-[11px] font-medium text-slate-500 mt-1">
-                        {mode === 'student' ? 'Student Assessment Sign In' : 'Recruiter & Administrator Sign In'}
+                        {mode === 'student'
+                            ? (authType === 'signUp' ? 'Student Assessment Sign Up' : 'Student Assessment Sign In')
+                            : (authType === 'signUp' ? 'Recruiter & Administrator Sign Up' : 'Recruiter & Administrator Sign In')
+                        }
                     </span>
                 </div>
 
@@ -481,14 +514,53 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                     <input type="password" name="fakepasswordremembered" tabIndex={-1} autoComplete="off" />
                 </div>
 
-                {/* Clerk SignIn form */}
-                <SignIn
-                    appearance={clerkAppearance}
-                    routing="virtual"
-                    fallbackRedirectUrl={targetDestination}
-                    forceRedirectUrl={targetDestination}
-                    initialValues={{ emailAddress: "" }}
-                />
+                {/* Clerk Auth form: SignIn or SignUp */}
+                {authType === 'signUp' ? (
+                    <SignUp
+                        appearance={clerkAppearance}
+                        routing="virtual"
+                        signInUrl="#"
+                        fallbackRedirectUrl={targetDestination}
+                        forceRedirectUrl={targetDestination}
+                        initialValues={{ emailAddress: "" }}
+                    />
+                ) : (
+                    <SignIn
+                        appearance={clerkAppearance}
+                        routing="virtual"
+                        signUpUrl="#"
+                        fallbackRedirectUrl={targetDestination}
+                        forceRedirectUrl={targetDestination}
+                        initialValues={{ emailAddress: "" }}
+                    />
+                )}
+
+                {/* Bottom Quick Switch Link */}
+                <div className="text-center pb-4 pt-1 text-xs text-slate-500 border-t border-slate-100 mx-6">
+                    {authType === 'signIn' ? (
+                        <p className="mt-2.5">
+                            Don't have an account?{' '}
+                            <button
+                                type="button"
+                                onClick={() => { setAuthType('signUp'); setEmailError(null); }}
+                                className="font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer ml-0.5 hover:underline"
+                            >
+                                Sign up
+                            </button>
+                        </p>
+                    ) : (
+                        <p className="mt-2.5">
+                            Already have an account?{' '}
+                            <button
+                                type="button"
+                                onClick={() => { setAuthType('signIn'); setEmailError(null); }}
+                                className="font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer ml-0.5 hover:underline"
+                            >
+                                Sign in
+                            </button>
+                        </p>
+                    )}
+                </div>
             </div>
         </div>
     );

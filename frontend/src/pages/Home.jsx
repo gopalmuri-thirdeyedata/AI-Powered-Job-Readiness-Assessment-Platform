@@ -42,6 +42,16 @@ const Home = () => {
     const clerk = useClerk();
     const [isClerkOpen, setIsClerkOpen] = useState(false);
     const [authModalMode, setAuthModalMode] = useState('student'); // 'student' | 'admin'
+    const [authModalAuthType, setAuthModalAuthType] = useState('signIn'); // 'signIn' | 'signUp'
+
+    // Signed out: drop any stale student credentials so the page never shows a ghost session
+    React.useEffect(() => {
+        if (isLoaded && !user) {
+            ['studentToken', 'student_user_email', 'student_completed_assessment'].forEach(k => {
+                try { localStorage.removeItem(k); } catch { /* storage unavailable */ }
+            });
+        }
+    }, [isLoaded, user]);
 
     // Automatically route authenticated users directly to their corresponding workspace
     React.useEffect(() => {
@@ -59,8 +69,8 @@ const Home = () => {
         if (authParam === 'admin' || ['ORGANIZATION_ADMIN', 'HR', 'PLATFORM_ADMIN'].includes(profile.role)) {
             navigate('/admin/dashboard', { replace: true });
         } else {
-            // Default authenticated student destination: Student Dashboard & Career Hub
-            navigate('/student/dashboard', { replace: true });
+            // Default authenticated student destination: Assessment Setup (JD & Resume upload)
+            navigate('/assessment/setup', { replace: true });
         }
     }, [user, isLoaded, searchParams, navigate]);
 
@@ -69,18 +79,25 @@ const Home = () => {
         const authParam = searchParams.get('auth');
         if (authParam === 'student') {
             setAuthModalMode('student');
+            setAuthModalAuthType('signIn');
+            if (!user) setIsClerkOpen(true);
+        } else if (authParam === 'signup' || authParam === 'register') {
+            setAuthModalMode('student');
+            setAuthModalAuthType('signUp');
             if (!user) setIsClerkOpen(true);
         } else if (authParam === 'admin') {
             setAuthModalMode('admin');
+            setAuthModalAuthType('signIn');
             if (!user) setIsClerkOpen(true);
         }
     }, [searchParams, user]);
 
     const openStudentSignIn = () => {
         if (user) {
-            navigate('/student/dashboard');
+            navigate('/assessment/setup');
         } else {
             setAuthModalMode('student');
+            setAuthModalAuthType('signIn');
             setIsClerkOpen(true);
         }
     };
@@ -90,18 +107,20 @@ const Home = () => {
             navigate('/admin/dashboard');
         } else {
             setAuthModalMode('admin');
+            setAuthModalAuthType('signIn');
             setIsClerkOpen(true);
         }
     };
 
     return (
         <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-emerald-100 selection:text-emerald-900 overflow-x-hidden">
-            {/* Clerk Auth Modal parameterized by entry mode */}
+            {/* Clerk Auth Modal parameterized by entry mode and authType */}
             <ClerkAuthModal
                 isOpen={isClerkOpen}
                 onClose={() => setIsClerkOpen(false)}
                 mode={authModalMode}
-                redirectUrl={authModalMode === 'student' ? '/student/dashboard' : '/admin/dashboard'}
+                initialAuthType={authModalAuthType}
+                redirectUrl={authModalMode === 'student' ? '/assessment/setup' : '/admin/dashboard'}
             />
 
             {/* Public Top Navbar */}
@@ -145,7 +164,7 @@ const Home = () => {
                                 Complete aptitude, coding, and technical interview assessments tailored to your resume and target job description.
                             </motion.p>
 
-                            {/* Exactly Two Clear Entry Point Buttons */}
+                            {/* Two Clear Entry Point Buttons: Student Sign In, Admin Sign In */}
                             <motion.div variants={fadeIn} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
                                 {/* Button 1: Student Sign In */}
                                 <button
@@ -155,14 +174,14 @@ const Home = () => {
                                 >
                                     <GraduationCap className="w-4 h-4 text-white" />
                                     <span>Student Sign In</span>
-                                    <ArrowRight className="w-4 h-4 ml-1" />
+                                    <ArrowRight className="w-4 h-4 ml-0.5" />
                                 </button>
 
                                 {/* Button 2: Admin Sign In */}
                                 <button
                                     type="button"
                                     onClick={openAdminSignIn}
-                                    className="px-6 py-3.5 rounded-xl border border-slate-300 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                                    className="px-5 py-3.5 rounded-xl border border-slate-300 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                                 >
                                     <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                     <span>Admin Sign In</span>

@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Sun, Moon, GraduationCap, ShieldCheck, ChevronRight, LayoutDashboard } from 'lucide-react';
+import { Menu, X, Sun, Moon, GraduationCap, ShieldCheck, ChevronRight, LayoutDashboard, Sparkles } from 'lucide-react';
 import { useClerk, useUser } from '@clerk/clerk-react';
 import { useTheme } from '../context/ThemeContext';
+import useStudentTaskStatus from '../hooks/useStudentTaskStatus';
 
 const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) => {
     const navigate = useNavigate();
-    const { user } = useUser();
+    const { user, isLoaded } = useUser();
     const clerk = useClerk();
     const { theme, toggleTheme } = useTheme();
     const [scrolled, setScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const { hasCompletedTask } = useStudentTaskStatus(user);
 
-    const hasStudentSession = Boolean(user || localStorage.getItem('studentToken'));
+    // Real sign-in state only: a leftover studentToken from an old session must not look like a login
+    const hasStudentSession = isLoaded && Boolean(user);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -25,7 +28,7 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
     const handleStudentClick = () => {
         setMobileMenuOpen(false);
         if (hasStudentSession) {
-            navigate('/student/dashboard');
+            navigate('/assessment/setup');
         } else if (onOpenStudentSignIn) {
             onOpenStudentSignIn();
         } else {
@@ -98,21 +101,32 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
                         {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                     </button>
 
-                    {/* Entry Point 1: Student Sign In or Student Dashboard */}
+                    {/* Entry Point 1: Student Sign In or Student Dashboard / Start Assessment */}
                     {hasStudentSession ? (
-                        <Link
-                            to="/student/dashboard"
-                            id="public-nav-student-dashboard"
-                            className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
-                        >
-                            <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            <span>Student Dashboard</span>
-                        </Link>
+                        hasCompletedTask ? (
+                            <Link
+                                to="/student/dashboard"
+                                id="public-nav-student-dashboard"
+                                className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
+                            >
+                                <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>Student Dashboard</span>
+                            </Link>
+                        ) : (
+                            <Link
+                                to="/assessment/setup"
+                                id="public-nav-start-assessment"
+                                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
+                            >
+                                <Sparkles className="w-4 h-4 text-emerald-100" />
+                                <span>Start Assessment</span>
+                            </Link>
+                        )
                     ) : (
                         <button
                             type="button"
                             onClick={handleStudentClick}
-                            className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            className="px-4 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                         >
                             <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Student Sign In</span>
@@ -165,17 +179,31 @@ const PublicNavbar = ({ onOpenStudentSignIn, onOpenAdminSignIn, onOpenSignIn }) 
                         </a>
                         <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
                         {hasStudentSession ? (
-                            <Link
-                                to="/student/dashboard"
-                                onClick={() => setMobileMenuOpen(false)}
-                                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between cursor-pointer"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                    <span>Student Dashboard</span>
-                                </span>
-                                <ChevronRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            </Link>
+                            hasCompletedTask ? (
+                                <Link
+                                    to="/student/dashboard"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between cursor-pointer"
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                        <span>Student Dashboard</span>
+                                    </span>
+                                    <ChevronRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                </Link>
+                            ) : (
+                                <Link
+                                    to="/assessment/setup"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-between cursor-pointer shadow-xs"
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <Sparkles className="w-4 h-4 text-emerald-100" />
+                                        <span>Start Assessment</span>
+                                    </span>
+                                    <ChevronRight className="w-4 h-4 text-white" />
+                                </Link>
+                            )
                         ) : (
                             <button
                                 type="button"

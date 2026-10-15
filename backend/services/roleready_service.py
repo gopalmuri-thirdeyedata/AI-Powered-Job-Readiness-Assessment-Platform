@@ -4,6 +4,7 @@ Governs Workflow A (Student Self-Assessment) and Workflow B (Admin Recruitment),
 including the strict sequential state machine, dynamic JD/Resume synthesis,
 proctoring telemetry, sandboxed execution, and dual-audience reporting.
 """
+import os
 import uuid
 import re
 import json
@@ -33,7 +34,9 @@ from models import (
     StudentResume
 )
 from services.gemini_client import call_gemini
+from services.readiness_service import refresh_profile_readiness
 from services import piston_service
+from services.interview_evaluation import evaluate_five_technical_questions
 
 # ==============================================================================
 # JD & RESUME SYNTHESIS LOGIC
@@ -1227,6 +1230,8 @@ def get_session_by_uuid(db: Session, session_uuid: str) -> RoleReadySession:
 # ─── ROUND LIFECYCLE HELPERS ──────────────────────────────────────────────────
 
 PYTHON_ONLY_DETAIL = "Only Python and Java are supported for coding assessments."
+# Max parallel sandbox calls per coding submission (kept modest to stay under the sandbox's rate limit)
+CODING_TEST_CONCURRENCY = 4
 SUPPORTED_CODING_LANGUAGES = {"python", "python3", "java"}
 UNSUPPORTED_LANGUAGE_DETAIL = "Only Python and Java are supported for coding assessments."
 RUN_CODE_RATE_LIMIT = 5            # run-code requests per window, per student
@@ -1249,6 +1254,14 @@ def _commit_or_500(db: Session) -> None:
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(status_code=500, detail="Database error: submission was not saved. Please retry.")
+
+
+def _refresh_student_readiness(db: Session, session: RoleReadySession) -> None:
+    """After a self-assessment finishes, fold its score into the student's stored readiness."""
+    if session.student_profile_id:
+        refresh_profile_readiness(
+            db, db.query(StudentProfile).filter(StudentProfile.id == session.student_profile_id).first()
+        )
 
 
 def _get_round(db: Session, session: RoleReadySession, round_type: str, label: str) -> RoleReadyRoundAttempt:
@@ -1366,7 +1379,7 @@ def finalize_expired_round(db: Session, session: RoleReadySession) -> bool:
         RoleReadyRoundAttempt.session_id == session.id,
         RoleReadyRoundAttempt.round_type == active[0]
     ).first()
-    if not rnd or rnd.status == "EVALUATED" or not rnd.started_at:
+    if not rnd or rnd.status in ("EVALUATED", "EVALUATING", "EVAL_FAILED") or not rnd.started_at:
         return False
     deadline = rnd.started_at.replace(tzinfo=None) + timedelta(minutes=rnd.time_limit_minutes)
     if (datetime.utcnow() - deadline).total_seconds() < EXPIRY_GRACE_SECONDS:
@@ -1414,6 +1427,68 @@ def readiness_tier(score: float) -> str:
     return "Building Foundation"
 
 
+def _build_round_details(db: Session, session: RoleReadySession) -> Dict[str, Any]:
+    """Per-round evidence for the student report: what was asked, how they did, time and proctoring."""
+    rounds = {
+        r.round_type: r for r in db.query(RoleReadyRoundAttempt).filter(
+            RoleReadyRoundAttempt.session_id == session.id
+        ).all()
+    }
+
+    def _meta(r):
+        violations = r.proctoring_violations or []
+        return {
+            "status": r.status,
+            "time_spent_seconds": r.time_spent_seconds or 0,
+            "time_limit_minutes": r.time_limit_minutes,
+            "violation_count": len(violations),
+            "violations": [v.get("type") for v in violations if isinstance(v, dict)][:10],
+        }
+
+    details: Dict[str, Any] = {}
+
+    apt = rounds.get("APTITUDE")
+    if apt and apt.evaluation_payload:
+        ev = apt.evaluation_payload
+        questions = {str(q.get("id")): q for q in (apt.questions_payload or []) if isinstance(q, dict)}
+        items = []
+        for b in ev.get("breakdown", []):
+            q = questions.get(str(b.get("question_id")), {})
+            options = {str(o.get("key")).upper(): o.get("text") for o in q.get("options", []) if isinstance(o, dict)}
+            choice = b.get("student_choice") or ""
+            items.append({
+                "question": q.get("question") or f"Question {b.get('question_id')}",
+                "your_answer": f"{choice}. {options.get(choice, '')}".strip(". ") if choice else "Not answered",
+                "is_correct": bool(b.get("is_correct")),
+                "explanation": b.get("explanation", ""),
+            })
+        details["aptitude"] = {
+            **_meta(apt),
+            "correct_count": ev.get("correct_count", 0),
+            "total_questions": ev.get("total_questions", len(items)),
+            "questions": items,
+        }
+
+    coding = rounds.get("CODING")
+    if coding and coding.evaluation_payload:
+        ev = coding.evaluation_payload
+        details["coding"] = {
+            **_meta(coding),
+            "passed_hidden_tests": ev.get("passed_hidden_tests", 0),
+            "total_hidden_tests": ev.get("total_hidden_tests", 0),
+            "problems": [
+                {k: p.get(k) for k in ("title", "language", "passed_tests", "total_tests", "score")}
+                for p in ev.get("problems", [])
+            ],
+        }
+
+    interview = rounds.get("INTERVIEW")
+    if interview and interview.status in ("EVALUATED", "TERMINATED"):
+        details["interview"] = _meta(interview)
+
+    return details
+
+
 def build_performance_dossier(db: Session, session: RoleReadySession, qualitative: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Deterministic 17-point student performance dossier (works with no AI available)."""
     qualitative = qualitative or {}
@@ -1437,6 +1512,13 @@ def build_performance_dossier(db: Session, session: RoleReadySession, qualitativ
     coding_eval = (coding_round.evaluation_payload or {}) if coding_round else {}
     passed, total = coding_eval.get("passed_hidden_tests", 0), coding_eval.get("total_hidden_tests", 0)
 
+    interview_round = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.session_id == session.id, RoleReadyRoundAttempt.round_type == "INTERVIEW").first()
+    int_eval = (interview_round.evaluation_payload or {}) if interview_round else {}
+    q_evals = qualitative.get("question_evaluations") or int_eval.get("question_evaluations") or []
+    tech_depth = qualitative.get("technical_depth_score") or int_eval.get("technical_depth_score") or interview
+    comm_score = qualitative.get("communication_score") or int_eval.get("communication_score") or interview
+
     strengths, improvements = [], []
     (strengths if apt >= 70 else improvements).append(
         f"Aptitude reasoning scored {apt:.0f}%" if apt >= 70 else "Strengthen quantitative and logical reasoning speed and accuracy")
@@ -1444,8 +1526,11 @@ def build_performance_dossier(db: Session, session: RoleReadySession, qualitativ
         f"Python solutions passed {passed}/{total} hidden test cases" if code >= 70 else "Practice Python algorithmic problems, focusing on edge cases and complexity")
     (strengths if interview >= 70 else improvements).append(
         "Clear, structured interview responses" if interview >= 70 else "Structure interview answers using the STAR format with concrete outcomes")
-    strengths += [s for s in (qualitative.get("strengths") or []) if isinstance(s, str)][:2]
-    improvements += [s for s in (qualitative.get("areas_for_improvement") or []) if isinstance(s, str)][:2]
+    
+    extra_strengths = (qualitative.get("key_strengths") or qualitative.get("strengths") or int_eval.get("key_strengths") or [])
+    extra_improvements = (qualitative.get("key_areas_for_improvement") or qualitative.get("areas_for_improvement") or int_eval.get("key_areas_for_improvement") or [])
+    strengths += [s for s in extra_strengths if isinstance(s, str) and s not in strengths][:2]
+    improvements += [s for s in extra_improvements if isinstance(s, str) and s not in improvements][:2]
 
     skill_gap = []
     for skill in required[:8]:
@@ -1467,6 +1552,11 @@ def build_performance_dossier(db: Session, session: RoleReadySession, qualitativ
         "aptitude_score": apt,
         "coding_score": code,
         "interview_score": interview,
+        "interview_breakdown": q_evals,
+        "round_details": _build_round_details(db, session),
+        "started_at": session.started_at.isoformat() if session.started_at else None,
+        "interview_technical_depth_score": tech_depth,
+        "interview_communication_score": comm_score,
         "resume_to_jd_match_score": compute_resume_jd_match(session),
         "demonstrated_strengths": strengths or ["Completed all three assessment rounds"],
         "areas_for_improvement": improvements,
@@ -1779,29 +1869,43 @@ def submit_coding_round(
     passed_hidden_tests = 0
     problem_evaluations = []
 
+    # Every hidden test is an independent sandbox round-trip (~1.5s each), so run them concurrently
+    # instead of one after another. Results are matched back to their test by index.
+    jobs = []  # (problem_index, expected_output, language, code, stdin)
+    plans = []
     for prob in coding_round.questions_payload or []:
         pid = str(prob.get("id"))
         sol_data = solutions.get(pid, {})
         code = sol_data.get("code", "")
         sol_lang = _require_supported_language(sol_data.get("language"))
         prob_hidden = hidden_keys.get(pid, {}).get("hidden_test_cases", [])
+        plans.append((prob, pid, sol_lang, len(prob_hidden)))
+        total_hidden_tests += len(prob_hidden)
+        if code.strip():  # an empty/unanswered solution scores zero without a sandbox call
+            for h_test in prob_hidden:
+                jobs.append((len(plans) - 1, (h_test.get("expected_output", "") or "").strip(), sol_lang, code, h_test.get("input", "")))
 
-        prob_passed = 0
-        prob_total = len(prob_hidden)
-        total_hidden_tests += prob_total
+    def _run_hidden_test(job):
+        _, _, lang, code_, stdin_ = job
+        res = piston_service.execute_code(lang, code_, stdin=stdin_)
+        if res.get("status") == "service_error":  # one quick retry for a transient sandbox hiccup
+            res = piston_service.execute_code(lang, code_, stdin=stdin_)
+        return res
 
-        # Run each hidden test case (an empty/unanswered solution scores zero without a sandbox call)
-        for h_test in prob_hidden if code.strip() else []:
-            inp = h_test.get("input", "")
-            exp = h_test.get("expected_output", "").strip()
-            res = piston_service.execute_code(sol_lang, code, stdin=inp)
+    passed_by_problem = defaultdict(int)
+    if jobs:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(CODING_TEST_CONCURRENCY, len(jobs))) as pool:
+            results = list(pool.map(_run_hidden_test, jobs))
+        for job, res in zip(jobs, results):
             if res.get("status") == "service_error":
                 raise _sandbox_unavailable()
             stdout = _trim_output(res.get("stdout")).strip()
-            if piston_service.outputs_match(stdout, exp):
-                prob_passed += 1
+            if piston_service.outputs_match(stdout, job[1]):
+                passed_by_problem[job[0]] += 1
                 passed_hidden_tests += 1
 
+    for idx, (prob, pid, sol_lang, prob_total) in enumerate(plans):
+        prob_passed = passed_by_problem[idx]
         prob_score = round((prob_passed / prob_total * 100), 1) if prob_total > 0 else 0.0
         problem_evaluations.append({
             "problem_id": pid,
@@ -1896,6 +2000,29 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
         **_round_timing(int_round),
         "questions": int_round.questions_payload
     }
+
+
+def _build_resume_brief(snapshot: Optional[Dict[str, Any]], raw_text: str, skills_csv: str) -> str:
+    """Compact, factual resume brief for the voice interviewer: real projects, roles and education."""
+    snap = snapshot if isinstance(snapshot, dict) else {}
+    parts: List[str] = []
+    if skills_csv:
+        parts.append(f"Skills: {skills_csv}.")
+    for p in (snap.get("projects") or [])[:4]:
+        if isinstance(p, dict) and (p.get("title") or p.get("description")):
+            tech = ", ".join(str(t) for t in (p.get("technologies") or [])[:6])
+            desc = str(p.get("description") or "")[:160]
+            parts.append(f"Project '{p.get('title', 'Untitled')}'{f' ({tech})' if tech else ''}: {desc}".strip())
+    for e in (snap.get("experience") or [])[:3]:
+        if isinstance(e, dict) and (e.get("role") or e.get("company")):
+            parts.append(f"Experience: {e.get('role', '')} at {e.get('company', '')} {e.get('duration', '') or ''}: {str(e.get('summary') or '')[:140]}".strip())
+    for ed in (snap.get("education") or [])[:2]:
+        if isinstance(ed, dict) and (ed.get("degree") or ed.get("institution")):
+            parts.append(f"Education: {ed.get('degree', '')}, {ed.get('institution', '')}".strip(", "))
+    brief = " ".join(parts).strip()
+    if len(brief) < 120 and raw_text:  # structured data missing: fall back to the raw resume text
+        brief = f"{brief} Resume excerpt: {raw_text[:700]}".strip()
+    return brief[:1800] or "Not provided"
 
 
 def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[str, Any]:
@@ -2010,7 +2137,7 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
     resume_snapshot = session.resume_snapshot or {}
     resume_skills = ", ".join(_skill_names(resume_snapshot))
     resume_raw = (session.resume_raw_text or "").strip()
-    resume_summary = f"Skills: {resume_skills}. Experience: {resume_raw[:600]}" if resume_raw else f"Skills: {resume_skills}"
+    resume_summary = _build_resume_brief(resume_snapshot, resume_raw, resume_skills)
 
     jd_data = session.extracted_jd_data or {}
     jd_req_skills = ", ".join(jd_data.get("required_skills", []) or [])
@@ -2065,9 +2192,10 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
 
     # 4. Provision Ephemeral Vapi Assistant
     assistant_id = None
+    assistant_config = None
     try:
         from services import vapi_service
-        assistant_id = vapi_service.create_ephemeral_assistant(
+        assistant_id, assistant_config = vapi_service.create_or_build_assistant(
             candidate_name=candidate_name,
             role=f"{role} at {company}" if company else role,
             resume_summary=resume_summary,
@@ -2081,6 +2209,7 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
     return {
         "session_uuid": session.session_uuid,
         "assistantId": assistant_id,
+        "assistantConfig": assistant_config,
         "questions": questions,
         "role": role,
         "company": company,
@@ -2122,49 +2251,46 @@ def submit_interview_round(
         raise HTTPException(status_code=403, detail="Interview round is locked. Complete the previous round first.")
 
     interview_answers = answers_or_transcript.get("answers") or []
+    raw_transcript = answers_or_transcript.get("transcript") or []
     qualitative = {}
     evaluation_source = "ai"
+
+    questions = int_round.questions_payload or []
+    role = session.target_role or "Software Engineer"
+    jd_data = session.extracted_jd_data or {}
+    jd_skills = ", ".join(jd_data.get("required_skills", []) or [])
+    jd_text = (session.custom_jd_text or "").strip()
+    jd_summary = f"Role: {role}. Skills: {jd_skills}. Context: {jd_text[:400]}" if jd_text else f"Role: {role}. Skills: {jd_skills}"
+
+    resume_raw = (session.resume_raw_text or "").strip()
+    resume_skills = ", ".join(_skill_names(session.resume_snapshot))
+    resume_summary = f"Skills: {resume_skills}. Experience: {resume_raw[:500]}" if resume_raw else f"Skills: {resume_skills}"
+
     if not interview_answers:
         interview_score = 0.0  # unanswered interview scores zero
         qualitative_feedback = "No interview responses were submitted."
         evaluation_source = "no_answers"
+        qualitative = {
+            "score": 0.0,
+            "overall_score": 0.0,
+            "summary": qualitative_feedback,
+            "evaluation_source": "no_answers",
+            "question_evaluations": []
+        }
     else:
-        interview_score = 75.0
-        evaluation_source = "fallback_default"
-        qualitative_feedback = "Demonstrated clear technical vocabulary and structured communication."
-        try:
-            # Extract clean candidate text for concise, fast scoring
-            user_responses = []
-            for a in interview_answers:
-                resp = str(a.get("response", "")).strip()
-                if resp and not resp.startswith("Candidate completed voice interview"):
-                    user_responses.append(resp)
-            summary_text = " ".join(user_responses)[:1500] if user_responses else "Completed structured voice interview."
-
-            prompt = f"""
-Evaluate the candidate's interview responses for the role '{session.target_role}'.
-Candidate Responses / Spoken Content:
-{summary_text}
-
-Score from 0 to 100 based on technical depth, clarity, and relevance.
-Return valid JSON:
-{{
-  "score": 80.0,
-  "communication_score": 85.0,
-  "technical_depth_score": 78.0,
-  "strengths": ["Clear communication", "Structured approach"],
-  "areas_for_improvement": ["Provide more concrete metrics", "Elaborate on production scale"],
-  "summary": "Demonstrated solid technical understanding and articulate answers."
-}}
-"""
-            eval_res = call_gemini(prompt, system_prompt="You are a senior technical hiring manager. Output strictly valid JSON fast.")
-            if eval_res and "score" in eval_res:
-                interview_score = max(0.0, min(100.0, float(eval_res["score"])))
-                qualitative_feedback = eval_res.get("summary", qualitative_feedback)
-                qualitative = eval_res
-                evaluation_source = "ai"
-        except Exception as e:
-            print(f"[PrepWin] AI interview evaluation fallback: {e}")
+        eval_res = evaluate_five_technical_questions(
+            questions=questions,
+            answers=interview_answers,
+            role=role,
+            jd_summary=jd_summary,
+            resume_summary=resume_summary,
+            transcript=raw_transcript,
+            call_gemini_fn=call_gemini
+        )
+        interview_score = max(0.0, min(100.0, float(eval_res.get("score", 0.0))))
+        qualitative_feedback = eval_res.get("summary") or eval_res.get("qualitative_feedback") or "Evaluation completed."
+        evaluation_source = eval_res.get("evaluation_source", "ai")
+        qualitative = eval_res
 
     _claim_round(db, int_round)
     int_round.score = interview_score
@@ -2178,7 +2304,12 @@ Return valid JSON:
     int_round.evaluation_payload = {
         "score": interview_score,
         "qualitative_feedback": qualitative_feedback,
-        "evaluation_source": evaluation_source
+        "evaluation_source": evaluation_source,
+        "technical_depth_score": qualitative.get("technical_depth_score", interview_score),
+        "communication_score": qualitative.get("communication_score", interview_score),
+        "key_strengths": qualitative.get("key_strengths", []),
+        "key_areas_for_improvement": qualitative.get("key_areas_for_improvement", []),
+        "question_evaluations": qualitative.get("question_evaluations", [])
     }
 
     session.interview_score = interview_score
@@ -2206,6 +2337,7 @@ Return valid JSON:
     session.current_state = RoleReadySessionState.COMPLETED
     session.completed_at = datetime.utcnow()
     _commit_or_500(db)
+    _refresh_student_readiness(db, session)
 
     return {
         "session_uuid": session.session_uuid,
@@ -2220,6 +2352,197 @@ Return valid JSON:
     }
 
 
+# ─── BACKGROUND INTERVIEW EVALUATION ──────────────────────────────────────────
+# The interview is scored by one large AI call (all questions + the full transcript) that can take
+# many seconds. The submit endpoint records the answers and returns immediately; the evaluation runs
+# here, and the report page polls get_student_report() until it is ready.
+
+# Set INTERVIEW_EVAL_BACKGROUND=0 to score the interview inside the submit request instead.
+BACKGROUND_INTERVIEW_EVALUATION = os.getenv("INTERVIEW_EVAL_BACKGROUND", "1").strip().lower() not in ("0", "false", "no")
+EVALUATION_STALE_SECONDS = 240  # a worker restart can kill the thread; after this we treat it as failed
+
+
+def _run_interview_evaluation(session_id: int, payload: Dict[str, Any], time_spent_seconds: int,
+                              violations: Optional[List[Dict[str, Any]]]) -> None:
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        session = db.query(RoleReadySession).filter(RoleReadySession.id == session_id).first()
+        if session is None:
+            return
+        submit_interview_round(db, session, payload, time_spent_seconds, violations)
+    except Exception as e:  # leave a retryable marker instead of an endless "processing" state
+        db.rollback()
+        print(f"[RoleReady] Background interview evaluation failed for session {session_id}: {e}")
+        try:
+            rnd = db.query(RoleReadyRoundAttempt).filter(
+                RoleReadyRoundAttempt.session_id == session_id,
+                RoleReadyRoundAttempt.round_type == "INTERVIEW"
+            ).first()
+            if rnd is not None and rnd.status != "EVALUATED":
+                rnd.status = "EVAL_FAILED"
+                db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+
+
+def _evaluation_is_stale(int_round: RoleReadyRoundAttempt) -> bool:
+    started = int_round.submitted_at
+    return bool(started and (datetime.utcnow() - started.replace(tzinfo=None)).total_seconds() > EVALUATION_STALE_SECONDS)
+
+
+def _launch_interview_evaluation(session_id: int, payload: Dict[str, Any], time_spent_seconds: int,
+                                 violations: Optional[List[Dict[str, Any]]]) -> None:
+    threading.Thread(
+        target=_run_interview_evaluation,
+        args=(session_id, payload, time_spent_seconds, violations),
+        daemon=True,
+    ).start()
+
+
+def start_interview_evaluation(
+    db: Session,
+    session: RoleReadySession,
+    answers_or_transcript: Dict[str, Any],
+    time_spent_seconds: int = 0,
+    proctoring_violations: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """Records the interview submission and evaluates it in the background (returns immediately)."""
+    if not BACKGROUND_INTERVIEW_EVALUATION:
+        return submit_interview_round(db, session, answers_or_transcript, time_spent_seconds, proctoring_violations)
+    int_round = _get_round(db, session, "INTERVIEW", "Interview")
+    processing = {"session_uuid": session.session_uuid, "status": "PROCESSING", "report_status": "PROCESSING",
+                  "round_type": "INTERVIEW", "current_state": session.current_state}
+
+    if int_round.status == "EVALUATED":  # already done: identical retry replays the stored result
+        return submit_interview_round(db, session, answers_or_transcript, time_spent_seconds, proctoring_violations)
+
+    if int_round.status == "EVALUATING" and not _evaluation_is_stale(int_round):
+        return processing
+
+    if session.current_state not in (RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS):
+        raise HTTPException(status_code=403, detail="Interview round is locked. Complete the previous round first.")
+
+    int_round.status = "EVALUATING"
+    int_round.submitted_at = datetime.utcnow()
+    int_round.submission_payload = answers_or_transcript
+    int_round.time_spent_seconds = time_spent_seconds
+    int_round.proctoring_violations = proctoring_violations or []
+    _commit_or_500(db)
+
+    _launch_interview_evaluation(session.id, answers_or_transcript, time_spent_seconds, proctoring_violations)
+    return processing
+
+
+def retry_interview_evaluation(db: Session, session: RoleReadySession) -> Dict[str, Any]:
+    """Re-runs a failed or stalled interview evaluation from the stored submission."""
+    int_round = _get_round(db, session, "INTERVIEW", "Interview")
+    stored = int_round.submission_payload
+    if int_round.status == "EVALUATED":
+        return {"session_uuid": session.session_uuid, "report_status": "READY"}
+    if not stored or int_round.status not in ("EVAL_FAILED", "EVALUATING"):
+        raise HTTPException(status_code=400, detail="There is no interview submission to re-evaluate.")
+    if int_round.status == "EVALUATING" and not _evaluation_is_stale(int_round):
+        return {"session_uuid": session.session_uuid, "report_status": "PROCESSING"}
+    int_round.status = "EVALUATING"
+    int_round.submitted_at = datetime.utcnow()
+    _commit_or_500(db)
+    _launch_interview_evaluation(session.id, stored, int_round.time_spent_seconds or 0, int_round.proctoring_violations or [])
+    return {"session_uuid": session.session_uuid, "report_status": "PROCESSING"}
+
+
+def _report_status(session: RoleReadySession, int_round: Optional[RoleReadyRoundAttempt]) -> str:
+    if session.current_state == RoleReadySessionState.COMPLETED:
+        return "READY"
+    if int_round is not None:
+        if int_round.status == "EVAL_FAILED" or (int_round.status == "EVALUATING" and _evaluation_is_stale(int_round)):
+            return "FAILED"
+        if int_round.status == "EVALUATING":
+            return "PROCESSING"
+    return "INCOMPLETE"
+
+
+def terminate_malpractice_session(
+    db: Session,
+    session: RoleReadySession,
+    reason: str = "3/3 Malpractice Violations Recorded",
+    violations: Optional[List[Dict[str, Any]]] = None,
+    round_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Fast-path termination: Immediately locks and disqualifies an assessment due to malpractice.
+    Bypasses all expensive AI (Gemini) and sandbox compiler (Piston) evaluations to return in < 50ms.
+    """
+    clean_reason = reason or "3/3 Malpractice Violations Recorded"
+    all_violations = violations or []
+
+    # Map currentStage string to round_type enum if present
+    rt_map = {
+        "aptitude": "APTITUDE",
+        "coding": "CODING",
+        "interview": "INTERVIEW"
+    }
+    target_round = rt_map.get((round_type or "").lower())
+
+    if target_round:
+        round_attempt = db.query(RoleReadyRoundAttempt).filter(
+            RoleReadyRoundAttempt.session_id == session.id,
+            RoleReadyRoundAttempt.round_type == target_round
+        ).first()
+        if round_attempt:
+            _claim_round(db, round_attempt)
+            round_attempt.score = 0.0
+            round_attempt.status = "TERMINATED"
+            round_attempt.proctoring_violations = all_violations
+            round_attempt.submitted_at = datetime.utcnow()
+            round_attempt.evaluated_at = datetime.utcnow()
+            round_attempt.evaluation_payload = {
+                "score": 0.0,
+                "status": "TERMINATED",
+                "disqualified": True,
+                "reason": clean_reason
+            }
+
+    # Zero all scores and mark session completed/terminated
+    session.overall_readiness_score = 0.0
+    session.current_state = RoleReadySessionState.COMPLETED
+    session.completed_at = datetime.utcnow()
+
+    # Build concise disqualified dossier without external AI calls
+    final_report = {
+        "session_uuid": session.session_uuid,
+        "completion_status": "TERMINATED",
+        "is_disqualified": True,
+        "termination_reason": clean_reason,
+        "disqualification_note": f"Assessment terminated due to proctoring malpractice: {clean_reason}. All scores forfeited.",
+        "evaluated_at": datetime.utcnow().isoformat(),
+        "readiness_tier": "Disqualified",
+        "overall_readiness_score": 0.0,
+        "aptitude_score": session.aptitude_score or 0.0,
+        "coding_score": session.coding_score or 0.0,
+        "interview_score": session.interview_score or 0.0,
+        "demonstrated_strengths": ["Assessment disqualified due to malpractice."],
+        "areas_for_improvement": [f"Adhere strictly to assessment proctoring rules: {clean_reason}"],
+        "proctoring_violations": all_violations
+    }
+
+    session.final_report_data = final_report
+    _commit_or_500(db)
+    _refresh_student_readiness(db, session)
+
+    return {
+        "session_uuid": session.session_uuid,
+        "status": "TERMINATED",
+        "is_disqualified": True,
+        "reason": clean_reason,
+        "current_state": session.current_state,
+        "overall_readiness_score": 0.0,
+        "final_report": final_report
+    }
+
+
 def get_student_report(db: Session, session: RoleReadySession) -> Dict[str, Any]:
     """
     Returns the student report dossier. Hides private server keys and other candidate data.
@@ -2228,7 +2551,12 @@ def get_student_report(db: Session, session: RoleReadySession) -> Dict[str, Any]
     final_report = dict(session.final_report_data or {})
     if session.current_state == RoleReadySessionState.COMPLETED:
         final_report = {**build_performance_dossier(db, session), **final_report}
+    int_round = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.session_id == session.id,
+        RoleReadyRoundAttempt.round_type == "INTERVIEW"
+    ).first()
     return {
+        "report_status": _report_status(session, int_round),
         "session_uuid": session.session_uuid,
         "target_role": session.target_role,
         "target_company": session.target_company,

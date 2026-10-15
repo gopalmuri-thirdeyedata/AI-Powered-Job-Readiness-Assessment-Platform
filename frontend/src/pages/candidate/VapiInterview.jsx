@@ -165,7 +165,7 @@ const VapiInterview = () => {
 
         if (count >= 3) {
             terminalFiredRef.current = true;
-            stopInterview();
+            stopInterview(`Malpractice - ${reason}`);
             setTerminalMessage(`Maximum violations reached (${reason}). The interview session has been ended.`);
             setShowTerminalOverlay(true);
         }
@@ -589,7 +589,7 @@ const VapiInterview = () => {
     };
 
     // ── Stop & Submit Interview ──
-    const stopInterview = async () => {
+    const stopInterview = async (forcedReason = null) => {
         if (isSubmittingRef.current) return;
         isSubmittingRef.current = true;
         setIsSubmitting(true);
@@ -614,8 +614,11 @@ const VapiInterview = () => {
         }
         if (videoRef.current) videoRef.current.srcObject = null;
 
-        // Submit interview detailed results
-        await submitResults(duration);
+        const isMalpractice = Boolean(forcedReason || terminalFiredRef.current);
+        const submitStatus = forcedReason || (isMalpractice ? "Malpractice Termination" : "Completed");
+
+        // Submit interview detailed results (fast-path if malpractice)
+        await submitResults(duration, submitStatus, isMalpractice);
 
         // Backup completion sync
         try {
@@ -629,8 +632,8 @@ const VapiInterview = () => {
                     },
                     body: JSON.stringify({
                         answers: {},
-                        result: { passed: questions.length, total: questions.length },
-                        status: "Completed"
+                        result: { passed: isMalpractice ? 0 : questions.length, total: questions.length },
+                        status: submitStatus
                     })
                 });
             }
@@ -643,7 +646,7 @@ const VapiInterview = () => {
         setCallState("completed");
     };
 
-    const submitResults = async (duration) => {
+    const submitResults = async (duration, status = "Completed", isMalpractice = false) => {
         try {
             const token = localStorage.getItem('candidateToken');
             const res = await fetch(`${API_URL}/api/interview/submit`, {
@@ -654,10 +657,12 @@ const VapiInterview = () => {
                 },
                 body: JSON.stringify({
                     round_type: 'interview',
-                    score: 85,
+                    score: isMalpractice ? 0 : 85,
                     total_score: 100,
                     duration: duration,
-                    transcript: transcriptDataRef.current || []
+                    status: status,
+                    is_malpractice: isMalpractice,
+                    transcript: isMalpractice ? [] : (transcriptDataRef.current || [])
                 })
             });
 

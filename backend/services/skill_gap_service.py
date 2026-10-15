@@ -6,7 +6,6 @@ and generating actionable career path guidance.
 """
 
 from typing import List, Dict, Any, Optional
-import json
 from services.skill_suggestion import (
     normalize_skill,
     deduplicate_and_normalize_skills,

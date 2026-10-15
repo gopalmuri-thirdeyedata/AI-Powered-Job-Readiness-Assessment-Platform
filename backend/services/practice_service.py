@@ -6,7 +6,6 @@ Evaluates submissions server-side via Judge0/Piston sandbox.
 """
 
 from typing import List, Dict, Any, Optional
-import json
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 

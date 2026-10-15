@@ -14,7 +14,6 @@ Never fabricates results, fakes scores, or leaks confidential evaluation keys.
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, asc
 import math
 
 import models

@@ -5,8 +5,7 @@ target role benchmarks, missing skills, roadmap status, and assessment metrics.
 Strictly isolated from recruiter services.
 """
 
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 import models

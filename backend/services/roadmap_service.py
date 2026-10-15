@@ -5,8 +5,7 @@ multi-week preparation roadmap with daily milestone tasks.
 Preserves completed tasks during roadmap regeneration.
 """
 
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 import models

@@ -1,5 +1,4 @@
-import re
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any, Optional
 
 
 def normalize_boolean(val: Any) -> Optional[bool]:

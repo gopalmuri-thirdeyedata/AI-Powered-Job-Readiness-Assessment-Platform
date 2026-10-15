@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { 
     LayoutDashboard,
     Award, 
@@ -26,11 +26,15 @@ import {
     Calendar,
     ChevronRight,
     Check,
-    RotateCcw
+    RotateCcw,
+    XCircle,
+    ArrowRight
 } from 'lucide-react';
+import { useUser } from '@clerk/clerk-react';
 import studentApi from '../../services/studentApi';
 import StudentOnboardingWizard from '../../components/student/StudentOnboardingWizard';
 import StudentPerformanceView from '../../components/student/StudentPerformanceView';
+import useStudentTaskStatus, { markStudentTaskCompleted, clearStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 
 /* ─── Circular Score Gauge ─────────────────────────── */
 const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "Readiness" }) => {
@@ -101,9 +105,41 @@ const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "R
 };
 
 const StudentDashboard = () => {
+    const navigate = useNavigate();
+    const { user } = useUser();
+    const { hasCompletedTask, isLoading: isTaskStatusLoading } = useStudentTaskStatus(user);
+
+    useEffect(() => {
+        if (!isTaskStatusLoading && !hasCompletedTask) {
+            navigate('/assessment/setup', { replace: true });
+        }
+    }, [isTaskStatusLoading, hasCompletedTask, navigate]);
+
     const [searchParams, setSearchParams] = useSearchParams();
     const urlTab = searchParams.get('tab');
+
+    const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        try {
+            const d = new Date(dateString);
+            return isNaN(d.getTime()) ? dateString : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch (e) {
+            return dateString;
+        }
+    };
+
+    const formatDateTime = (dateString) => {
+        if (!dateString) return 'N/A';
+        try {
+            const d = new Date(dateString);
+            return isNaN(d.getTime()) ? dateString : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return dateString;
+        }
+    };
     const [activeTab, setActiveTab] = useState(urlTab === 'readiness' ? 'readiness' : 'performance');
+    // Sub-view inside the Readiness hub: switching it is purely in-page (no route change, no refetch)
+    const [section, setSection] = useState('all');
     const [dashboardData, setDashboardData] = useState(null);
     const [unifiedData, setUnifiedData] = useState(null);
     const [onboardingStatus, setOnboardingStatus] = useState(null);
@@ -149,6 +185,14 @@ const StudentDashboard = () => {
 
             if (histRes.status === 'fulfilled') {
                 setAssessmentHistory(histRes.value);
+                const completedCount = Number(histRes.value?.total_completed || 0);
+                if (completedCount > 0) {
+                    markStudentTaskCompleted();
+                } else {
+                    clearStudentTaskCompleted();
+                    navigate('/assessment/setup', { replace: true });
+                    return;
+                }
             }
         } catch (err) {
             console.error('Failed to load student dashboard:', err);
@@ -169,6 +213,28 @@ const StudentDashboard = () => {
         if (hour < 18) return 'Good Afternoon';
         return 'Good Evening';
     };
+
+    // Strict Gating: uncompleted students must never see dashboard statistics or data
+    if (!hasCompletedTask) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-4">
+                    <Sparkles className="w-7 h-7 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Initial Assessment Required</h2>
+                <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm max-w-md mb-6 leading-relaxed">
+                    Welcome to PrepWin! To unlock your performance dashboard and career readiness metrics, please complete your first 3-round assessment (Aptitude, Coding, and AI Technical Interview).
+                </p>
+                <Link
+                    to="/assessment/setup"
+                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all inline-flex items-center gap-2 cursor-pointer"
+                >
+                    <span>Start Your Assessment Now</span>
+                    <ArrowRight className="w-4 h-4" />
+                </Link>
+            </div>
+        );
+    }
 
     if (isLoading) {
         return (
@@ -432,9 +498,9 @@ const StudentDashboard = () => {
                         <span className="text-slate-500 dark:text-slate-400">
                             {assessmentHistory?.total_attempted ? `${Math.round(((assessmentHistory.total_completed || 0) / assessmentHistory.total_attempted) * 100)}% completion rate` : 'No attempts yet'}
                         </span>
-                        <Link to="/student/assessments" className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-semibold flex items-center gap-0.5">
+                        <button type="button" onClick={() => setSection('assessments')} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-semibold flex items-center gap-0.5 cursor-pointer">
                             History <ArrowUpRight className="w-3 h-3" />
-                        </Link>
+                        </button>
                     </div>
                 </div>
 
@@ -557,17 +623,17 @@ const StudentDashboard = () => {
             {/* ─── Section View Switcher Tabs ────────────────────── */}
             <div className="flex items-center gap-2 border-b border-slate-200/80 dark:border-slate-800 pb-3 overflow-x-auto student-scrollbar">
                 {[
-                    { id: 'all', label: 'Overview', path: '/student/dashboard', icon: LayoutDashboard },
-                    { id: 'assessments', label: `My Assessments (${assessmentHistory?.total_attempted ?? 0})`, path: '/student/assessments', icon: ClipboardList },
-                    { id: 'results', label: `Results (${assessmentHistory?.total_completed ?? 0})`, path: '/student/results', icon: Award },
-                    { id: 'progress', label: 'Progress & Improvements', path: '/student/progress', icon: TrendingUp },
+                    { id: 'all', label: 'Overview', icon: LayoutDashboard },
+                    { id: 'assessments', label: `My Assessments (${assessmentHistory?.total_attempted ?? 0})`, icon: ClipboardList },
+                    { id: 'results', label: `Results (${assessmentHistory?.total_completed ?? 0})`, icon: Award },
+                    { id: 'progress', label: 'Progress & Improvements', icon: TrendingUp },
                 ].map(tab => {
-                    const active = activeTab === tab.id;
+                    const active = section === tab.id;
                     const Icon = tab.icon;
                     return (
                         <button
                             key={tab.id}
-                            onClick={() => navigate(tab.path)}
+                            onClick={() => setSection(tab.id)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                                 active
                                     ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
@@ -582,7 +648,7 @@ const StudentDashboard = () => {
             </div>
 
             {/* ─── Previous Assessment Records (My Assessments) ─── */}
-            {(activeTab === 'all' || activeTab === 'assessments') && (
+            {(section === 'all' || section === 'assessments') && (
                 <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
@@ -721,7 +787,12 @@ const StudentDashboard = () => {
                                                         </span>
                                                     </td>
                                                     <td className="py-4 px-4 whitespace-nowrap">
-                                                        {item.is_completed ? (
+                                                        {item.is_disqualified ? (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30">
+                                                                <XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                                                                Disqualified
+                                                            </span>
+                                                        ) : item.is_completed ? (
                                                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
                                                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                                                                 Completed
@@ -771,7 +842,11 @@ const StudentDashboard = () => {
                                                         {item.target_company || 'ThirdEye Data'} • {formatDate(item.created_at)}
                                                     </div>
                                                 </div>
-                                                {item.is_completed ? (
+                                                {item.is_disqualified ? (
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/15 dark:text-rose-300">
+                                                        Disqualified
+                                                    </span>
+                                                ) : item.is_completed ? (
                                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300">
                                                         Completed
                                                     </span>
@@ -828,7 +903,7 @@ const StudentDashboard = () => {
             )}
 
             {/* ─── Progress Trends & Areas for Improvement ───────── */}
-            {(activeTab === 'all' || activeTab === 'progress') && (
+            {(section === 'all' || section === 'progress') && (
                 <div className="space-y-6">
                     {/* Progress Trends Bar Chart / Visual Timeline */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-xs">
@@ -950,7 +1025,7 @@ const StudentDashboard = () => {
             )}
 
             {/* ─── Dedicated Assessment Results View ─────────────── */}
-            {activeTab === 'results' && (
+            {section === 'results' && (
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <div>
@@ -1043,7 +1118,7 @@ const StudentDashboard = () => {
             )}
 
             {/* ─── Multi-Factor Preparation Hub ─────────────────── */}
-            {activeTab === 'all' && (
+            {section === 'all' && (
             <>
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1221,10 +1296,10 @@ const StudentDashboard = () => {
                                 Placement Readiness Breakdown
                             </h2>
                         </div>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Algorithmic weighting</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Resume baseline + your real activity</span>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3.5">
                         {[
                             { key: 'resume', label: 'Resume', color: '#3B82F6', barGrad: 'from-blue-500 to-indigo-500' },
                             { key: 'technical_skills', label: 'Technical Skills', color: '#10B981', barGrad: 'from-emerald-500 to-teal-500' },
@@ -1232,7 +1307,13 @@ const StudentDashboard = () => {
                             { key: 'experience', label: 'Experience', color: '#EC4899', barGrad: 'from-pink-500 to-rose-500' },
                             { key: 'education', label: 'Education', color: '#06B6D4', barGrad: 'from-cyan-500 to-blue-500' },
                             { key: 'ats_quality', label: 'ATS & Quality', color: '#8B5CF6', barGrad: 'from-purple-500 to-indigo-500' },
-                        ].map(({ key, label, barGrad }) => {
+                            // Activity signals only appear once the student has actually done them
+                            { key: 'assessment', label: 'Role Assessment', color: '#0EA5E9', barGrad: 'from-sky-500 to-blue-500' },
+                            { key: 'interview', label: 'Mock Interviews', color: '#6366F1', barGrad: 'from-indigo-500 to-violet-500' },
+                            { key: 'practice', label: 'Practice', color: '#22C55E', barGrad: 'from-green-500 to-emerald-500' },
+                            { key: 'roadmap', label: 'Roadmap Progress', color: '#14B8A6', barGrad: 'from-teal-500 to-cyan-500' },
+                            { key: 'simulation', label: 'Placement Sim', color: '#F43F5E', barGrad: 'from-rose-500 to-pink-500' },
+                        ].filter(({ key }) => readiness_breakdown[key] !== undefined).map(({ key, label, barGrad }) => {
                             const val = Math.round(readiness_breakdown[key] || 0);
                             return (
                                 <div 

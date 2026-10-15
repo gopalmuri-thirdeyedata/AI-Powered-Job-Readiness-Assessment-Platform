@@ -45,6 +45,10 @@ export const rolereadyApi = {
         return response.data;
     },
 
+    async getStudentHistory() {
+        return this.getStudentAssessments();
+    },
+
     // Round 1: Aptitude
     async startAptitude(sessionUuid) {
         const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/start-aptitude`, {}, {
@@ -109,11 +113,31 @@ export const rolereadyApi = {
         return response.data;
     },
 
-    async submitInterview(sessionUuid, answers, timeSpentSeconds = 0, proctoringViolations = []) {
+    async submitInterview(sessionUuid, answers, timeSpentSeconds = 0, proctoringViolations = [], transcript = []) {
         const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/submit-interview`, {
             answers,
+            transcript,
             time_spent_seconds: timeSpentSeconds,
             proctoring_violations: proctoringViolations
+        }, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    async retryInterviewEvaluation(sessionUuid) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/retry-interview-evaluation`, {}, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    // Fast-path malpractice termination
+    async terminateSession(sessionUuid, reason = "3/3 Malpractice Violations Recorded", proctoringViolations = [], currentStage = null) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/terminate`, {
+            reason,
+            proctoring_violations: proctoringViolations,
+            round_type: currentStage
         }, {
             headers: getAuthHeaders()
         });

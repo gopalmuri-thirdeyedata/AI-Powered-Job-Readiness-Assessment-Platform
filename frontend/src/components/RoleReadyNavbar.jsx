@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Sun, Moon, LogOut, Menu, X, User, LayoutDashboard } from 'lucide-react';
 import { useClerk, useUser } from '@clerk/clerk-react';
 import { useTheme } from '../context/ThemeContext';
+import useStudentTaskStatus, { clearStudentTaskCompleted } from '../hooks/useStudentTaskStatus';
 
 /**
  * RoleReadyNavbar
@@ -11,7 +12,7 @@ import { useTheme } from '../context/ThemeContext';
  * - 80px (h-20) height matching PrepWin homepage
  * - Centered max-w-7xl inner container with balanced horizontal padding
  * - ThirdEye logo & PrepWin wordmark vertically aligned on one baseline
- * - Direct Student Dashboard entry point
+ * - Direct Student Dashboard entry point (visible once the student completes the initial task)
  * - Clean user profile identity and sign-out action
  * - Cohesive border and surface treatment in both light (#FFFFFF) and dark (#0B1220 / #111B2E) themes
  */
@@ -21,9 +22,11 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
     const clerk = useClerk();
     const { theme, toggleTheme } = useTheme();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const { hasCompletedTask } = useStudentTaskStatus(user);
 
     const handleSignOut = async () => {
         try {
+            clearStudentTaskCompleted();
             localStorage.removeItem('token');
             localStorage.removeItem('studentToken');
             localStorage.removeItem('invitationToken');
@@ -75,16 +78,18 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
 
                 {/* ── Right: Theme Toggle & User Actions ── */}
                 <div className="hidden md:flex items-center gap-3 shrink-0">
-                    {/* Direct Student Dashboard Link */}
-                    <Link
-                        to="/student/dashboard"
-                        id="nav-student-dashboard-btn"
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
-                        title="Open Student Dashboard & Career Hub"
-                    >
-                        <LayoutDashboard className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span>Dashboard</span>
-                    </Link>
+                    {/* Direct Student Dashboard Link - Only shown once student completes the initial task */}
+                    {showDashboard && hasCompletedTask && (
+                        <Link
+                            to="/student/dashboard"
+                            id="nav-student-dashboard-btn"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
+                            title="Open Student Dashboard & Career Hub"
+                        >
+                            <LayoutDashboard className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>Dashboard</span>
+                        </Link>
+                    )}
 
                     {/* Theme Toggle Button */}
                     <button
@@ -154,7 +159,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
             {mobileMenuOpen && (
                 <div className="md:hidden absolute top-20 left-0 right-0 bg-[var(--rr-surface)] border-b border-[var(--rr-border)] shadow-xl px-5 py-4 animate-in slide-in-from-top-2 duration-200 z-50">
                     <div className="flex flex-col gap-2">
-                        {showDashboard && (
+                        {showDashboard && hasCompletedTask && (
                             <Link
                                 to="/student/dashboard"
                                 onClick={() => setMobileMenuOpen(false)}

@@ -9,7 +9,7 @@ Computes multi-factor simulation scorecards and updates student readiness indica
 Confidentiality guarantee: Hidden test cases and MCQ answer keys are strictly kept server-side.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 
@@ -321,19 +321,15 @@ def submit_simulation_round(
             f"Continue daily practice on Hard-tier DSA problem variations"
         ]
 
-        # Update student profile placement readiness score
+        # Simulation score is now one of the blended readiness signals
+        db.flush()
         latest_resume = db.query(models.StudentResume).filter(
             models.StudentResume.student_profile_id == profile.id
         ).order_by(models.StudentResume.version.desc()).first()
 
         readiness = calculate_placement_readiness(profile, latest_resume)
-        # Factor in simulation
-        new_readiness = round((readiness["overall_score"] * 0.70) + (overall * 0.30), 1)
-        profile.readiness_score = new_readiness
-        if profile.readiness_breakdown:
-            breakdown = dict(profile.readiness_breakdown)
-            breakdown["placement_simulation"] = overall
-            profile.readiness_breakdown = breakdown
+        profile.readiness_score = readiness["overall_score"]
+        profile.readiness_breakdown = readiness["breakdown"]
 
     db.commit()
     db.refresh(simulation)

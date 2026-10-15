@@ -17,8 +17,10 @@ import {
     Clock,
     LayoutDashboard
 } from 'lucide-react';
+import { useUser } from '@clerk/clerk-react';
 import rolereadyApi from '../../services/rolereadyApi';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
+import useStudentTaskStatus from '../../hooks/useStudentTaskStatus';
 
 const popularRoles = [
     "Full Stack Engineer",
@@ -133,6 +135,8 @@ const PipelineRoundRow = ({ stepNumber, title, description, duration, isGated = 
    ═════════════════════════════════════════════════════════════ */
 const RoleReadySetup = () => {
     const navigate = useNavigate();
+    const { user } = useUser();
+    const { hasCompletedTask } = useStudentTaskStatus(user);
 
     const [targetRole, setTargetRole] = useState("Full Stack Engineer");
     const [targetCompany, setTargetCompany] = useState("");
@@ -234,7 +238,7 @@ const RoleReadySetup = () => {
     return (
         <div className="min-h-screen bg-[var(--rr-bg)] text-[var(--rr-text)] font-sans selection:bg-emerald-100 selection:text-emerald-900 flex flex-col transition-colors duration-200">
             {/* ── Standardized Shared Navbar ── */}
-            <RoleReadyNavbar title="Assessment Setup" />
+            <RoleReadyNavbar title="Assessment Setup" showDashboard={hasCompletedTask} />
 
             {/* ── Main Content Container (Max width ~1160–1240px) ── */}
             <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
@@ -253,14 +257,16 @@ const RoleReadySetup = () => {
                         </p>
                     </div>
 
-                    <Link
-                        to="/student/dashboard"
-                        id="setup-view-dashboard-btn"
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--rr-card)] hover:bg-[var(--rr-input)] border border-[var(--rr-border)] text-xs font-semibold text-[var(--rr-text)] transition-all shadow-2xs hover:shadow-xs self-start md:self-auto shrink-0"
-                    >
-                        <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>View Past Tests & Dashboard</span>
-                    </Link>
+                    {hasCompletedTask && (
+                        <Link
+                            to="/student/dashboard"
+                            id="setup-view-dashboard-btn"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--rr-card)] hover:bg-[var(--rr-input)] border border-[var(--rr-border)] text-xs font-semibold text-[var(--rr-text)] transition-all shadow-2xs hover:shadow-xs self-start md:self-auto shrink-0"
+                        >
+                            <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>View Past Tests & Dashboard</span>
+                        </Link>
+                    )}
                 </div>
 
                 {/* Validation / Error Banner */}

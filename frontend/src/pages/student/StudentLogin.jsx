@@ -17,14 +17,30 @@ import {
     Zap
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
+import { isStudentTaskCompletedSync, markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 
 const StudentLogin = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const redirectParam = searchParams.get('redirect');
-    const destination = (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//'))
-        ? redirectParam
-        : '/student/dashboard';
+
+    const resolvePostLoginDestination = async () => {
+        if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')) {
+            return redirectParam;
+        }
+        try {
+            const hist = await studentApi.getAssessmentHistory();
+            if (Number(hist?.total_completed || 0) > 0) {
+                markStudentTaskCompleted();
+                return '/student/dashboard';
+            } else {
+                localStorage.setItem('student_completed_assessment', 'false');
+                return '/assessment/setup';
+            }
+        } catch {
+            return isStudentTaskCompletedSync() ? '/student/dashboard' : '/assessment/setup';
+        }
+    };
 
     const [isRegistering, setIsRegistering] = useState(false);
     const [email, setEmail] = useState('');
@@ -45,7 +61,8 @@ const StudentLogin = () => {
             } else {
                 await studentApi.login(email, password);
             }
-            navigate(destination);
+            const dest = await resolvePostLoginDestination();
+            navigate(dest);
         } catch (err) {
             console.error('Authentication error:', err);
             setError(err.response?.data?.detail || 'Authentication failed. Please check your credentials.');
@@ -65,12 +82,14 @@ const StudentLogin = () => {
             // Attempt login first
             try {
                 await studentApi.login(demoEmail, demoPass);
-                navigate(destination);
+                const dest = await resolvePostLoginDestination();
+                navigate(dest);
                 return;
             } catch {
                 // If account does not exist, auto-register with valid org code
                 await studentApi.register(demoEmail, demoPass, 'Alex Kumar (Demo Student)', 'college-alpha');
-                navigate(destination);
+                const dest = await resolvePostLoginDestination();
+                navigate(dest);
             }
         } catch (err) {
             console.error('Demo login failed:', err);

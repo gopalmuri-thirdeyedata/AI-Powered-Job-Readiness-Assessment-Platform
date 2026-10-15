@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useUser, useClerk } from '@clerk/clerk-react';
 import API_URL from '../apiConfig';
+import { syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
 
 /**
  * RoleReadyAuthGuard
@@ -42,37 +43,8 @@ export default function RoleReadyAuthGuard({ children }) {
         if (user) {
             const syncStudentSession = async () => {
                 try {
-                    const email = user.primaryEmailAddress?.emailAddress;
-                    if (!email) {
-                        setIsAuthorized(false);
-                        setIsVerifying(false);
-                        return;
-                    }
-
-                    const response = await fetch(`${API_URL}/api/auth/clerk-sync/`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            email,
-                            clerk_user_id: user.id,
-                            role_intent: 'student'
-                        })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.access) {
-                            localStorage.setItem('token', data.access);
-                            localStorage.setItem('studentToken', data.access);
-                            setIsAuthorized(true);
-                        } else {
-                            setIsAuthorized(false);
-                        }
-                    } else {
-                        setIsAuthorized(false);
-                    }
+                    const token = await syncStudentSessionWithBackend(user);
+                    setIsAuthorized(Boolean(token));
                 } catch (err) {
                     console.error("Student session sync error:", err);
                     setIsAuthorized(false);

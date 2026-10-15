@@ -45,6 +45,7 @@ import useFaceProctoring from '../../hooks/useFaceProctoring';
 import FullscreenGateModal from '../../components/FullscreenGateModal';
 import rolereadyApi from '../../services/rolereadyApi';
 import API_URL from '../../apiConfig';
+import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 
 const VAPI_PUBLIC_KEY = import.meta.env.VITE_VAPI_PUBLIC_KEY;
 
@@ -243,6 +244,7 @@ const RoleReadyAssessment = () => {
     const [showTerminalModal, setShowTerminalModal] = useState(false);
     const [terminalReason, setTerminalReason] = useState('');
 
+    const violationsRef = useRef([]);
     const totalViolationsRef = useRef(0);
     const lastViolationTimeRef = useRef(0);
     const terminalFiredRef = useRef(false);
@@ -291,11 +293,13 @@ const RoleReadyAssessment = () => {
                 level: 'terminal'
             });
 
-            // Auto-submit active round after brief 3.5s countdown
-            setTimeout(() => {
-                handleAutoSubmitDueToMalpractice(reason);
-            }, 3500);
+            // Fast-path: terminate immediately (no evaluation, no delay). Pass the full list
+            // explicitly because this callback's closure holds a stale `violations` state.
+            violationsRef.current = [...violationsRef.current, violationEntry];
+            handleAutoSubmitDueToMalpractice(reason, violationsRef.current);
+            return;
         }
+        violationsRef.current = [...violationsRef.current, violationEntry];
     }, [currentStage]);
 
     // ── Silent Real-Time YOLOv8n Vision Proctoring ────────────────────
@@ -410,6 +414,7 @@ const RoleReadyAssessment = () => {
 
     // ── Round 3: Voice-First Vapi State ──────────────────────────────
     const [vapiAssistantId, setVapiAssistantId] = useState(null);
+    const [vapiAssistantConfig, setVapiAssistantConfig] = useState(null);
     const [vapiCallStatus, setVapiCallStatus] = useState('idle'); // 'idle' | 'connecting' | 'active' | 'ended' | 'error'
     const [vapiSpeakingState, setVapiSpeakingState] = useState('connecting'); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
     const [vapiVolume, setVapiVolume] = useState(0);
@@ -605,13 +610,16 @@ const RoleReadyAssessment = () => {
 
         try {
             await rolereadyApi.submitAptitude(sessionUuid, aptitudeAnswers, timeSpent, violations);
-            const updated = await rolereadyApi.getSessionStatus(sessionUuid);
-            setSessionData(updated);
 
-            // Unlock and navigate to Coding
+            // Unlock and navigate to Coding. The session refresh and the coding problems are
+            // independent, so fetch them together instead of one after another.
             setCurrentStage('coding');
             setTimeLeft(ROUND_DURATIONS.coding);
-            await loadCoding();
+            const [updated] = await Promise.all([
+                rolereadyApi.getSessionStatus(sessionUuid),
+                loadCoding()
+            ]);
+            setSessionData(updated);
         } catch (err) {
             console.error("Aptitude submission error:", err);
             alert(err.response?.data?.detail || "Aptitude submission failed. Please retry.");
@@ -724,13 +732,14 @@ const RoleReadyAssessment = () => {
 
         try {
             await rolereadyApi.submitCoding(sessionUuid, codeSolutions, timeSpent, violations);
-            const updated = await rolereadyApi.getSessionStatus(sessionUuid);
-            setSessionData(updated);
 
-            // Unlock and navigate to Interview
+            // Move to the Interview round straight away. Provisioning it (question generation and the
+            // voice assistant) can take several seconds, and the interview screen already shows a
+            // "connecting" state, so it must not keep the student waiting on the coding submit button.
             setCurrentStage('interview');
             setTimeLeft(ROUND_DURATIONS.interview);
-            await loadInterview();
+            loadInterview();
+            setSessionData(await rolereadyApi.getSessionStatus(sessionUuid));
         } catch (err) {
             console.error("Coding submission error:", err);
             alert(err.response?.data?.detail || "Coding evaluation failed. Please retry.");
@@ -755,7 +764,7 @@ const RoleReadyAssessment = () => {
         };
     }, []);
 
-    const startVapiCall = useCallback((assistantId) => {
+    const startVapiCall = useCallback((assistantTarget) => {
         if (!VAPI_PUBLIC_KEY) {
             console.warn("[RoleReady Vapi] Missing VAPI_PUBLIC_KEY in environment.");
             setVapiCallStatus('error');
@@ -834,11 +843,12 @@ const RoleReadyAssessment = () => {
             vapi.on('error', (err) => {
                 console.error("[RoleReady Vapi Error]:", err);
                 setVapiCallStatus('error');
-                setVapiConnectionError(err.message || "Failed to establish voice session with Vapi.");
+                const errMsg = err?.message || err?.error?.message || (typeof err === 'string' ? err : null);
+                setVapiConnectionError(errMsg || "Failed to establish voice session with Vapi.");
                 setCurrentSpeaker(null);
             });
 
-            vapi.start(assistantId);
+            vapi.start(assistantTarget);
         } catch (err) {
             console.error("[RoleReady Vapi Init Error]:", err);
             setVapiCallStatus('error');
@@ -864,15 +874,21 @@ const RoleReadyAssessment = () => {
         setVapiConnectionError(null);
         try {
             const res = await rolereadyApi.initVapiSession(sessionUuid);
-            const targetId = res.assistantId || localStorage.getItem('vapi_manual_id') || import.meta.env.VITE_VAPI_ASSISTANT_ID;
+            const manualId = localStorage.getItem('vapi_manual_id');
+            const targetId = manualId || res.assistantId || import.meta.env.VITE_VAPI_ASSISTANT_ID;
+            const targetConfig = manualId ? null : (res.assistantConfig || null);
             setVapiAssistantId(targetId);
+            setVapiAssistantConfig(targetConfig);
             setInterviewQuestions(res.questions || []);
             setRoundStartTime(Date.now());
             if (typeof res.remaining_seconds === 'number') setTimeLeft(res.remaining_seconds);
 
-            if (targetId && VAPI_PUBLIC_KEY) {
-                startVapiCall(targetId);
-            } else if (!targetId) {
+            // Prefer dynamic assistantConfig object if available so WebRTC call connects directly
+            // even across different Vapi org keys without "assistantId does not exist" errors
+            const target = targetConfig || targetId;
+            if (target && VAPI_PUBLIC_KEY) {
+                startVapiCall(target);
+            } else if (!target) {
                 setVapiCallStatus('error');
                 setVapiConnectionError("No dynamic or configured Vapi Assistant ID found. Please paste an assistant ID below or retry.");
             }
@@ -904,6 +920,89 @@ const RoleReadyAssessment = () => {
         }));
     };
 
+    const segmentInterviewTranscript = (questions = [], transcript = [], typedResponses = {}) => {
+        if (!questions || questions.length === 0) return [];
+
+        const buckets = questions.map((q, idx) => ({
+            question_id: q.id || idx + 1,
+            question_text: q.question,
+            category: q.category || "Technical Defense",
+            evaluation_criteria: q.evaluation_criteria || "Technical depth, correctness, trade-offs, and practical execution.",
+            responses: [],
+            follow_ups: [],
+            dialogue: [],
+            active_follow_up_prompt: null
+        }));
+
+        let currentQIdx = 0;
+        const numberWordMap = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
+
+        for (const item of (transcript || [])) {
+            if (!item || !item.text) continue;
+            const text = item.text.trim();
+            if (!text) continue;
+
+            if (item.role === 'ai') {
+                const lower = text.toLowerCase();
+                const qNumMatch = lower.match(/\b(?:question|question\s*number)\s*([1-5])\b/i);
+                const ordMatch = lower.match(/\b(first|second|third|fourth|fifth)\s+question\b/i);
+
+                let detectedIdx = null;
+                if (qNumMatch && qNumMatch[1]) {
+                    detectedIdx = parseInt(qNumMatch[1], 10) - 1;
+                } else if (ordMatch && ordMatch[1]) {
+                    detectedIdx = (numberWordMap[ordMatch[1].toLowerCase()] || 1) - 1;
+                } else if (lower.includes('next question') || lower.includes('moving on to our next') || lower.includes('moving forward to question')) {
+                    if (currentQIdx + 1 < buckets.length) {
+                        detectedIdx = currentQIdx + 1;
+                    }
+                }
+
+                if (detectedIdx !== null && detectedIdx >= 0 && detectedIdx < buckets.length) {
+                    currentQIdx = detectedIdx;
+                    buckets[currentQIdx].dialogue.push(`Interviewer: ${text}`);
+                    buckets[currentQIdx].active_follow_up_prompt = null;
+                } else {
+                    buckets[currentQIdx].dialogue.push(`Interviewer: ${text}`);
+                    if (text.includes('?') || lower.includes('could you') || lower.includes('can you') || lower.includes('tell me more') || lower.includes('elaborate')) {
+                        buckets[currentQIdx].active_follow_up_prompt = text;
+                    }
+                }
+            } else if (item.role === 'user') {
+                buckets[currentQIdx].dialogue.push(`Candidate: ${text}`);
+                if (buckets[currentQIdx].active_follow_up_prompt) {
+                    buckets[currentQIdx].follow_ups.push({
+                        follow_up_question: buckets[currentQIdx].active_follow_up_prompt,
+                        response: text
+                    });
+                    buckets[currentQIdx].active_follow_up_prompt = null;
+                } else {
+                    buckets[currentQIdx].responses.push(text);
+                }
+            }
+        }
+
+        return buckets.map((b, idx) => {
+            const qid = String(b.question_id || idx + 1);
+            const typed = (typedResponses[qid] || "").trim();
+            const spoken = b.responses.join(' ').trim();
+            let primaryResponse = typed || spoken;
+            if (!primaryResponse && b.follow_ups.length > 0) {
+                primaryResponse = b.follow_ups.map(f => f.response).join(' ');
+            }
+
+            return {
+                question_id: b.question_id,
+                question_text: b.question_text,
+                category: b.category,
+                evaluation_criteria: b.evaluation_criteria,
+                response: primaryResponse,
+                follow_ups: b.follow_ups,
+                full_dialogue: b.dialogue.join('\n')
+            };
+        });
+    };
+
     const handleSubmitInterview = async () => {
         if (isSubmittingInterview) return;
         setIsSubmittingInterview(true);
@@ -914,25 +1013,18 @@ const RoleReadyAssessment = () => {
         }
 
         try {
-            const studentSpeech = vapiTranscript
-                .filter(t => t.role === 'user')
-                .map(t => t.text.trim())
-                .filter(Boolean)
-                .join(' ');
+            const formattedAnswers = segmentInterviewTranscript(
+                interviewQuestions,
+                vapiTranscript,
+                interviewResponses
+            );
 
-            const formattedAnswers = interviewQuestions.map((q, idx) => {
-                const qid = String(q.id || idx + 1);
-                return {
-                    question_id: qid,
-                    question_text: q.question,
-                    response: interviewResponses[qid] || (idx === 0 ? studentSpeech : "") || `Candidate completed voice interview question ${idx + 1}`
-                };
-            });
-
-            await rolereadyApi.submitInterview(sessionUuid, formattedAnswers, timeSpent, violations);
+            await rolereadyApi.submitInterview(sessionUuid, formattedAnswers, timeSpent, violations, vapiTranscript);
+            markStudentTaskCompleted();
             navigate(`/assessment/${sessionUuid}/report`);
         } catch (err) {
             console.error("Interview submission error:", err);
+            markStudentTaskCompleted();
             navigate(`/assessment/${sessionUuid}/report`);
         } finally {
             setIsSubmittingInterview(false);
@@ -947,10 +1039,27 @@ const RoleReadyAssessment = () => {
         else if (currentStage === 'interview') handleSubmitInterview();
     };
 
-    const handleAutoSubmitDueToMalpractice = (reason) => {
-        if (currentStage === 'aptitude') handleSubmitAptitude();
-        else if (currentStage === 'coding') handleSubmitCoding();
-        else if (currentStage === 'interview') handleSubmitInterview();
+    const handleAutoSubmitDueToMalpractice = async (reason, allViolations = violations) => {
+        // Instantly shut off media tracks and Vapi call
+        if (vapiRef.current) {
+            try { vapiRef.current.stop(); } catch (e) {}
+        }
+        if (cameraStream) {
+            try { cameraStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        }
+
+        try {
+            // Never let a slow network keep the candidate on the modal: cap the wait at 4s.
+            await Promise.race([
+                rolereadyApi.terminateSession(sessionUuid, reason, allViolations, currentStage),
+                new Promise(resolve => setTimeout(resolve, 4000))
+            ]);
+        } catch (err) {
+            console.error("Fast malpractice termination error:", err);
+        } finally {
+            markStudentTaskCompleted();
+            navigate(`/assessment/${sessionUuid}/report`);
+        }
     };
 
     // ── Handle Start Assessment Action ───────────────────────────────
@@ -1043,10 +1152,10 @@ const RoleReadyAssessment = () => {
                         <h2 className="text-xl font-extrabold text-slate-900">Assessment Terminated</h2>
                         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-medium leading-relaxed">
                             Maximum violations reached: <strong>3/3 Strikes</strong> ({terminalReason}).
-                            Your assessment has been logged and submitted automatically.
+                            Your assessment has been terminated and your scores forfeited. No evaluation will be run.
                         </div>
                         <div className="flex items-center justify-center gap-2 text-xs font-mono text-slate-500">
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Submitting responses to evaluator...
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Redirecting...
                         </div>
                     </div>
                 </div>
@@ -2248,8 +2357,9 @@ const RoleReadyAssessment = () => {
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const id = localStorage.getItem('vapi_manual_id') || vapiAssistantId;
-                                                    if (id) startVapiCall(id);
+                                                    const manualId = localStorage.getItem('vapi_manual_id');
+                                                    const target = manualId || vapiAssistantConfig || vapiAssistantId;
+                                                    if (target) startVapiCall(target);
                                                     else loadInterview();
                                                 }}
                                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
@@ -2264,8 +2374,11 @@ const RoleReadyAssessment = () => {
                                                     placeholder="Paste VAPI Assistant ID"
                                                     className="w-full bg-gray-950 border border-gray-800 text-white text-xs p-2.5 rounded-lg mb-1.5 focus:border-blue-500 outline-none"
                                                     onChange={(e) => {
-                                                        if (e.target.value.length > 5) {
-                                                            localStorage.setItem('vapi_manual_id', e.target.value.trim());
+                                                        const val = e.target.value.trim();
+                                                        if (val.length > 5) {
+                                                            localStorage.setItem('vapi_manual_id', val);
+                                                        } else {
+                                                            localStorage.removeItem('vapi_manual_id');
                                                         }
                                                     }}
                                                 />

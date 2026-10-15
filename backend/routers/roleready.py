@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
+import re
 import shutil
 from pathlib import Path
 from jose import jwt, JWTError
@@ -21,7 +22,7 @@ import utils
 from routers.auth import get_current_user, require_hr_or_admin, get_current_tenant
 from routers.student import get_current_student_profile
 from services import roleready_service
-from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, extract_candidate_name_from_resume
+from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, extract_candidate_name_from_resume, persist_student_resume_version
 from services.rag_service import RAGService
 import secrets
 import uuid
@@ -164,8 +165,14 @@ class CodingSubmissionSchema(BaseModel):
 
 class InterviewSubmissionSchema(BaseModel):
     answers: Optional[List[Dict[str, Any]]] = None
+    transcript: Optional[List[Dict[str, Any]]] = None
     time_spent_seconds: Optional[int] = 0
     proctoring_violations: Optional[List[Dict[str, Any]]] = None
+
+class TerminateSessionSchema(BaseModel):
+    reason: Optional[str] = "3/3 Malpractice Violations Recorded"
+    proctoring_violations: Optional[List[Dict[str, Any]]] = None
+    round_type: Optional[str] = None
 
 class CreateBatchSchema(BaseModel):
     batch_name: str
@@ -202,6 +209,7 @@ def initialize_student_session(
 
     MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
     saved_resume_path = None
+    saved_resume_name = None
     resume_snapshot = None
     resume_raw_text = None
 
@@ -219,6 +227,7 @@ def initialize_student_session(
 
         filename = f"resume_student_{student_profile.id}_{os.urandom(4).hex()}{file_ext}"
         saved_resume_path = str(MEDIA_UPLOAD_DIR / filename)
+        saved_resume_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', os.path.basename(resume_file.filename))
         with open(saved_resume_path, "wb") as buffer:
             shutil.copyfileobj(resume_file.file, buffer)
 
@@ -286,6 +295,16 @@ def initialize_student_session(
             "extracted_jd": recent_session.extracted_jd_data
         }
 
+    # Reuse the analysis we just computed as the student's Resume-page version (no second AI call)
+    if resume_snapshot and resume_raw_text:
+        try:
+            persist_student_resume_version(
+                db, student_profile, saved_resume_path, saved_resume_name or "resume", resume_raw_text, resume_snapshot
+            )
+        except Exception as e:
+            db.rollback()
+            print(f"[RoleReady] Could not sync resume to Resume page: {e}")
+
     try:
         session = roleready_service.create_student_session(
             db=db,
@@ -316,6 +335,7 @@ def initialize_student_session(
 
 
 @router.get("/student/assessments")
+@router.get("/student/history")
 def get_student_assessment_history(
     student_profile: models.StudentProfile = Depends(get_current_student_profile),
     db: Session = Depends(database.get_db)
@@ -345,6 +365,8 @@ def get_student_assessment_history(
             "target_company": s.target_company,
             "current_state": s.current_state,
             "is_completed": s.current_state == models.RoleReadySessionState.COMPLETED,
+            "is_disqualified": bool((s.final_report_data or {}).get("is_disqualified")),
+            "termination_reason": (s.final_report_data or {}).get("termination_reason"),
             "aptitude_score": round(float(s.aptitude_score or 0.0), 1),
             "coding_score": round(float(s.coding_score or 0.0), 1),
             "interview_score": round(float(s.interview_score or 0.0), 1),
@@ -564,12 +586,39 @@ def submit_interview(
     session: models.RoleReadySession = Depends(get_authorized_session),
     db: Session = Depends(database.get_db)
 ):
-    return roleready_service.submit_interview_round(
+    # Scoring the interview takes a while (one large AI call), so it runs in the background and the
+    # report page waits for it. The student is not held on the submit button.
+    return roleready_service.start_interview_evaluation(
         db,
         session,
-        {"answers": payload.answers or []},
+        {"answers": payload.answers or [], "transcript": payload.transcript or []},
         payload.time_spent_seconds or 0,
         payload.proctoring_violations
+    )
+
+
+@router.post("/session/{session_uuid}/retry-interview-evaluation")
+def retry_interview_evaluation(
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """Re-runs a failed interview evaluation from the stored submission."""
+    return roleready_service.retry_interview_evaluation(db, session)
+
+
+@router.post("/session/{session_uuid}/terminate")
+def terminate_session(
+    payload: TerminateSessionSchema,
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """Fast-path termination: Immediately locks and disqualifies the session on 3 strikes without running heavy AI or compilers."""
+    return roleready_service.terminate_malpractice_session(
+        db=db,
+        session=session,
+        reason=payload.reason or "3/3 Malpractice Violations Recorded",
+        violations=payload.proctoring_violations,
+        round_type=payload.round_type
     )
 
 
