@@ -106,7 +106,7 @@ function ClerkSyncWrapper({ children }) {
     if (isStudentRole) {
         return (
             <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white p-6">
-                <div className="bg-slate-900/90 border border-slate-800 p-8 rounded-3xl max-w-lg text-center shadow-2xl backdrop-blur-xl">
+                <div className="bg-slate-900/90 border border-slate-800 p-5 sm:p-8 rounded-3xl w-full max-w-lg text-center shadow-2xl backdrop-blur-xl">
                     <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-400">
                         <GraduationCap size={32} />
                     </div>
@@ -143,12 +143,12 @@ function ClerkSyncWrapper({ children }) {
     if (error) {
         return (
             <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white p-6">
-                <div className="bg-red-950/30 border border-red-500/40 p-8 rounded-3xl max-w-lg text-center shadow-2xl backdrop-blur-xl">
+                <div className="bg-red-950/30 border border-red-500/40 p-5 sm:p-8 rounded-3xl w-full max-w-lg text-center shadow-2xl backdrop-blur-xl">
                     <div className="w-14 h-14 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-red-400">
                         <ShieldAlert size={28} />
                     </div>
                     <span className="text-xs uppercase tracking-widest text-emerald-500 font-bold mb-1 block">PrepWin</span>
-                    <h2 className="text-2xl font-bold text-white mb-3">
+                    <h2 className="text-2xl font-bold text-white mb-3 break-words">
                         {error.isForbidden ? "Administrator Access Required" : "Authentication Error"}
                     </h2>
                     <p className="text-gray-300 text-sm mb-6 leading-relaxed max-w-md mx-auto">
@@ -160,7 +160,7 @@ function ClerkSyncWrapper({ children }) {
                             </>
                         ) : error.message}
                     </p>
-                    <div className="flex items-center justify-center gap-3">
+                    <div className="flex flex-wrap items-center justify-center gap-3">
                         {!error.isForbidden && (
                             <button 
                                 onClick={() => window.location.reload()} 

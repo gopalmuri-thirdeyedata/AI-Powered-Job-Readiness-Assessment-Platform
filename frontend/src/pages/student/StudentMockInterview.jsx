@@ -13,8 +13,70 @@ import {
     RotateCcw,
     Lightbulb,
     Target,
+    Cpu,
+    Users,
+    Layers,
+    Check,
+    Brain,
+    ScanText,
+    ListChecks,
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 import studentApi from '../../services/studentApi';
+import { PageHero, EmptyState } from '../../components/student-ui/StudentMotion';
+import { Counter, EASE } from '../../components/home/primitives';
+import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
+
+const RING_COLORS = { emerald: '#10b981', teal: '#14b8a6', blue: '#3b82f6', amber: '#f59e0b' };
+
+/** Animated circular score meter (count-up + stroke draw). Purely presentational. */
+const ScoreRing = ({ value, label, tone = 'emerald', size = 92 }) => {
+    const reduce = useReducedMotion();
+    const v = Math.max(0, Math.min(100, Number(value) || 0));
+    const stroke = 8;
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const target = c * (1 - v / 100);
+    return (
+        <div className="flex flex-col items-center text-center min-w-0">
+            <div className="relative" style={{ width: size, height: size }}>
+                <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
+                    <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-slate-100 dark:stroke-slate-800" />
+                    <motion.circle
+                        cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} strokeLinecap="round"
+                        stroke={RING_COLORS[tone] || RING_COLORS.emerald}
+                        strokeDasharray={c}
+                        initial={{ strokeDashoffset: reduce ? target : c }}
+                        animate={{ strokeDashoffset: target }}
+                        transition={{ duration: 1.2, ease: EASE, delay: 0.15 }}
+                    />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center text-lg sm:text-xl font-black tabular-nums text-slate-900 dark:text-white">
+                    <Counter to={Math.round(v)} suffix="%" />
+                </div>
+            </div>
+            <p className="mt-2 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p>
+        </div>
+    );
+};
+
+const TRACKS = [
+    { id: 'TECHNICAL', label: 'Technical Depth', desc: 'Architecture, DB, logic & coding tradeoffs', icon: Cpu },
+    { id: 'HR', label: 'Behavioral & HR', desc: 'Leadership, teamwork, conflict & STAR stories', icon: Users },
+    { id: 'MIXED', label: 'Comprehensive', desc: 'Balanced technical & situational questions', icon: Layers },
+];
+
+const START_STAGES = [
+    { icon: ScanText, label: 'Reading your target role' },
+    { icon: Brain, label: 'Choosing questions for your track' },
+    { icon: ListChecks, label: 'Preparing the STAR rubric' },
+    { icon: MessageSquare, label: 'Warming up your interviewer' },
+];
+const START_TIPS = [
+    'Answer like you are talking to a real interviewer: Situation, Task, Action, Result.',
+    'Numbers make answers memorable. Mention latency, users, or time saved.',
+    'You can conclude early any time, but 4 questions gives the fullest scorecard.',
+];
 
 const StudentMockInterview = () => {
     // Mode: 'SETUP' | 'INTERVIEW' | 'COMPLETED' | 'HISTORY'
@@ -160,48 +222,46 @@ const StudentMockInterview = () => {
 
     return (
         <div className="space-y-6">
-            {/* Header banner */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                    <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
-                        <MessageSquare className="w-8 h-8" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                            AI Mock Interview & Communication Coach
-                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-medium border border-emerald-200 dark:border-emerald-500/30">
-                                STAR Rubric
-                            </span>
-                        </h1>
-                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
-                            Practice behavioral and technical interview questions with instant STAR structure grading.
-                        </p>
-                    </div>
-                </div>
+            <AssessmentLoadingOverlay
+                open={loading}
+                title={viewMode === 'SETUP' ? 'Starting your interview' : viewMode === 'INTERVIEW' ? 'Wrapping up your session' : 'Loading your report'}
+                subtitle={viewMode === 'SETUP' ? `${targetRole} - ${interviewType} track` : 'Hang tight, this only takes a moment.'}
+                stages={START_STAGES}
+                tips={START_TIPS}
+                footnote="Please keep this page open."
+            />
 
-                <div className="flex items-center gap-3">
-                    {viewMode !== 'SETUP' && (
+            {/* Header banner */}
+            <PageHero
+                icon={MessageSquare}
+                eyebrow="STAR Rubric"
+                title="AI Mock Interview & Communication Coach"
+                subtitle="Practice behavioral and technical interview questions with instant STAR structure grading."
+                actions={(
+                    <>
+                        {viewMode !== 'SETUP' && (
+                            <button
+                                onClick={() => setViewMode('SETUP')}
+                                className="px-4 min-h-[44px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-medium text-sm transition-all border border-slate-200 dark:border-slate-700 shadow-xs flex items-center gap-2 active:scale-95"
+                            >
+                                <RotateCcw className="w-4 h-4" />
+                                New Session
+                            </button>
+                        )}
                         <button
-                            onClick={() => setViewMode('SETUP')}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-medium text-sm transition-all border border-slate-200 dark:border-slate-700 shadow-xs flex items-center gap-2"
+                            onClick={fetchHistory}
+                            disabled={isLoadingHistory}
+                            className="px-4 min-h-[44px] bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 rounded-xl font-medium text-sm transition-all border border-emerald-200 dark:border-emerald-500/30 shadow-xs flex items-center gap-2 active:scale-95"
                         >
-                            <RotateCcw className="w-4 h-4" />
-                            New Session
+                            <History className="w-4 h-4" />
+                            Past Sessions
                         </button>
-                    )}
-                    <button
-                        onClick={fetchHistory}
-                        disabled={isLoadingHistory}
-                        className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 rounded-xl font-medium text-sm transition-all border border-emerald-200 dark:border-emerald-500/30 shadow-xs flex items-center gap-2"
-                    >
-                        <History className="w-4 h-4" />
-                        Past Sessions
-                    </button>
-                </div>
-            </div>
+                    </>
+                )}
+            />
 
             {error && (
-                <div className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-400 rounded-xl flex items-center gap-3 text-sm">
+                <div role="alert" className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-400 rounded-xl flex items-center gap-3 text-sm animate-fadeIn">
                     <AlertCircle className="w-5 h-5 flex-shrink-0" />
                     <span>{error}</span>
                 </div>
@@ -209,8 +269,14 @@ const StudentMockInterview = () => {
 
             {/* VIEW 1: SETUP SCREEN */}
             {viewMode === 'SETUP' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-6">
+                <motion.div
+                    key="setup"
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, ease: EASE }}
+                    className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+                >
+                    <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-6">
                         <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                             <Target className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                             Configure Your Practice Session
@@ -222,27 +288,46 @@ const StudentMockInterview = () => {
                                 Interview Track
                             </label>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                {[
-                                    { id: 'TECHNICAL', label: 'Technical Depth', desc: 'Architecture, DB, logic & coding tradeoffs' },
-                                    { id: 'HR', label: 'Behavioral & HR', desc: 'Leadership, teamwork, conflict & STAR stories' },
-                                    { id: 'MIXED', label: 'Comprehensive', desc: 'Balanced technical & situational questions' }
-                                ].map(track => (
-                                    <button
-                                        key={track.id}
-                                        type="button"
-                                        onClick={() => setInterviewType(track.id)}
-                                        className={`p-4 rounded-xl border text-left transition-all ${
-                                            interviewType === track.id
-                                                ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-500 ring-1 ring-emerald-500/30'
-                                                : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700/60 hover:border-slate-300 dark:hover:border-slate-600 text-slate-600 dark:text-slate-400'
-                                        }`}
-                                    >
-                                        <p className={`font-semibold text-sm ${interviewType === track.id ? 'text-emerald-800 dark:text-emerald-300' : 'text-slate-800 dark:text-slate-200'}`}>
-                                            {track.label}
-                                        </p>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{track.desc}</p>
-                                    </button>
-                                ))}
+                                {TRACKS.map(track => {
+                                    const selected = interviewType === track.id;
+                                    const TrackIcon = track.icon;
+                                    return (
+                                        <motion.button
+                                            key={track.id}
+                                            type="button"
+                                            onClick={() => setInterviewType(track.id)}
+                                            whileHover={{ y: -3 }}
+                                            whileTap={{ scale: 0.98 }}
+                                            aria-pressed={selected}
+                                            className={`relative p-4 min-h-[88px] rounded-xl border text-left transition-colors ${
+                                                selected
+                                                    ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-500'
+                                                    : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700/60 hover:border-slate-300 dark:hover:border-slate-600 text-slate-600 dark:text-slate-400'
+                                            }`}
+                                        >
+                                            {selected && (
+                                                <motion.span
+                                                    layoutId="mock-track-highlight"
+                                                    aria-hidden="true"
+                                                    className="absolute inset-0 rounded-xl ring-2 ring-emerald-500/60 shadow-lg shadow-emerald-500/10"
+                                                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                                                />
+                                            )}
+                                            <div className="relative flex items-start gap-3">
+                                                <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border ${selected ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                                                    <TrackIcon className="w-4 h-4" />
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className={`font-semibold text-sm ${selected ? 'text-emerald-800 dark:text-emerald-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                                                        {track.label}
+                                                    </p>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{track.desc}</p>
+                                                </div>
+                                                {selected && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                                            </div>
+                                        </motion.button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -254,7 +339,7 @@ const StudentMockInterview = () => {
                             <select
                                 value={targetRole}
                                 onChange={(e) => setTargetRole(e.target.value)}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                className="w-full px-4 py-2.5 min-h-[44px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                             >
                                 {availableRoles.length > 0 ? (
                                     availableRoles.map(r => <option key={r} value={r}>{r}</option>)
@@ -273,7 +358,7 @@ const StudentMockInterview = () => {
                             <button
                                 onClick={handleStartInterview}
                                 disabled={loading}
-                                className="w-full sm:w-auto px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                                className="w-full sm:w-auto px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs hover:shadow-lg hover:shadow-emerald-500/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                             >
                                 <Sparkles className="w-4 h-4" />
                                 {loading ? 'Initializing Session...' : 'Start Mock Interview (4 Turns)'}
@@ -282,7 +367,7 @@ const StudentMockInterview = () => {
                     </div>
 
                     {/* Information / STAR Tips */}
-                    <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 space-y-4">
+                    <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4">
                         <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
                             <Lightbulb className="w-5 h-5" />
                             <h3 className="font-semibold text-slate-900 dark:text-slate-200 text-sm">How STAR Evaluation Works</h3>
@@ -296,8 +381,14 @@ const StudentMockInterview = () => {
                                 { tag: 'T', title: 'Task', desc: 'Identify your specific engineering deliverable or problem statement.' },
                                 { tag: 'A', title: 'Action', desc: 'Detail the concrete architecture, tools, code, or tradeoffs you made.' },
                                 { tag: 'R', title: 'Result', desc: 'Quantify the outcome (e.g., latency -40%, bug eliminated, team delivery).' }
-                            ].map(item => (
-                                <div key={item.tag} className="flex items-start gap-3 p-2.5 rounded-lg bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800">
+                            ].map((item, idx) => (
+                                <motion.div
+                                    key={item.tag}
+                                    initial={{ opacity: 0, x: 16 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ duration: 0.45, delay: 0.15 + idx * 0.08, ease: EASE }}
+                                    className="flex items-start gap-3 p-2.5 rounded-lg bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800"
+                                >
                                     <span className="w-6 h-6 flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-bold rounded text-xs shrink-0">
                                         {item.tag}
                                     </span>
@@ -305,19 +396,19 @@ const StudentMockInterview = () => {
                                         <p className="text-xs font-semibold text-slate-900 dark:text-slate-200">{item.title}</p>
                                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.desc}</p>
                                     </div>
-                                </div>
+                                </motion.div>
                             ))}
                         </div>
                     </div>
-                </div>
+                </motion.div>
             )}
 
             {/* VIEW 2: ACTIVE INTERVIEW SESSION */}
             {viewMode === 'INTERVIEW' && activeTurn && (
-                <div className="space-y-6">
+                <div className="space-y-6 max-w-3xl mx-auto">
                     {/* Status header */}
-                    <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                        <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                        <div className="flex flex-wrap items-center gap-3">
                             <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-bold text-xs border border-emerald-200 dark:border-emerald-500/30">
                                 Question {activeTurn.turn_number} of 4
                             </span>
@@ -327,34 +418,48 @@ const StudentMockInterview = () => {
                         </div>
                         <button
                             onClick={handleConcludeEarly}
-                            className="text-xs text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                            className="text-xs min-h-[40px] px-2 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
                         >
                             Conclude Early
                         </button>
+                        <div className="basis-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={4} aria-valuenow={Math.max(0, activeTurn.turn_number - (turnFeedback ? 0 : 1))} aria-label="Interview progress">
+                            <motion.div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                                initial={false}
+                                animate={{ width: `${Math.min(100, (Math.max(0, activeTurn.turn_number - (turnFeedback ? 0 : 1)) / 4) * 100)}%` }}
+                                transition={{ duration: 0.6, ease: EASE }}
+                            />
+                        </div>
                     </div>
 
                     {/* AI Question Box */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs relative overflow-hidden">
-                        <div className="flex items-start gap-4">
+                    <motion.div
+                        key={`q-${activeTurn.turn_number}`}
+                        initial={{ opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.45, ease: EASE }}
+                        className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs relative overflow-hidden"
+                    >
+                        <div className="flex items-start gap-3 sm:gap-4">
                             <div className="p-3 bg-emerald-50 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/30 shrink-0">
                                 <Bot className="w-6 h-6" />
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2 min-w-0">
                                 <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                                     Interviewer Question
                                 </span>
-                                <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
+                                <h3 className="text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed break-words">
                                     "{activeTurn.question_text}"
                                 </h3>
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
 
                     {/* If answer has not been submitted for this turn */}
                     {!turnFeedback && (
                         <form onSubmit={handleSubmitAnswer} className="space-y-4">
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-xs">
-                                <div className="flex items-center justify-between">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-6 space-y-3 shadow-xs focus-within:border-emerald-400/70 transition-colors">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                     <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
                                         <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                         Your Response (STAR Format)
@@ -371,14 +476,14 @@ const StudentMockInterview = () => {
                                     className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none font-sans leading-relaxed"
                                     required
                                 />
-                                <div className="flex items-center justify-between pt-2">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
                                     <p className="text-xs text-slate-500">
                                         💡 Tip: Use action verbs like "built", "designed", "optimized", and state the outcome.
                                     </p>
                                     <button
                                         type="submit"
                                         disabled={isSubmitting || !studentResponse.trim()}
-                                        className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                                        className="px-6 h-11 w-full sm:w-auto justify-center bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs active:scale-[0.98] flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                     >
                                         <Send className="w-4 h-4" />
                                         {isSubmitting ? 'Evaluating Response...' : 'Submit Answer'}
@@ -390,7 +495,12 @@ const StudentMockInterview = () => {
 
                     {/* Turn Feedback Panel (Displayed after turn submission) */}
                     {turnFeedback && (
-                        <div className="bg-white dark:bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 space-y-6 shadow-xs animate-fadeIn">
+                        <motion.div
+                            initial={{ opacity: 0, y: 18 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5, ease: EASE }}
+                            className="bg-white dark:bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 sm:p-6 space-y-6 shadow-xs"
+                        >
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                                 <div>
                                     <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
@@ -400,15 +510,9 @@ const StudentMockInterview = () => {
                                         Performance on Question {turnFeedback.turn_number}
                                     </h3>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="text-right">
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Turn Score</p>
-                                        <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">{turnFeedback.score}%</p>
-                                    </div>
-                                    <div className="text-right pl-3 border-l border-slate-200 dark:border-slate-700">
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">STAR Score</p>
-                                        <p className="text-xl font-extrabold text-teal-600 dark:text-teal-400">{turnFeedback.star_score}%</p>
-                                    </div>
+                                <div className="flex items-center gap-4">
+                                    <ScoreRing value={turnFeedback.score} label="Turn Score" tone="emerald" size={76} />
+                                    <ScoreRing value={turnFeedback.star_score} label="STAR Score" tone="teal" size={76} />
                                 </div>
                             </div>
 
@@ -452,13 +556,13 @@ const StudentMockInterview = () => {
                             <div className="flex justify-end pt-2">
                                 <button
                                     onClick={handleProceedToNext}
-                                    className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 cursor-pointer"
+                                    className="px-6 h-11 w-full sm:w-auto justify-center bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs active:scale-[0.98] flex items-center gap-2 cursor-pointer"
                                 >
                                     {turnFeedback.is_finished ? 'View Complete Interview Report' : 'Proceed to Next Question'}
                                     <ArrowRight className="w-4 h-4" />
                                 </button>
                             </div>
-                        </div>
+                        </motion.div>
                     )}
                 </div>
             )}
@@ -466,8 +570,13 @@ const StudentMockInterview = () => {
             {/* VIEW 3: COMPLETED INTERVIEW REPORT */}
             {viewMode === 'COMPLETED' && currentInterview && (
                 <div className="space-y-6">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
+                    <motion.div
+                        initial={{ opacity: 0, y: 18 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.55, ease: EASE }}
+                        className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-6"
+                    >
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-6 border-b border-slate-100 dark:border-slate-800">
                             <div>
                                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-500/30">
                                     Interview Complete
@@ -480,19 +589,10 @@ const StudentMockInterview = () => {
                                 </p>
                             </div>
 
-                            <div className="flex items-center gap-6">
-                                <div className="text-center p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Overall Score</p>
-                                    <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{currentInterview.overall_score}%</p>
-                                </div>
-                                <div className="text-center p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">STAR Structure</p>
-                                    <p className="text-2xl font-black text-teal-600 dark:text-teal-400">{currentInterview.star_structure_score}%</p>
-                                </div>
-                                <div className="text-center p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Technical Depth</p>
-                                    <p className="text-2xl font-black text-blue-600 dark:text-blue-400">{currentInterview.technical_accuracy_score}%</p>
-                                </div>
+                            <div className="grid grid-cols-3 gap-2 sm:gap-6 items-start">
+                                <ScoreRing value={currentInterview.overall_score} label="Overall Score" tone="emerald" size={92} />
+                                <ScoreRing value={currentInterview.star_structure_score} label="STAR Structure" tone="teal" size={92} />
+                                <ScoreRing value={currentInterview.technical_accuracy_score} label="Technical Depth" tone="blue" size={92} />
                             </div>
                         </div>
 
@@ -512,8 +612,15 @@ const StudentMockInterview = () => {
                                 Question-by-Question Transcript & Feedback
                             </h3>
                             <div className="space-y-4">
-                                {currentInterview.turns?.map((turn) => (
-                                    <div key={turn.id} className="p-5 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800 space-y-3">
+                                {currentInterview.turns?.map((turn, tIdx) => (
+                                    <motion.div
+                                        key={turn.id}
+                                        initial={{ opacity: 0, y: 16 }}
+                                        whileInView={{ opacity: 1, y: 0 }}
+                                        viewport={{ once: true, margin: '-30px' }}
+                                        transition={{ duration: 0.5, delay: Math.min(tIdx, 3) * 0.06, ease: EASE }}
+                                        className="p-4 sm:p-5 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800 space-y-3"
+                                    >
                                         <div className="flex items-center justify-between">
                                             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                                                 Question {turn.turn_number}
@@ -536,36 +643,41 @@ const StudentMockInterview = () => {
                                                 Coach: {turn.feedback}
                                             </p>
                                         )}
-                                    </div>
+                                    </motion.div>
                                 ))}
                             </div>
                         </div>
 
                         {/* Bottom action buttons */}
-                        <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                             <button
                                 onClick={fetchHistory}
-                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-medium text-sm transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+                                className="px-4 min-h-[44px] justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-medium text-sm transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-2"
                             >
                                 <History className="w-4 h-4" />
                                 View All Sessions
                             </button>
                             <button
                                 onClick={() => setViewMode('SETUP')}
-                                className="px-6 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs flex items-center gap-2 cursor-pointer"
+                                className="px-6 h-11 justify-center bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-all shadow-xs active:scale-[0.98] flex items-center gap-2 cursor-pointer"
                             >
                                 <RotateCcw className="w-4 h-4" />
                                 Start Another Mock Interview
                             </button>
                         </div>
-                    </div>
+                    </motion.div>
                 </div>
             )}
 
             {/* VIEW 4: PAST SESSIONS HISTORY */}
             {viewMode === 'HISTORY' && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, ease: EASE }}
+                    className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-4"
+                >
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
                         <div>
                             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                                 <History className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -577,23 +689,26 @@ const StudentMockInterview = () => {
                         </div>
                         <button
                             onClick={() => setViewMode('SETUP')}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-medium text-xs transition-all shadow-xs cursor-pointer"
+                            className="px-4 min-h-[40px] bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-medium text-xs transition-all shadow-xs active:scale-95 cursor-pointer"
                         >
                             Start New Session
                         </button>
                     </div>
 
                     {historyList.length === 0 ? (
-                        <div className="py-12 text-center text-slate-500 dark:text-slate-400 space-y-3">
-                            <MessageSquare className="w-10 h-10 mx-auto text-slate-400 dark:text-slate-600" />
-                            <p className="text-sm">No previous interview sessions found.</p>
-                            <button
-                                onClick={() => setViewMode('SETUP')}
-                                className="px-4 py-2 bg-emerald-50 dark:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-600/40 transition-colors"
-                            >
-                                Launch First Session
-                            </button>
-                        </div>
+                        <EmptyState
+                            icon={MessageSquare}
+                            title="No previous interview sessions found."
+                            body="Your first mock interview ends with a full STAR scorecard."
+                            action={(
+                                <button
+                                    onClick={() => setViewMode('SETUP')}
+                                    className="px-4 min-h-[44px] bg-emerald-50 dark:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-600/40 transition-colors"
+                                >
+                                    Launch First Session
+                                </button>
+                            )}
+                        />
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse text-sm">
@@ -608,8 +723,14 @@ const StudentMockInterview = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {historyList.map((item) => (
-                                        <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                    {historyList.map((item, hIdx) => (
+                                        <motion.tr
+                                            key={item.id}
+                                            initial={{ opacity: 0, x: -12 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ duration: 0.4, delay: Math.min(hIdx, 10) * 0.04, ease: EASE }}
+                                            className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                                        >
                                             <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-200">
                                                 {item.interview_type}
                                             </td>
@@ -634,18 +755,18 @@ const StudentMockInterview = () => {
                                             <td className="py-3.5 px-4 text-right">
                                                 <button
                                                     onClick={() => handleViewDetail(item.id)}
-                                                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
+                                                    className="px-3 min-h-[36px] whitespace-nowrap bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
                                                 >
                                                     View Report
                                                 </button>
                                             </td>
-                                        </tr>
+                                        </motion.tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
                     )}
-                </div>
+                </motion.div>
             )}
         </div>
     );

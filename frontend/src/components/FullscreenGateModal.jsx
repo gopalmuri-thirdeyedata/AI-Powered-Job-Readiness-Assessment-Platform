@@ -42,13 +42,13 @@ const FullscreenGateModal = ({
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 select-none">
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-4 select-none overflow-y-auto">
                 <motion.div
                     initial={{ opacity: 0, scale: 0.92, y: 16 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.92, y: 16 }}
                     transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                    className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-750 bg-slate-900/95 p-8 text-white shadow-2xl shadow-black/60"
+                    className="relative w-full max-w-lg max-h-[calc(100vh-1.5rem)] overflow-y-auto rounded-2xl border border-slate-750 bg-slate-900/95 p-5 sm:p-8 text-white shadow-2xl shadow-black/60"
                     style={{ border: isRecovery ? '1px solid #ef4444' : '1px solid #3b82f6' }}
                 >
                     {/* Glowing Accent Top Bar */}
@@ -63,7 +63,7 @@ const FullscreenGateModal = ({
                     {/* Icon Badge */}
                     <div className="flex justify-center mb-6">
                         <div
-                            className={`flex h-20 w-20 items-center justify-center rounded-2xl shadow-lg ${
+                            className={`flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl shadow-lg ${
                                 isRecovery
                                     ? 'bg-red-500/15 text-red-400 ring-2 ring-red-500/30'
                                     : 'bg-blue-500/15 text-blue-400 ring-2 ring-blue-500/30'
@@ -78,7 +78,7 @@ const FullscreenGateModal = ({
                     </div>
 
                     {/* Title */}
-                    <h2 className="text-center text-2xl font-bold tracking-tight text-white mb-2">
+                    <h2 className="text-center text-xl sm:text-2xl font-bold tracking-tight text-white mb-2">
                         {displayTitle}
                     </h2>
 
@@ -95,7 +95,7 @@ const FullscreenGateModal = ({
                                 <span>Recovery Window</span>
                             </div>
                             <div className="flex items-baseline justify-center gap-2">
-                                <span className="text-4xl font-black text-red-400 tabular-nums">
+                                <span className="text-3xl sm:text-4xl font-black text-red-400 tabular-nums">
                                     {Math.max(0, timeLeft)}
                                 </span>
                                 <span className="text-sm font-medium text-red-300">

@@ -216,7 +216,7 @@ const InstructionsPage = () => {
         <div className="max-w-3xl mx-auto">
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-8 text-white">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 sm:px-8 py-6 sm:py-8 text-white">
                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                         <div>
                             <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">

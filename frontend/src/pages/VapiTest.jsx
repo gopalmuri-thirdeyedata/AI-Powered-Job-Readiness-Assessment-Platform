@@ -69,7 +69,7 @@ const VapiTest = () => {
     };
 
     return (
-        <div className="p-8 max-w-2xl mx-auto font-mono text-sm">
+        <div className="p-4 sm:p-8 max-w-2xl mx-auto font-mono text-sm">
             <h1 className="text-2xl font-bold mb-6">VAPI Connection Diagnostic</h1>
 
             <div className="space-y-4 mb-8">

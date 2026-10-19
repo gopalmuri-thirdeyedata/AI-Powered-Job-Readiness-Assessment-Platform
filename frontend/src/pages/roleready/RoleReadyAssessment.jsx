@@ -32,7 +32,9 @@ import {
     User,
     PhoneOff,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
+import { Counter } from '../../components/home/primitives';
+import { StepHighlight, PopIn, Stagger, StaggerItem, SlideSwap, ProgressBar, Enter } from '../../components/roleready-ui/assessmentMotion';
 import { Editor } from '@monaco-editor/react';
 import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
@@ -1120,6 +1122,7 @@ const RoleReadyAssessment = () => {
     }
 
     return (
+        <MotionConfig reducedMotion="user">
         <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans selection:bg-emerald-100 selection:text-emerald-900 select-none">
             {/* Fullscreen Gate & Exit Recovery Modal */}
             <FullscreenGateModal
@@ -1160,66 +1163,70 @@ const RoleReadyAssessment = () => {
             <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3 flex-shrink-0 z-30 shadow-xs">
                 <div className="w-full max-w-[1700px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
                     {/* Left: PrepWin Brand & Target Position */}
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex items-center gap-2 shrink-0">
                             <span className="text-lg font-extrabold text-slate-900 tracking-tight">PrepWin</span>
                             <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold uppercase tracking-wider flex items-center gap-1">
                                 <ShieldCheck className="w-3 h-3 text-emerald-600" /> Proctored
                             </span>
                         </div>
                         <div className="h-4 w-[1px] bg-slate-200 hidden sm:block" />
-                        <p className="text-xs text-slate-600 truncate max-w-xs sm:max-w-md">
+                        <p className="text-xs text-slate-600 truncate min-w-0 max-w-xs sm:max-w-md">
                             Role: <strong className="text-slate-900">{sessionData?.target_role}</strong> {sessionData?.target_company && `• ${sessionData.target_company}`}
                         </p>
                     </div>
 
                     {/* Center: Sequential Round Stepper */}
-                    <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200 overflow-x-auto">
+                    <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200 overflow-x-auto max-w-full [&>*]:shrink-0 [&>*]:whitespace-nowrap [scrollbar-width:none]">
                         {/* Step 1: Instructions */}
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        <div className={`relative isolate flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition-colors ${
                             currentStage === 'instructions'
-                                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                                ? 'text-slate-900'
                                 : 'text-slate-600'
                         }`}>
+                            {currentStage === 'instructions' && <StepHighlight />}
                             <Award className="w-3.5 h-3.5 text-emerald-600" />
                             <span>1. Instructions</span>
                             {currentStage !== 'instructions' && <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
                         </div>
 
                         {/* Step 2: Device Check */}
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        <div className={`relative isolate flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition-colors ${
                             currentStage === 'device_check'
-                                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                                ? 'text-slate-900'
                                 : currentStage === 'instructions'
                                     ? 'text-slate-400'
                                     : 'text-slate-600'
                         }`}>
+                            {currentStage === 'device_check' && <StepHighlight />}
                             <Video className="w-3.5 h-3.5 text-emerald-600" />
                             <span>2. Device Check</span>
                             {currentStage !== 'instructions' && currentStage !== 'device_check' && <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
                         </div>
 
                         {/* Step 3: Aptitude */}
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        <div className={`relative isolate flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition-colors ${
                             currentStage === 'aptitude'
-                                ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
+                                ? 'text-emerald-700'
                                 : sessionData?.coding_unlocked
                                     ? 'text-slate-700'
                                     : 'text-slate-400'
                         }`}>
+                            {currentStage === 'aptitude' && <StepHighlight />}
                             <BrainCircuit className={`w-3.5 h-3.5 ${currentStage === 'aptitude' ? 'text-emerald-600' : ''}`} />
                             <span>3. Aptitude</span>
                             {sessionData?.coding_unlocked && <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
                         </div>
 
                         {/* Step 4: Coding */}
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        <div className={`relative isolate flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition-colors ${
                             currentStage === 'coding'
-                                ? 'bg-white text-cyan-700 shadow-xs border border-slate-200'
+                                ? 'text-cyan-700'
                                 : sessionData?.coding_unlocked
                                     ? 'text-slate-700'
                                     : 'text-slate-400'
                         }`}>
+                            {currentStage === 'coding' && <StepHighlight />}
                             <Code2 className={`w-3.5 h-3.5 ${currentStage === 'coding' ? 'text-cyan-600' : ''}`} />
                             <span>4. Coding</span>
                             {!sessionData?.coding_unlocked && <Lock className="w-3 h-3 text-slate-400" />}
@@ -1227,13 +1234,14 @@ const RoleReadyAssessment = () => {
                         </div>
 
                         {/* Step 5: Interview */}
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        <div className={`relative isolate flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition-colors ${
                             currentStage === 'interview'
-                                ? 'bg-white text-amber-700 shadow-xs border border-slate-200'
+                                ? 'text-amber-700'
                                 : sessionData?.interview_unlocked
                                     ? 'text-slate-700'
                                     : 'text-slate-400'
                         }`}>
+                            {currentStage === 'interview' && <StepHighlight />}
                             <MessageSquare className={`w-3.5 h-3.5 ${currentStage === 'interview' ? 'text-amber-600' : ''}`} />
                             <span>5. Interview</span>
                             {!sessionData?.interview_unlocked && <Lock className="w-3 h-3 text-slate-400" />}
@@ -1243,12 +1251,14 @@ const RoleReadyAssessment = () => {
                     {/* Right: Round Countdown Timer & Warnings Pill */}
                     <div className="flex items-center gap-3">
                         {currentStage !== 'instructions' && currentStage !== 'device_check' && (
-                            <div className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold border transition-all ${
-                                timeLeft <= 120 
-                                    ? 'bg-red-50 text-red-700 border-red-300 animate-pulse' 
-                                    : 'bg-slate-50 text-slate-800 border-slate-200'
+                            <div className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold border transition-colors duration-500 ${
+                                timeLeft <= 120
+                                    ? `bg-red-50 text-red-700 border-red-300 ${timeLeft <= 60 ? 'animate-pulse motion-reduce:animate-none' : ''}`
+                                    : timeLeft <= 300
+                                        ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                        : 'bg-slate-50 text-slate-800 border-slate-200'
                             }`}>
-                                <Clock className={`w-3.5 h-3.5 ${timeLeft <= 120 ? 'text-red-600' : 'text-emerald-600'}`} />
+                                <Clock className={`w-3.5 h-3.5 ${timeLeft <= 120 ? 'text-red-600' : timeLeft <= 300 ? 'text-amber-600' : 'text-emerald-600'}`} />
                                 <span>{formatTimer(timeLeft)}</span>
                             </div>
                         )}
@@ -1259,8 +1269,8 @@ const RoleReadyAssessment = () => {
                                 violationCount === 0 
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                                     : violationCount === 1 
-                                        ? 'bg-amber-50 text-amber-800 border-amber-300 animate-bounce' 
-                                        : 'bg-red-50 text-red-700 border-red-300 animate-pulse'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-300 animate-pulse motion-reduce:animate-none'  
+                                        : 'bg-red-50 text-red-700 border-red-300 animate-pulse motion-reduce:animate-none'
                             }`}>
                                 <Shield className="w-3.5 h-3.5" />
                                 <span>Warnings: {violationCount}/{MAX_MALPRACTICE_WARNINGS}</span>
@@ -1279,8 +1289,8 @@ const RoleReadyAssessment = () => {
                             ? 'bg-orange-500 text-white border-orange-600 shadow-md' 
                             : 'bg-amber-50 text-amber-900 border-amber-300'
                 }`}>
-                    <div className="w-full max-w-[1700px] mx-auto flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <div className="w-full max-w-[1700px] mx-auto flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                         <span>{warningBanner.message}</span>
                     </div>
                 </div>
@@ -1296,8 +1306,9 @@ const RoleReadyAssessment = () => {
                 {currentStage === 'instructions' && (
                     <div className="max-w-5xl mx-auto space-y-6">
                         {/* Header Banner Card */}
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-100">
+                        <Enter className="relative overflow-hidden bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-sm space-y-6">
+                            <div aria-hidden="true" className="pointer-events-none absolute -top-24 -right-24 w-64 h-64 rounded-full bg-emerald-200/30 blur-3xl" />
+                            <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-100">
                                 <div>
                                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold mb-2">
                                         <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Assessment Overview & Rules
@@ -1308,103 +1319,98 @@ const RoleReadyAssessment = () => {
                                     <p className="text-sm text-slate-600 mt-1">
                                         Target Position: <strong className="text-slate-900">{sessionData?.target_role}</strong> {sessionData?.target_company && `at ${sessionData.target_company}`}
                                     </p>
+                                    <p className="text-sm text-emerald-800 font-medium mt-2">
+                                        You've prepared for this. Here's exactly what to expect, so there are no surprises.
+                                    </p>
                                 </div>
-                                <div className="bg-slate-50 border border-slate-200 px-5 py-2.5 rounded-xl text-center">
-                                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Evaluation Flow</span>
-                                    <p className="text-sm font-extrabold text-emerald-700 mt-0.5">3 Sequential Rounds</p>
+                                <div className="flex items-stretch gap-3 w-full sm:w-auto">
+                                    <div className="flex-1 sm:flex-none bg-slate-50 border border-slate-200 px-5 py-2.5 rounded-xl text-center">
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Evaluation Flow</span>
+                                        <p className="text-sm font-extrabold text-emerald-700 mt-0.5">3 Sequential Rounds</p>
+                                    </div>
+                                    <div className="flex-1 sm:flex-none bg-emerald-50 border border-emerald-200 px-5 py-2.5 rounded-xl text-center">
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-700">Total Time</span>
+                                        <p className="text-sm font-extrabold text-emerald-800 mt-0.5 flex items-center justify-center gap-1">
+                                            <Clock className="w-3.5 h-3.5" /> ~<Counter to={60} /> mins
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Time split bar */}
+                            <div className="relative" aria-hidden="true">
+                                <div className="flex h-2 rounded-full overflow-hidden gap-0.5 bg-slate-100">
+                                    {[
+                                        { w: '25%', c: 'bg-emerald-500' },
+                                        { w: '50%', c: 'bg-cyan-500' },
+                                        { w: '25%', c: 'bg-amber-500' },
+                                    ].map((seg, i) => (
+                                        <motion.div
+                                            key={i}
+                                            className={`h-full ${seg.c}`}
+                                            style={{ width: seg.w, originX: 0 }}
+                                            initial={{ scaleX: 0 }}
+                                            animate={{ scaleX: 1 }}
+                                            transition={{ duration: 0.7, delay: 0.3 + i * 0.2, ease: [0.16, 1, 0.3, 1] }}
+                                        />
+                                    ))}
                                 </div>
                             </div>
 
                             {/* 3-Round Timeline Cards */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 transition-all space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Round 1</span>
-                                        <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-bold">15 Mins</span>
-                                    </div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <BrainCircuit className="w-4 h-4 text-emerald-600" /> Aptitude & Reasoning
-                                    </h3>
-                                    <p className="text-xs text-slate-600 leading-relaxed">
-                                        Role-tailored domain logic, psychometrics, and quantitative problem solving questions.
-                                    </p>
-                                </div>
-
-                                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 hover:border-cyan-300 transition-all space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-cyan-700 uppercase tracking-wider">Round 2</span>
-                                        <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 font-mono font-bold">30 Mins</span>
-                                    </div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Code2 className="w-4 h-4 text-cyan-600" /> Sandboxed Coding
-                                    </h3>
-                                    <p className="text-xs text-slate-600 leading-relaxed">
-                                        Real coding problems executed in an isolated runtime container against public and hidden test cases.
-                                    </p>
-                                </div>
-
-                                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 transition-all space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Round 3</span>
-                                        <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-mono font-bold">15 Mins</span>
-                                    </div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <MessageSquare className="w-4 h-4 text-amber-600" /> Technical Interview
-                                    </h3>
-                                    <p className="text-xs text-slate-600 leading-relaxed">
-                                        Conversational voice / defense questions synthesized directly from your JD and resume background.
-                                    </p>
-                                </div>
+                            <div className="relative grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {[
+                                    { label: 'Round 1', mins: '15 Mins', title: 'Aptitude & Reasoning', Icon: BrainCircuit, desc: 'Role-tailored domain logic, psychometrics, and quantitative problem solving questions.', hover: 'hover:border-emerald-300 hover:shadow-emerald-100', lab: 'text-emerald-700', pill: 'bg-emerald-100 text-emerald-800', ic: 'text-emerald-600' },
+                                    { label: 'Round 2', mins: '30 Mins', title: 'Sandboxed Coding', Icon: Code2, desc: 'Real coding problems executed in an isolated runtime container against public and hidden test cases.', hover: 'hover:border-cyan-300 hover:shadow-cyan-100', lab: 'text-cyan-700', pill: 'bg-cyan-100 text-cyan-800', ic: 'text-cyan-600' },
+                                    { label: 'Round 3', mins: '15 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
+                                ].map((r, i) => (
+                                    <Enter
+                                        key={r.label}
+                                        delay={0.15 + i * 0.12}
+                                        hover
+                                        className={`p-5 rounded-xl bg-slate-50 border border-slate-200 ${r.hover} hover:shadow-lg transition-[border-color,box-shadow] space-y-2`}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <span className={`text-xs font-bold ${r.lab} uppercase tracking-wider`}>{r.label}</span>
+                                            <span className={`text-[11px] px-2.5 py-0.5 rounded-full ${r.pill} font-mono font-bold`}>{r.mins}</span>
+                                        </div>
+                                        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                            <r.Icon className={`w-4 h-4 ${r.ic}`} /> {r.title}
+                                        </h3>
+                                        <p className="text-xs text-slate-600 leading-relaxed">{r.desc}</p>
+                                    </Enter>
+                                ))}
                             </div>
-                        </div>
+                        </Enter>
 
                         {/* Assessment Rules & Guidelines Card */}
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
+                        <Enter delay={0.3} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-sm space-y-6">
                             <h3 className="text-base font-bold text-slate-900 pb-3 border-b border-slate-100 flex items-center gap-2">
                                 <ShieldAlert className="w-5 h-5 text-amber-600" />
                                 Rules & 3-Warning Integrity Policy
                             </h3>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center shrink-0 text-xs">1</div>
-                                        <h4 className="text-xs font-bold text-slate-900">Strict Fullscreen Enforcement</h4>
-                                    </div>
-                                    <p className="text-xs text-slate-600 leading-relaxed pl-8">
-                                        The assessment must be taken in uninterrupted fullscreen mode. Exiting fullscreen triggers a 10-second recovery gate before logging a malpractice violation.
-                                    </p>
-                                </div>
-
-                                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 font-bold flex items-center justify-center shrink-0 text-xs">2</div>
-                                        <h4 className="text-xs font-bold text-slate-900">3-Warning Malpractice Policy</h4>
-                                    </div>
-                                    <p className="text-xs text-slate-600 leading-relaxed pl-8">
-                                        Tab switches, window defocus, loss of candidate presence, or external devices are recorded as strikes. On the 3rd strike, your assessment is immediately terminated and auto-submitted.
-                                    </p>
-                                </div>
-
-                                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center shrink-0 text-xs">3</div>
-                                        <h4 className="text-xs font-bold text-slate-900">Sequential Round Unlocking</h4>
-                                    </div>
-                                    <p className="text-xs text-slate-600 leading-relaxed pl-8">
-                                        You must complete and submit each round in sequence (Aptitude → Coding → Interview). Completed rounds are permanently sealed on the server and cannot be retaken.
-                                    </p>
-                                </div>
-
-                                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-800 font-bold flex items-center justify-center shrink-0 text-xs">4</div>
-                                        <h4 className="text-xs font-bold text-slate-900">Device & Hardware Readiness</h4>
-                                    </div>
-                                    <p className="text-xs text-slate-600 leading-relaxed pl-8">
-                                        A functional webcam and microphone are required for AI vision proctoring and technical defense. You will verify your devices on the next step.
-                                    </p>
-                                </div>
+                                {[
+                                    { n: 1, badge: 'bg-emerald-100 text-emerald-800', title: 'Strict Fullscreen Enforcement', text: 'The assessment must be taken in uninterrupted fullscreen mode. Exiting fullscreen triggers a 10-second recovery gate before logging a malpractice violation.' },
+                                    { n: 2, badge: 'bg-amber-100 text-amber-800', title: '3-Warning Malpractice Policy', text: 'Tab switches, window defocus, loss of candidate presence, or external devices are recorded as strikes. On the 3rd strike, your assessment is immediately terminated and auto-submitted.' },
+                                    { n: 3, badge: 'bg-cyan-100 text-cyan-800', title: 'Sequential Round Unlocking', text: 'You must complete and submit each round in sequence (Aptitude → Coding → Interview). Completed rounds are permanently sealed on the server and cannot be retaken.' },
+                                    { n: 4, badge: 'bg-indigo-100 text-indigo-800', title: 'Device & Hardware Readiness', text: 'A functional webcam and microphone are required for AI vision proctoring and technical defense. You will verify your devices on the next step.' },
+                                ].map((rule, i) => (
+                                    <Enter
+                                        key={rule.n}
+                                        delay={0.4 + i * 0.09}
+                                        y={12}
+                                        hover
+                                        className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 hover:shadow-md transition-[border-color,box-shadow] space-y-2"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-6 h-6 rounded-full ${rule.badge} font-bold flex items-center justify-center shrink-0 text-xs`}>{rule.n}</div>
+                                            <h4 className="text-xs font-bold text-slate-900">{rule.title}</h4>
+                                        </div>
+                                        <p className="text-xs text-slate-600 leading-relaxed pl-8">{rule.text}</p>
+                                    </Enter>
+                                ))}
                             </div>
 
                             {/* Bottom CTA to Step 2 */}
@@ -1412,19 +1418,21 @@ const RoleReadyAssessment = () => {
                                 <div className="text-xs text-slate-500 text-center sm:text-left">
                                     Step 1 of 2 Before Launch • No questions or camera feeds active on this page.
                                 </div>
-                                <button
+                                <motion.button
                                     type="button"
                                     onClick={() => {
                                         setCurrentStage('device_check');
                                         initHardware();
                                     }}
-                                    className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-700/20 hover:scale-[1.01] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                    whileHover={{ scale: 1.03 }}
+                                    whileTap={{ scale: 0.97 }}
+                                    className="group w-full sm:w-auto min-h-[48px] px-8 py-3.5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-700/20 hover:shadow-lg hover:shadow-emerald-700/30 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                                 >
                                     <span>Continue to Device Check</span>
-                                    <ArrowRight className="w-4 h-4" />
-                                </button>
+                                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                                </motion.button>
                             </div>
-                        </div>
+                        </Enter>
                     </div>
                 )}
 
@@ -1434,7 +1442,7 @@ const RoleReadyAssessment = () => {
                 {currentStage === 'device_check' && (
                     <div className="max-w-6xl mx-auto space-y-6">
                         {/* Header Banner */}
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                             <div>
                                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold mb-1.5">
                                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Device & Model Pre-Flight Check
@@ -1449,7 +1457,7 @@ const RoleReadyAssessment = () => {
                             <button
                                 type="button"
                                 onClick={initHardware}
-                                className="px-4 py-2 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                                className="min-h-[40px] px-4 py-2 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
                             >
                                 <RefreshCw className="w-3.5 h-3.5" /> Re-test Devices
                             </button>
@@ -1458,7 +1466,7 @@ const RoleReadyAssessment = () => {
                         {/* 2-Column Responsive Layout: Left Hardware Live Stream + Right Launch Gate */}
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                             {/* Left: Hardware Verification & Live Video Preview (6 Cols) */}
-                            <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+                            <Enter delay={0.1} className="min-w-0 lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-5">
                                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                                         <Video className="w-5 h-5 text-emerald-600" />
@@ -1513,52 +1521,77 @@ const RoleReadyAssessment = () => {
 
                                     {cameraStatus === 'allowed' && (
                                         <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-950/70 backdrop-blur-md px-3 py-1 rounded-lg text-xs text-emerald-400 font-bold">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                            <span className="relative flex w-2 h-2"><span className="absolute inset-0 rounded-full bg-emerald-400 animate-pw-ping motion-reduce:animate-none" /><span className="relative w-2 h-2 rounded-full bg-emerald-400" /></span>
                                             <span>Live Camera Feed Verified</span>
+                                        </div>
+                                    )}
+
+                                    {cameraStatus === 'allowed' && (
+                                        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+                                            {[
+                                                'top-2 left-2 border-t-2 border-l-2 rounded-tl-lg',
+                                                'top-2 right-2 border-t-2 border-r-2 rounded-tr-lg',
+                                                'bottom-2 left-2 border-b-2 border-l-2 rounded-bl-lg',
+                                                'bottom-2 right-2 border-b-2 border-r-2 rounded-br-lg',
+                                            ].map((c, i) => (
+                                                <motion.span
+                                                    key={i}
+                                                    className={`absolute w-6 h-6 border-emerald-400/90 ${c}`}
+                                                    initial={{ opacity: 0, scale: 1.6 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    transition={{ duration: 0.45, delay: 0.1 + i * 0.08, ease: 'easeOut' }}
+                                                />
+                                            ))}
+                                            <motion.div
+                                                className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent"
+                                                initial={{ top: '0%', opacity: 0.9 }}
+                                                animate={{ top: '100%', opacity: 0 }}
+                                                transition={{ duration: 1.4, delay: 0.3, ease: 'easeInOut' }}
+                                            />
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Status indicators */}
-                                <div className="space-y-2.5 text-xs">
-                                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                                <Stagger className="space-y-2.5 text-xs" delay={0.25} gap={0.14}>
+                                    <StaggerItem y={10} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                                         <span className="text-slate-700 font-medium flex items-center gap-2">
                                             <Camera className="w-4 h-4 text-slate-500" /> Web Camera Feed
                                         </span>
-                                        <span className={`font-bold ${cameraStatus === 'allowed' ? 'text-emerald-700' : cameraStatus === 'denied' ? 'text-red-700' : 'text-amber-700'}`}>
+                                        <motion.span key={cameraStatus} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 22 }} className={`font-bold ${cameraStatus === 'allowed' ? 'text-emerald-700' : cameraStatus === 'denied' ? 'text-red-700' : 'text-amber-700'}`}>
                                             {cameraStatus === 'allowed' ? 'Connected & Verified ✅' : cameraStatus === 'denied' ? 'Permission Denied ❌' : 'Checking...'}
-                                        </span>
-                                    </div>
+                                        </motion.span>
+                                    </StaggerItem>
 
-                                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                                    <StaggerItem y={10} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                                         <span className="text-slate-700 font-medium flex items-center gap-2">
                                             <Mic className="w-4 h-4 text-slate-500" /> Microphone
                                         </span>
-                                        <span className={`font-bold ${micStatus === 'allowed' ? 'text-emerald-700' : micStatus === 'denied' ? 'text-red-700' : 'text-slate-500'}`}>
+                                        <motion.span key={micStatus} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 22 }} className={`font-bold ${micStatus === 'allowed' ? 'text-emerald-700' : micStatus === 'denied' ? 'text-red-700' : 'text-slate-500'}`}>
                                             {micStatus === 'allowed' ? 'Ready for Interview ✅' : micStatus === 'denied' ? 'Permission Denied' : 'Optional / Text Fallback'}
-                                        </span>
-                                    </div>
+                                        </motion.span>
+                                    </StaggerItem>
 
-                                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                                    <StaggerItem y={10} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                                         <span className="text-slate-700 font-medium flex items-center gap-2">
                                             <Shield className="w-4 h-4 text-slate-500" /> AI Vision Engine (YOLOv8n)
                                         </span>
-                                        <span className={`font-bold ${modelStatus === 'ready' ? 'text-emerald-700' : modelStatus === 'error' ? 'text-amber-700' : 'text-slate-500'}`}>
+                                        <motion.span key={modelStatus} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 22 }} className={`font-bold ${modelStatus === 'ready' ? 'text-emerald-700' : modelStatus === 'error' ? 'text-amber-700' : 'text-slate-500'}`}>
                                             {modelStatus === 'ready' ? 'Online & Validated (CPU) 🛡️' : modelStatus === 'error' ? 'Offline (Fallback Mode)' : 'Checking Model...'}
-                                        </span>
-                                    </div>
+                                        </motion.span>
+                                    </StaggerItem>
 
-                                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                                    <StaggerItem y={10} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                                         <span className="text-slate-700 font-medium flex items-center gap-2">
                                             <Maximize className="w-4 h-4 text-slate-500" /> Fullscreen Mode
                                         </span>
-                                        <span className="font-bold text-emerald-700">Enforced on Launch 🛡️</span>
-                                    </div>
-                                </div>
-                            </div>
+                                        <motion.span key={'fs'} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 22 }} className="font-bold text-emerald-700">Enforced on Launch 🛡️</motion.span>
+                                    </StaggerItem>
+                                </Stagger>
+                            </Enter>
 
                             {/* Right: Fullscreen Confirmation & Launch Gate (6 Cols) */}
-                            <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 flex flex-col justify-between">
+                            <Enter delay={0.2} className="min-w-0 lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-6 flex flex-col justify-between">
                                 <div className="space-y-4">
                                     <h3 className="text-base font-bold text-slate-900 pb-3 border-b border-slate-100 flex items-center gap-2">
                                         <Maximize className="w-5 h-5 text-emerald-600" />
@@ -1596,23 +1629,26 @@ const RoleReadyAssessment = () => {
 
                                 {/* Acceptance Checkbox & Launch Actions */}
                                 <div className="space-y-4 pt-4 border-t border-slate-100">
-                                    <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100/70 transition-colors">
+                                    <label className={`flex items-start gap-3 cursor-pointer select-none p-3 rounded-xl border transition-all duration-300 ${instructionsAccepted ? 'bg-emerald-50 border-emerald-300 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'}`}>
                                         <input
                                             type="checkbox"
                                             checked={instructionsAccepted}
                                             onChange={(e) => setInstructionsAccepted(e.target.checked)}
-                                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                            className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer transition-transform active:scale-90"
                                         />
                                         <span className="text-xs text-slate-800 font-semibold leading-relaxed">
                                             I have read, understood, and accept the assessment instructions, hardware requirements, and proctoring integrity policy.
                                         </span>
+                                        {instructionsAccepted && (
+                                            <PopIn className="ml-auto shrink-0"><CheckCircle className="w-5 h-5 text-emerald-600" /></PopIn>
+                                        )}
                                     </label>
 
                                     <div className="flex flex-col sm:flex-row items-center gap-3">
                                         <button
                                             type="button"
                                             onClick={() => setCurrentStage('instructions')}
-                                            className="w-full sm:w-auto px-4 py-3.5 rounded-xl font-bold text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+                                            className="w-full sm:w-auto min-h-[48px] px-4 py-3.5 rounded-xl font-bold text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer active:scale-[0.98]"
                                         >
                                             Back to Instructions
                                         </button>
@@ -1621,12 +1657,21 @@ const RoleReadyAssessment = () => {
                                             type="button"
                                             disabled={!instructionsAccepted || isStartingAssessment || cameraStatus !== 'allowed'}
                                             onClick={handleStartAssessment}
-                                            className={`flex-1 w-full py-3.5 px-6 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                            className={`relative overflow-hidden flex-1 w-full min-h-[48px] py-3.5 px-6 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all duration-300 cursor-pointer ${
                                                 instructionsAccepted && cameraStatus === 'allowed'
-                                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 hover:scale-[1.005]'
+                                                    ? 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600 bg-[length:200%_100%] animate-pw-shimmer motion-reduce:animate-none text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-300/60 hover:shadow-emerald-500/60 active:scale-[0.985]'
                                                     : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'
                                             }`}
                                         >
+                                            {instructionsAccepted && cameraStatus === 'allowed' && !isStartingAssessment && (
+                                                <motion.span
+                                                    aria-hidden="true"
+                                                    className="pointer-events-none absolute inset-y-0 left-0 w-1/4 -skew-x-12 bg-white/30"
+                                                    initial={{ x: '-150%' }}
+                                                    animate={{ x: '500%' }}
+                                                    transition={{ duration: 0.9, ease: 'easeInOut', delay: 0.15 }}
+                                                />
+                                            )}
                                             {isStartingAssessment ? (
                                                 <>
                                                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -1641,7 +1686,7 @@ const RoleReadyAssessment = () => {
                                         </button>
                                     </div>
                                 </div>
-                            </div>
+                            </Enter>
                         </div>
                     </div>
                 )}
@@ -1652,7 +1697,7 @@ const RoleReadyAssessment = () => {
                 {currentStage === 'aptitude' && (
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                         {/* ── Main Area (~75% / 9 Cols): Question, Options, Controls ── */}
-                        <div className="lg:col-span-9 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
+                        <div className="min-w-0 lg:col-span-9 bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-sm space-y-6">
                             {/* Question Header */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                                 <div>
@@ -1667,13 +1712,20 @@ const RoleReadyAssessment = () => {
                                 </div>
                             </div>
 
+                            <div className="flex items-center gap-3 -mt-2">
+                                <ProgressBar value={Object.keys(aptitudeAnswers).length} total={aptitudeQuestions.length} className="flex-1" />
+                                <span className="text-[11px] font-mono font-bold text-slate-500 shrink-0">
+                                    {Object.keys(aptitudeAnswers).length}/{aptitudeQuestions.length} answered
+                                </span>
+                            </div>
+
                             {/* Question Body */}
                             {aptitudeQuestions.length > 0 ? (
                                 (() => {
                                     const activeQ = aptitudeQuestions[currentAptIndex];
                                     const selected = aptitudeAnswers[String(activeQ.id)];
                                     return (
-                                        <div className="space-y-6">
+                                        <SlideSwap index={currentAptIndex} className="space-y-6">
                                             <div className="flex items-center gap-2 text-xs text-emerald-800 font-bold">
                                                 <span>Category:</span>
                                                 <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 font-mono">
@@ -1690,11 +1742,14 @@ const RoleReadyAssessment = () => {
                                                 {(activeQ.options || []).map((opt) => {
                                                     const isSelected = selected === opt.key;
                                                     return (
-                                                        <button
+                                                        <motion.button
                                                             key={opt.key}
                                                             type="button"
                                                             onClick={() => handleSelectOption(activeQ.id, opt.key)}
-                                                            className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-center gap-4 cursor-pointer ${
+                                                            whileTap={{ scale: 0.985 }}
+                                                            animate={{ scale: isSelected ? 1.006 : 1 }}
+                                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                            className={`w-full min-h-[56px] text-left p-4 rounded-xl border-2 transition-colors duration-200 flex items-center gap-4 cursor-pointer ${
                                                                 isSelected
                                                                     ? 'bg-emerald-50/70 border-emerald-600 text-slate-900 shadow-sm font-semibold'
                                                                     : 'bg-slate-50/60 border-slate-200 hover:border-emerald-300 hover:bg-slate-50 text-slate-700'
@@ -1708,18 +1763,21 @@ const RoleReadyAssessment = () => {
                                                                 {opt.key}
                                                             </div>
                                                             <span className="text-sm leading-relaxed">{opt.text}</span>
-                                                        </button>
+                                                            {isSelected && (
+                                                                <PopIn className="ml-auto shrink-0"><CheckCircle className="w-5 h-5 text-emerald-600" /></PopIn>
+                                                            )}
+                                                        </motion.button>
                                                     );
                                                 })}
                                             </div>
 
                                             {/* Bottom Navigation & Submit Actions */}
-                                            <div className="flex items-center justify-between pt-6 border-t border-slate-100 mt-6">
+                                            <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-slate-100 mt-6">
                                                 <button
                                                     type="button"
                                                     disabled={currentAptIndex === 0}
                                                     onClick={() => setCurrentAptIndex(prev => prev - 1)}
-                                                    className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all active:scale-95"
                                                 >
                                                     Previous Question
                                                 </button>
@@ -1729,7 +1787,7 @@ const RoleReadyAssessment = () => {
                                                         <button
                                                             type="button"
                                                             onClick={() => setCurrentAptIndex(prev => prev + 1)}
-                                                            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                            className="min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
                                                         >
                                                             <span>Next Question</span>
                                                             <ChevronRight className="w-3.5 h-3.5" />
@@ -1739,18 +1797,18 @@ const RoleReadyAssessment = () => {
                                                             type="button"
                                                             disabled={isSubmittingApt}
                                                             onClick={handleSubmitAptitude}
-                                                            className="px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md cursor-pointer"
+                                                            className="min-h-[44px] px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md cursor-pointer transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                                                         >
                                                             {isSubmittingApt ? "Evaluating Responses..." : "Submit Aptitude & Unlock Coding Round"}
                                                         </button>
                                                     )}
                                                 </div>
                                             </div>
-                                        </div>
+                                        </SlideSwap>
                                     );
                                 })()
                             ) : (
-                                <div className="p-12 text-center text-slate-500">
+                                <div className="p-6 sm:p-12 text-center text-slate-500">
                                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
                                     <p>Loading aptitude questions...</p>
                                 </div>
@@ -1758,7 +1816,7 @@ const RoleReadyAssessment = () => {
                         </div>
 
                         {/* ── Side Panel (~25% / 3 Cols): Proctoring, Warnings & Navigator ── */}
-                        <div className="lg:col-span-3 space-y-4">
+                        <div className="min-w-0 lg:col-span-3 space-y-4">
                             {/* Live Proctoring Webcam Feed */}
                             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
                                 <div className="flex items-center justify-between">
@@ -1834,16 +1892,19 @@ const RoleReadyAssessment = () => {
                                     </span>
                                 </div>
 
-                                <div className="grid grid-cols-5 gap-2">
+                                <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-5 gap-2">
                                     {aptitudeQuestions.map((q, idx) => {
                                         const isAnswered = !!aptitudeAnswers[String(q.id)];
                                         const isCurrent = currentAptIndex === idx;
                                         return (
-                                            <button
+                                            <motion.button
                                                 key={q.id}
                                                 type="button"
                                                 onClick={() => setCurrentAptIndex(idx)}
-                                                className={`h-8 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                                whileTap={{ scale: 0.92 }}
+                                                animate={{ scale: isCurrent ? 1.08 : 1 }}
+                                                transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+                                                className={`h-10 rounded-lg text-xs font-bold transition-colors duration-200 cursor-pointer ${
                                                     isCurrent
                                                         ? 'bg-white border-2 border-blue-600 text-blue-700 shadow-sm'
                                                         : isAnswered
@@ -1852,7 +1913,7 @@ const RoleReadyAssessment = () => {
                                                 }`}
                                             >
                                                 {idx + 1}
-                                            </button>
+                                            </motion.button>
                                         );
                                     })}
                                 </div>
@@ -1879,71 +1940,104 @@ const RoleReadyAssessment = () => {
                 {currentStage === 'coding' && (
                     <div className="space-y-4 flex flex-col min-h-0">
                         {!sessionData?.coding_unlocked ? (
-                            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto my-auto space-y-3">
+                            <div className="p-6 sm:p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto my-auto space-y-3">
                                 <Lock className="w-12 h-12 text-slate-400 mx-auto" />
                                 <h3 className="text-lg font-bold text-slate-900">Coding Round is Locked</h3>
                                 <p className="text-xs text-slate-600">Complete and submit the Aptitude Round to unlock this challenge.</p>
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {/* Coding Sub-Header Bar: Problem Selector, Lang Dropdown, Compact Proctor Stream & Submit */}
-                                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                    <div className="flex items-center gap-3 flex-wrap">
-                                        <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                            <Code2 className="w-5 h-5 text-cyan-600" />
-                                            Round 2: Practical Coding
-                                        </h2>
+                                {/* Coding Sub-Header Bar: Title + Submit (row 1), Problem Tabs + Language + Proctor chip (row 2) */}
+                                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                                <Code2 className="w-5 h-5 text-cyan-600 shrink-0" />
+                                                Round 2: Practical Coding
+                                            </h2>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">Solve each problem, run the public tests, then submit everything to unlock the interview.</p>
+                                        </div>
 
+                                        <button
+                                            type="button"
+                                            disabled={isSubmittingCoding}
+                                            onClick={handleSubmitCoding}
+                                            className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                            {isSubmittingCoding ? "Evaluating Tests..." : "Submit All & Unlock Interview"}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
                                         {/* Problem Switcher Tabs */}
-                                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full overflow-x-auto [&>*]:shrink-0">
                                             {codingProblems.map((prob, idx) => (
                                                 <button
                                                     key={prob.id}
                                                     type="button"
                                                     onClick={() => { setCurrentProblemIndex(idx); setCodeOutput(null); }}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                                    className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                                                         currentProblemIndex === idx
-                                                            ? 'bg-white text-cyan-700 shadow-xs border border-slate-200'
+                                                            ? 'text-cyan-700'
                                                             : 'text-slate-600 hover:text-slate-900'
                                                     }`}
                                                 >
+                                                    {currentProblemIndex === idx && (
+                                                        <motion.span
+                                                            layoutId="pw-problem-tab"
+                                                            className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
+                                                            transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+                                                        />
+                                                    )}
                                                     Problem {idx + 1}
                                                 </button>
                                             ))}
                                         </div>
 
                                         {/* Language Selector (Python and Java) */}
-                                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full overflow-x-auto [&>*]:shrink-0">
                                             <button
                                                 type="button"
                                                 onClick={() => handleLanguageChange('python')}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                                className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                                                     selectedLanguage === 'python'
-                                                        ? 'bg-white text-cyan-800 shadow-xs border border-slate-200'
+                                                        ? 'text-cyan-800'
                                                         : 'text-slate-600 hover:text-slate-900'
                                                 }`}
                                             >
+                                                {selectedLanguage === 'python' && (
+                                                    <motion.span
+                                                        layoutId="pw-lang-tab"
+                                                        className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
+                                                        transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+                                                    />
+                                                )}
                                                 <span>🐍</span>
                                                 <span>Python 3.11</span>
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleLanguageChange('java')}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                                className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                                                     selectedLanguage === 'java'
-                                                        ? 'bg-white text-cyan-800 shadow-xs border border-slate-200'
+                                                        ? 'text-cyan-800'
                                                         : 'text-slate-600 hover:text-slate-900'
                                                 }`}
                                             >
+                                                {selectedLanguage === 'java' && (
+                                                    <motion.span
+                                                        layoutId="pw-lang-tab"
+                                                        className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
+                                                        transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+                                                    />
+                                                )}
                                                 <span>☕</span>
                                                 <span>Java 17 (OpenJDK)</span>
                                             </button>
                                         </div>
-                                    </div>
 
-                                    {/* Right: Responsive Proctor Stream + Submit Coding (Visible on mobile & desktop) */}
-                                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                                        <div className="w-40 sm:w-48 shrink-0">
+                                        {/* Compact Proctor Stream chip */}
+                                        <div className="w-40 sm:w-48 shrink-0 sm:ml-auto">
                                             <ProctorCameraFeed
                                                 stream={cameraStream || proctorStream}
                                                 detections={detections}
@@ -1956,15 +2050,6 @@ const RoleReadyAssessment = () => {
                                                 compact={true}
                                             />
                                         </div>
-
-                                        <button
-                                            type="button"
-                                            disabled={isSubmittingCoding}
-                                            onClick={handleSubmitCoding}
-                                            className="px-5 py-2.5 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm transition-all cursor-pointer shrink-0"
-                                        >
-                                            {isSubmittingCoding ? "Evaluating Tests..." : "Submit All & Unlock Interview"}
-                                        </button>
                                     </div>
                                 </div>
 
@@ -1979,7 +2064,7 @@ const RoleReadyAssessment = () => {
                                     return (
                                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                                             {/* Left Pane (~45% / 5 Cols): Problem Statement, Constraints, Public Tests */}
-                                            <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 max-h-[700px] overflow-y-auto">
+                                            <div className="min-w-0 lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 max-h-[500px] lg:max-h-[700px] overflow-y-auto">
                                                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                                                     <h3 className="text-base font-bold text-slate-900">{activeProblem.title}</h3>
                                                     <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
@@ -2025,7 +2110,7 @@ const RoleReadyAssessment = () => {
                                             </div>
 
                                             {/* Right Pane (~55% / 7 Cols): Monaco Editor & Output Terminal */}
-                                            <div className="lg:col-span-7 space-y-4">
+                                            <div className="min-w-0 lg:col-span-7 space-y-4">
                                                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col">
                                                     <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
                                                         <div className="flex items-center gap-2">
@@ -2039,14 +2124,14 @@ const RoleReadyAssessment = () => {
                                                         <button
                                                             type="button"
                                                             onClick={handleResetCode}
-                                                            className="text-xs font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+                                                            className="min-h-[40px] px-2 text-xs font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
                                                         >
                                                             <RotateCcw className="w-3.5 h-3.5" /> Reset Template
                                                         </button>
                                                     </div>
 
                                                     {/* Monaco Editor Component */}
-                                                    <div className="w-full h-[380px] rounded-xl overflow-hidden border border-slate-200">
+                                                    <div className="w-full h-[320px] sm:h-[380px] rounded-xl overflow-hidden border border-slate-200">
                                                         <Editor
                                                             height="100%"
                                                             language={selectedLanguage === 'java' ? 'java' : 'python'}
@@ -2065,7 +2150,7 @@ const RoleReadyAssessment = () => {
                                                     </div>
 
                                                     {/* Run Tests Action */}
-                                                    <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-100">
+                                                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 mt-3 border-t border-slate-100">
                                                         <span className="text-xs text-slate-500 font-medium">
                                                             Isolated Sandboxed Runtime ({selectedLanguage === 'java' ? 'Judge0 Java' : 'Judge0 Python'})
                                                         </span>
@@ -2073,7 +2158,7 @@ const RoleReadyAssessment = () => {
                                                             type="button"
                                                             disabled={isRunningCode}
                                                             onClick={handleRunCode}
-                                                            className="px-5 py-2.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold flex items-center gap-2 border border-cyan-200 cursor-pointer disabled:opacity-50 transition-all shadow-xs"
+                                                            className="min-h-[44px] px-5 py-2.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold flex items-center gap-2 border border-cyan-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs active:scale-95"
                                                         >
                                                             <Play className="w-3.5 h-3.5 text-cyan-600" />
                                                             <span>{isRunningCode ? "Executing Sandbox..." : "Run Public Tests"}</span>
@@ -2083,7 +2168,12 @@ const RoleReadyAssessment = () => {
 
                                                 {/* Output Terminal */}
                                                 {codeOutput && (
-                                                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 font-mono text-xs text-slate-200 space-y-2.5 shadow-sm max-h-56 overflow-y-auto">
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: 14 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                                                        className="bg-slate-900 border border-slate-800 rounded-2xl p-5 font-mono text-xs text-slate-200 space-y-2.5 shadow-sm max-h-72 overflow-y-auto"
+                                                    >
                                                         <div className="flex items-center gap-2 text-slate-400 pb-2 border-b border-slate-800">
                                                             <Terminal className="w-4 h-4 text-cyan-400" />
                                                             <span className="text-slate-300 font-bold">Execution Output</span>
@@ -2113,19 +2203,31 @@ const RoleReadyAssessment = () => {
                                                         )}
 
                                                         {(codeOutput.test_results || []).map((tr, idx) => (
-                                                            <div key={idx} className="space-y-1 pt-1 text-xs">
+                                                            <motion.div
+                                                                key={idx}
+                                                                initial={{ opacity: 0, x: -10 }}
+                                                                animate={{ opacity: 1, x: 0 }}
+                                                                transition={{ duration: 0.3, delay: 0.12 + idx * 0.08, ease: 'easeOut' }}
+                                                                className={`space-y-1 pt-1 pl-3 text-xs border-l-2 ${tr.passed ? 'border-emerald-500' : 'border-red-500'}`}
+                                                            >
+                                                                <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                                                                    {tr.passed
+                                                                        ? <PopIn><CheckCircle className="w-3.5 h-3.5 text-emerald-400" /></PopIn>
+                                                                        : <PopIn><XCircle className="w-3.5 h-3.5 text-red-400" /></PopIn>}
+                                                                    <span className={tr.passed ? 'text-emerald-400' : 'text-red-400'}>Case {idx + 1}: {tr.passed ? 'Passed' : 'Failed'}</span>
+                                                                </div>
                                                                 <div className="text-slate-400">Input: {tr.input}</div>
                                                                 <div className="text-slate-300">Expected: {tr.expected_output}</div>
                                                                 <div className={tr.passed ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
                                                                     Actual: {tr.actual_output || "<no output>"}
                                                                 </div>
                                                                 {tr.error && !codeOutput.error_type && <div className="text-red-400 font-medium">{tr.error}</div>}
-                                                            </div>
+                                                            </motion.div>
                                                         ))}
                                                         {codeOutput.error && !codeOutput.error_type && (
                                                             <div className="text-red-400 pt-1 font-medium">{codeOutput.error}</div>
                                                         )}
-                                                    </div>
+                                                    </motion.div>
                                                 )}
                                             </div>
                                         </div>
@@ -2142,7 +2244,7 @@ const RoleReadyAssessment = () => {
                 {currentStage === 'interview' && (
                     <div className="w-full">
                         {!sessionData?.interview_unlocked ? (
-                            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto my-auto space-y-3">
+                            <div className="p-6 sm:p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto my-auto space-y-3">
                                 <Lock className="w-12 h-12 text-slate-400 mx-auto" />
                                 <h3 className="text-lg font-bold text-slate-900">Technical Interview is Locked</h3>
                                 <p className="text-xs text-slate-600">Complete and submit the Coding Round to unlock the final interview stage.</p>
@@ -2175,11 +2277,11 @@ const RoleReadyAssessment = () => {
                                 {/* Main 2-Panel Layout with AI Avatar & Live Transcript */}
                                 <div className="flex-1 flex flex-col md:flex-row min-h-[480px]">
                                     {/* LEFT PANEL - AI Interviewer (Image 2) */}
-                                    <div className="bg-[#1a1a1a] relative flex-1 flex items-center justify-center p-8 min-h-[380px]">
+                                    <div className="bg-[#1a1a1a] relative flex-1 flex items-center justify-center p-4 sm:p-8 min-h-[300px] sm:min-h-[380px]">
                                         {/* AI Avatar */}
                                         <div className="relative">
                                             <motion.div
-                                                className={`w-64 h-64 rounded-full flex items-center justify-center ${
+                                                className={`w-44 h-44 sm:w-64 sm:h-64 rounded-full flex items-center justify-center ${
                                                     currentSpeaker === 'ai'
                                                         ? 'bg-gradient-to-br from-blue-600 to-purple-700 shadow-2xl shadow-blue-500/30 ring-8 ring-blue-500/20'
                                                         : 'bg-gradient-to-br from-gray-700 to-gray-800 shadow-2xl'
@@ -2189,7 +2291,7 @@ const RoleReadyAssessment = () => {
                                                 }}
                                                 transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
                                             >
-                                                <div className="text-8xl select-none">🤖</div>
+                                                <div className="text-6xl sm:text-8xl select-none">🤖</div>
                                             </motion.div>
 
                                             {currentSpeaker === 'ai' && (
@@ -2390,7 +2492,7 @@ const RoleReadyAssessment = () => {
             {/* End Interview Confirmation Modal */}
             {showEndInterviewModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-5 text-center">
+                    <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-100 space-y-5 text-center">
                         <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 mx-auto">
                             <CheckCircle2 className="w-8 h-8" />
                         </div>
@@ -2442,6 +2544,7 @@ const RoleReadyAssessment = () => {
                 </div>
             )}
         </div>
+        </MotionConfig>
     );
 };
 

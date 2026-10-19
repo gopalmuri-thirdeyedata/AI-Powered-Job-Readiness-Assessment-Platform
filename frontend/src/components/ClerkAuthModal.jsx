@@ -336,7 +336,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                 />
 
                 <div className="relative z-10 w-full max-w-[440px] mx-auto">
-                    <div className="relative bg-white rounded-2xl shadow-2xl p-8 text-center border border-gray-100">
+                    <div className="relative bg-white rounded-2xl shadow-2xl p-6 sm:p-8 text-center break-words border border-gray-100">
                         <button
                             onClick={onClose}
                             className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"

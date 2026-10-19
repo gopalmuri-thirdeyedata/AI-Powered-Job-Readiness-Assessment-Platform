@@ -122,8 +122,8 @@ const StudentLogin = () => {
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white flex flex-col lg:flex-row relative overflow-hidden font-sans selection:bg-emerald-100 selection:text-emerald-900">
             {/* Ambient Background Glows */}
-            <div className="absolute top-[-150px] left-[-150px] w-[500px] h-[500px] bg-emerald-100/60 dark:bg-emerald-600/10 rounded-full blur-[140px] pointer-events-none" />
-            <div className="absolute bottom-[-150px] right-[-150px] w-[500px] h-[500px] bg-blue-100/50 dark:bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
+            <div className="absolute top-[-150px] left-[-150px] w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-emerald-100/60 dark:bg-emerald-600/10 rounded-full blur-[140px] pointer-events-none" />
+            <div className="absolute bottom-[-150px] right-[-150px] w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-blue-100/50 dark:bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
 
             {/* Left Column: Visual Showcase & Brand Narrative */}
             <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 xl:p-16 relative z-10 border-r border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 backdrop-blur-md">
@@ -252,7 +252,7 @@ const StudentLogin = () => {
                     </div>
 
                     {/* Card */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-7 sm:p-8 shadow-xl relative overflow-hidden">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-8 shadow-xl relative overflow-hidden">
                         {/* Subtle Card Top Accent Glow */}
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent" />
 

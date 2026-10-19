@@ -27,7 +27,7 @@ const CandidateLoginModal = ({ isOpen, onClose }) => {
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
                 {/* Backdrop - Solid Dark Overlay */}
                 <motion.div
                     initial={{ opacity: 0 }}
@@ -42,17 +42,17 @@ const CandidateLoginModal = ({ isOpen, onClose }) => {
                     initial={{ scale: 0.95, opacity: 0, y: 10 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.95, opacity: 0, y: 10 }}
-                    className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden"
+                    className="relative w-full max-w-md max-h-[calc(100vh-1.5rem)] overflow-y-auto bg-white rounded-xl shadow-2xl"
                 >
                     {/* Close Button */}
                     <button
                         onClick={onClose}
-                        className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
+                        className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100"
                     >
                         <X size={20} />
                     </button>
 
-                    <div className="p-8">
+                    <div className="p-5 sm:p-8">
                         <div className="text-center mb-6">
                             <div className="flex justify-center mb-4">
                                 <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-12 w-auto object-contain" />
@@ -124,7 +124,7 @@ const CandidateLoginModal = ({ isOpen, onClose }) => {
                         </form>
                     </div>
 
-                    <div className="bg-gray-50 px-8 py-3 text-center border-t border-gray-100">
+                    <div className="bg-gray-50 px-5 sm:px-8 py-3 text-center border-t border-gray-100">
                         <p className="text-xs text-gray-500">
                             Secure Testing Environment &bull; v2.4.0
                         </p>

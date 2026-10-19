@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
     Award,
     CheckCircle2,
@@ -36,6 +37,8 @@ import {
     Tooltip
 } from 'recharts';
 import studentApi from '../../services/studentApi';
+import { PageHero, StatCard, AnimatedBar, EmptyState } from '../student-ui/StudentMotion';
+import { Reveal, Counter, EASE } from '../home/primitives';
 
 /* ─── Score Color Helper ──────────────────────────── */
 const getScoreColor = (score) => {
@@ -101,10 +104,19 @@ const AssessmentDetailModal = ({ isOpen, onClose, assessment, onOpenReport }) =>
     const scoreColor = getScoreColor(data.overall_score !== undefined ? data.overall_score : data.score);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs"
+        >
+            <motion.div
+                initial={{ opacity: 0, y: 40, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.4, ease: EASE }}
+                className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
                 {/* Modal Header */}
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-4 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-4 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
                     <div>
                         <div className="flex items-center gap-2 mb-1.5">
                             <span className="text-[11px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
@@ -124,14 +136,14 @@ const AssessmentDetailModal = ({ isOpen, onClose, assessment, onOpenReport }) =>
 
                     <button
                         onClick={onClose}
-                        className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        className="w-10 h-10 shrink-0 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 {/* Modal Body */}
-                <div className="p-6 overflow-y-auto space-y-6">
+                <div className="p-4 sm:p-6 overflow-y-auto space-y-6">
                     {isLoading ? (
                         <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-500">
                             <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
@@ -151,7 +163,9 @@ const AssessmentDetailModal = ({ isOpen, onClose, assessment, onOpenReport }) =>
                                 </div>
                                 <div className="text-right">
                                     <span className={`text-3xl font-extrabold tracking-tight ${scoreColor.text}`}>
-                                        {data.overall_score !== undefined && data.overall_score !== null ? `${data.overall_score}%` : (data.score !== null ? `${data.score}%` : 'In Progress')}
+                                        {data.overall_score !== undefined && data.overall_score !== null
+                                            ? (Number.isFinite(Number(data.overall_score)) ? <Counter to={Number(data.overall_score)} suffix="%" /> : `${data.overall_score}%`)
+                                            : (data.score !== null ? (Number.isFinite(Number(data.score)) ? <Counter to={Number(data.score)} suffix="%" /> : `${data.score}%`) : 'In Progress')}
                                     </span>
                                 </div>
                             </div>
@@ -166,8 +180,11 @@ const AssessmentDetailModal = ({ isOpen, onClose, assessment, onOpenReport }) =>
                                         {(data.round_details || data.rounds_summary).map((round, idx) => {
                                             const rColor = getScoreColor(round.score);
                                             return (
-                                                <div
+                                                <motion.div
                                                     key={idx}
+                                                    initial={{ opacity: 0, y: 14 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ duration: 0.4, delay: 0.1 + Math.min(idx, 8) * 0.06, ease: EASE }}
                                                     className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 shadow-2xs space-y-2"
                                                 >
                                                     <div className="flex items-center justify-between">
@@ -178,18 +195,13 @@ const AssessmentDetailModal = ({ isOpen, onClose, assessment, onOpenReport }) =>
                                                             {round.score}%
                                                         </span>
                                                     </div>
-                                                    <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                                                        <div
-                                                            className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                                                            style={{ width: `${Math.min(100, Math.max(0, round.score))}%` }}
-                                                        />
-                                                    </div>
+                                                    <AnimatedBar value={round.score} tone={round.score >= 75 ? 'emerald' : round.score >= 50 ? 'amber' : 'rose'} height="h-1.5" label={`${round.round_name} score`} />
                                                     {round.feedback && (
                                                         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed italic line-clamp-2">
                                                             {round.feedback}
                                                         </p>
                                                     )}
-                                                </div>
+                                                </motion.div>
                                             );
                                         })}
                                     </div>
@@ -248,27 +260,28 @@ const AssessmentDetailModal = ({ isOpen, onClose, assessment, onOpenReport }) =>
                 <div className="p-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        className="px-4 py-2.5 min-h-[40px] text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                     >
                         Close
                     </button>
                     {data.report_url && (
                         <Link
                             to={data.report_url}
-                            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02]"
+                            className="px-5 py-2.5 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02]"
                         >
                             <span>Open Full Assessment Dossier</span>
                             <ArrowUpRight className="w-4 h-4" />
                         </Link>
                     )}
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 };
 
 /* ─── Main Student Performance View Component ────── */
 const StudentPerformanceView = () => {
+    const reduceMotion = useReducedMotion();
     const [perfData, setPerfData] = useState(null);
     const [historyData, setHistoryData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -355,7 +368,7 @@ const StudentPerformanceView = () => {
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center animate-pw-float motion-reduce:animate-none">
                     <RefreshCw className="w-7 h-7 text-emerald-600 animate-spin" />
                 </div>
                 <div className="text-center">
@@ -397,54 +410,42 @@ const StudentPerformanceView = () => {
     const TrendIcon = trendColor.icon;
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-300 pb-12">
+        <div className="space-y-6 sm:space-y-8 pb-12">
             {/* ─── SECTION A: WELCOME & OVERVIEW ──────────────────── */}
-            <div className="relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-xs overflow-hidden">
-                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-50 dark:bg-emerald-500/5 rounded-full blur-[90px] pointer-events-none" />
-
-                <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-                    <div>
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs font-semibold mb-3">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                            <span>Student Performance & Analytics</span>
-                        </div>
-                        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-                            Welcome back, {overview?.student_name || 'Student'}
-                        </h1>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-2xl leading-relaxed">
-                            Track your verified test scores, monitor progress across multiple assessment rounds, pinpoint high-yield skills, and review your historical test dossiers.
-                        </p>
-                    </div>
-
-                    {/* Quick action buttons */}
-                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <PageHero
+                icon={Sparkles}
+                eyebrow="Student Performance & Analytics"
+                title={`Welcome back, ${overview?.student_name || 'Student'}`}
+                subtitle="Track your verified test scores, monitor progress across multiple assessment rounds, pinpoint high-yield skills, and review your historical test dossiers."
+                actions={(
+                    <>
                         <Link
                             to="/student/simulation"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+                            className="px-4 py-2.5 min-h-[40px] rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                             <span>Simulate Drive</span>
                         </Link>
                         <Link
                             to="/student/interview"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+                            className="px-4 py-2.5 min-h-[40px] rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                             <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                             <span>Mock Interview</span>
                         </Link>
                         <Link
                             to="/student/practice"
-                            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+                            className="px-4 py-2.5 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                         >
                             <Code2 className="w-4 h-4" />
                             <span>DSA Practice</span>
                         </Link>
-                    </div>
-                </div>
-
-                {/* In-progress Active Test Alert Banner */}
+                    </>
+                )}
+            >
+{/* In-progress Active Test Alert Banner */}
                 {overview?.has_active_test && overview.active_test_message && (
-                    <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="pt-5 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
                                 <Clock className="w-4 h-4 animate-pulse" />
@@ -463,109 +464,58 @@ const StudentPerformanceView = () => {
                         </Link>
                     </div>
                 )}
-            </div>
+            </PageHero>
 
             {/* ─── SECTION B: COMPACT 4-CARD PERFORMANCE SUMMARY ──── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
                 {/* 1. Total Tests Completed */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
-                            Tests Completed
-                        </span>
-                        <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                            <CheckCircle2 className="w-4 h-4" />
-                        </div>
-                    </div>
-                    <div className="my-4">
-                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                            {summary?.total_tests_completed || 0}
-                        </span>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {summary?.total_tests_completed === 1 ? '1 valid attempt finalized' : 'Evaluated attempts finalized'}
-                        </p>
-                    </div>
-                    <span className="text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2.5 block truncate">
-                        Excludes in-progress tests
-                    </span>
-                </div>
+                <StatCard
+                    label="Tests Completed"
+                    icon={CheckCircle2}
+                    tone="emerald"
+                    value={summary?.total_tests_completed || 0}
+                    hint={summary?.total_tests_completed === 1 ? '1 valid attempt finalized' : 'Evaluated attempts finalized'}
+                    footnote="Excludes in-progress tests"
+                />
 
                 {/* 2. Average Score */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
-                            Average Score
-                        </span>
-                        <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                            <BarChart3 className="w-4 h-4" />
-                        </div>
-                    </div>
-                    <div className="my-4">
-                        <div className="flex items-baseline gap-1.5">
-                            <span className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                {summary?.average_score !== null && summary?.average_score !== undefined ? `${summary.average_score}%` : 'N/A'}
-                            </span>
-                        </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {summary?.average_score !== null ? 'Mean completed score' : 'No completed tests yet'}
-                        </p>
-                    </div>
-                    <span className="text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2.5 block truncate">
-                        {summary?.improvement_rate !== null ? `${summary.improvement_rate > 0 ? '+' : ''}${summary.improvement_rate}% recent delta` : 'Consistent calculation'}
-                    </span>
-                </div>
+                <StatCard
+                    label="Average Score"
+                    icon={BarChart3}
+                    tone="blue"
+                    delay={0.08}
+                    value={summary?.average_score !== null && summary?.average_score !== undefined ? (Number.isFinite(Number(summary.average_score)) ? Number(summary.average_score) : `${summary.average_score}`) : 'N/A'}
+                    suffix={summary?.average_score !== null && summary?.average_score !== undefined ? '%' : ''}
+                    hint={summary?.average_score !== null ? 'Mean completed score' : 'No completed tests yet'}
+                    footnote={summary?.improvement_rate !== null ? `${summary.improvement_rate > 0 ? '+' : ''}${summary.improvement_rate}% recent delta` : 'Consistent calculation'}
+                />
 
                 {/* 3. Best Performance */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
-                            Best Performance
-                        </span>
-                        <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                            <Award className="w-4 h-4" />
-                        </div>
-                    </div>
-                    <div className="my-4">
-                        <div className="flex items-baseline gap-1.5">
-                            <span className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                {summary?.best_performance ? `${summary.best_performance.score}%` : 'N/A'}
-                            </span>
-                        </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-                            {summary?.best_performance ? summary.best_performance.test_name : 'Awaiting first score'}
-                        </p>
-                    </div>
-                    <span className="text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2.5 block truncate">
-                        {summary?.best_performance ? summary.best_performance.formatted_date : 'Benchmark highest score'}
-                    </span>
-                </div>
+                <StatCard
+                    label="Best Performance"
+                    icon={Award}
+                    tone="amber"
+                    delay={0.16}
+                    value={summary?.best_performance ? (Number.isFinite(Number(summary.best_performance.score)) ? Number(summary.best_performance.score) : `${summary.best_performance.score}`) : 'N/A'}
+                    suffix={summary?.best_performance ? '%' : ''}
+                    hint={<span className="block truncate">{summary?.best_performance ? summary.best_performance.test_name : 'Awaiting first score'}</span>}
+                    footnote={summary?.best_performance ? summary.best_performance.formatted_date : 'Benchmark highest score'}
+                />
 
                 {/* 4. Tests In Progress */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
-                            Tests In Progress
-                        </span>
-                        <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-500/15 border border-purple-200 dark:border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                            <Clock className="w-4 h-4" />
-                        </div>
-                    </div>
-                    <div className="my-4">
-                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                            {summary?.tests_in_progress || 0}
-                        </span>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {summary?.tests_in_progress > 0 ? 'Active attempts to finalize' : 'No pending attempts'}
-                        </p>
-                    </div>
-                    <span className="text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2.5 block truncate">
-                        {summary?.tests_in_progress > 0 ? 'Action required' : 'All scores up-to-date'}
-                    </span>
-                </div>
+                <StatCard
+                    label="Tests In Progress"
+                    icon={Clock}
+                    tone="purple"
+                    delay={0.24}
+                    value={summary?.tests_in_progress || 0}
+                    hint={summary?.tests_in_progress > 0 ? 'Active attempts to finalize' : 'No pending attempts'}
+                    footnote={summary?.tests_in_progress > 0 ? 'Action required' : 'All scores up-to-date'}
+                />
             </div>
 
             {/* ─── SECTION C: INTERACTIVE PERFORMANCE TRENDS ───────── */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs space-y-6">
+            <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xs space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <div className="flex items-center gap-2">
@@ -607,7 +557,7 @@ const StudentPerformanceView = () => {
                         <button
                             key={tab.key}
                             onClick={() => setTrendFilter(tab.key)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${trendFilter === tab.key ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'}`}
+                            className={`px-3.5 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-xs font-semibold transition-all active:scale-95 cursor-pointer ${trendFilter === tab.key ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'}`}
                         >
                             {tab.label}
                         </button>
@@ -616,17 +566,15 @@ const StudentPerformanceView = () => {
 
                 {/* Recharts Area Chart */}
                 {filteredTrendPoints.length === 0 ? (
-                    <div className="py-14 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6">
-                        <Activity className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">No Assessment Data in This Category</h4>
-                        <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                            Complete an assessment to populate your historical performance trajectory.
-                        </p>
-                    </div>
+                    <EmptyState
+                        icon={Activity}
+                        title="No Assessment Data in This Category"
+                        body="Complete an assessment to populate your historical performance trajectory."
+                    />
                 ) : filteredTrendPoints.length === 1 ? (
                     <div className="py-8 bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-6 text-center border border-slate-200/80 dark:border-slate-700/80">
                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-1">Single Test Completed</span>
-                        <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mb-1">
+                        <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mb-1 tabular-nums">
                             {filteredTrendPoints[0].score}%
                         </div>
                         <p className="text-xs text-slate-600 dark:text-slate-300">
@@ -662,6 +610,9 @@ const StudentPerformanceView = () => {
                                 />
                                 <Tooltip content={<CustomTrendTooltip />} />
                                 <Area
+                                    isAnimationActive={!reduceMotion}
+                                    animationDuration={1400}
+                                    animationEasing="ease-out"
                                     type="monotone"
                                     dataKey="score"
                                     stroke="#10B981"
@@ -675,10 +626,10 @@ const StudentPerformanceView = () => {
                         </ResponsiveContainer>
                     </div>
                 )}
-            </div>
+            </Reveal>
 
             {/* ─── SECTION D: PREVIOUS TESTS & ASSESSMENT HISTORY ─── */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5">
+            <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xs space-y-5">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
@@ -692,14 +643,14 @@ const StudentPerformanceView = () => {
                     {/* Filter controls */}
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Search Input */}
-                        <div className="relative">
+                        <div className="relative w-full sm:w-auto">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                             <input
                                 type="text"
                                 placeholder="Search test name..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-8 pr-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                className="w-full sm:w-auto pl-8 pr-3 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all"
                             />
                         </div>
 
@@ -707,7 +658,7 @@ const StudentPerformanceView = () => {
                         <select
                             value={selectedCategory}
                             onChange={(e) => { setSelectedCategory(e.target.value); setCurrentPage(1); }}
-                            className="px-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                            className="flex-1 sm:flex-none min-w-0 px-3 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
                         >
                             <option value="ALL">All Categories</option>
                             <option value="ROLEREADY">RoleReady</option>
@@ -720,7 +671,7 @@ const StudentPerformanceView = () => {
                         <select
                             value={selectedStatus}
                             onChange={(e) => { setSelectedStatus(e.target.value); setCurrentPage(1); }}
-                            className="px-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                            className="flex-1 sm:flex-none min-w-0 px-3 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
                         >
                             <option value="ALL">All Statuses</option>
                             <option value="COMPLETED">Completed</option>
@@ -732,7 +683,7 @@ const StudentPerformanceView = () => {
                         <select
                             value={sortBy}
                             onChange={(e) => { setSortBy(e.target.value); setCurrentPage(1); }}
-                            className="px-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                            className="flex-1 sm:flex-none min-w-0 px-3 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
                         >
                             <option value="date_desc">Newest First</option>
                             <option value="date_asc">Oldest First</option>
@@ -745,7 +696,7 @@ const StudentPerformanceView = () => {
                 {/* History Items List */}
                 {filteredHistoryItems.length === 0 ? (
                     <div className="py-12 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6">
-                        <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                        <Clock className="w-8 h-8 text-emerald-500 mx-auto mb-2 animate-pw-float motion-reduce:animate-none" />
                         <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">No Assessment Records Found</h4>
                         <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
                             {searchQuery || selectedCategory !== 'ALL' || selectedStatus !== 'ALL'
@@ -763,11 +714,14 @@ const StudentPerformanceView = () => {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        {filteredHistoryItems.map((item) => {
+                        {filteredHistoryItems.map((item, itemIdx) => {
                             const scoreColor = getScoreColor(item.score);
                             return (
-                                <div
+                                <motion.div
                                     key={item.id}
+                                    initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.45, delay: Math.min(itemIdx, 8) * 0.05, ease: EASE }}
                                     className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
                                 >
                                     <div className="space-y-1.5">
@@ -821,7 +775,7 @@ const StudentPerformanceView = () => {
                                             <span>View Details</span>
                                         </button>
                                     </div>
-                                </div>
+                                </motion.div>
                             );
                         })}
                     </div>
@@ -829,7 +783,7 @@ const StudentPerformanceView = () => {
 
                 {/* Pagination */}
                 {historyData && historyData.total_pages > 1 && (
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
                         <span>
                             Page {historyData.page} of {historyData.total_pages} ({historyData.total_count} total records)
                         </span>
@@ -837,26 +791,26 @@ const StudentPerformanceView = () => {
                             <button
                                 disabled={currentPage <= 1}
                                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 transition-colors"
+                                className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 transition-colors"
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
                             <button
                                 disabled={currentPage >= historyData.total_pages}
                                 onClick={() => setCurrentPage(p => Math.min(historyData.total_pages, p + 1))}
-                                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 transition-colors"
+                                className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 transition-colors"
                             >
                                 <ChevronRight className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
                 )}
-            </div>
+            </Reveal>
 
             {/* ─── SECTION F: SKILLS & STRENGTHS ANALYSIS ──────────── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Evaluated Skills Performance (Assessment-derived) */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs space-y-4">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xs space-y-4">
                     <div className="flex items-center justify-between">
                         <div>
                             <div className="flex items-center gap-2">
@@ -897,21 +851,16 @@ const StudentPerformanceView = () => {
                                                 </span>
                                             </div>
                                         </div>
-                                        <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                                            <div
-                                                className="bg-emerald-500 h-full rounded-full transition-all duration-700"
-                                                style={{ width: `${Math.min(100, Math.max(0, skill.score))}%` }}
-                                            />
-                                        </div>
+                                        <AnimatedBar value={skill.score} tone={skill.score >= 75 ? 'emerald' : skill.score >= 50 ? 'amber' : 'rose'} label={`${skill.skill} proficiency`} />
                                     </div>
                                 );
                             })}
                         </div>
                     )}
-                </div>
+                </Reveal>
 
                 {/* Stated vs Evaluated Comparison & Resume Skills */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs space-y-4 flex flex-col justify-between">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xs space-y-4 flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between">
                             <div>
@@ -952,7 +901,7 @@ const StudentPerformanceView = () => {
                             <strong>Assessment vs. Resume:</strong> Evaluated skill scores represent runtime accuracy in actual tests; resume estimates indicate stated technologies.
                         </span>
                     </div>
-                </div>
+                </Reveal>
             </div>
 
             {/* ─── SECTION G: RECOMMENDED NEXT STEPS ───────────────── */}
@@ -968,9 +917,14 @@ const StudentPerformanceView = () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {recommended_next_steps.map((step) => (
-                            <div
+                        {recommended_next_steps.map((step, stepIdx) => (
+                            <motion.div
                                 key={step.id}
+                                initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: '-40px' }}
+                                transition={{ duration: 0.5, delay: Math.min(stepIdx, 6) * 0.1, ease: EASE }}
+                                whileHover={reduceMotion ? undefined : { y: -4 }}
                                 className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between group hover:border-emerald-300 transition-all"
                             >
                                 <div>
@@ -995,7 +949,7 @@ const StudentPerformanceView = () => {
                                     <span>{step.action_label}</span>
                                     <ArrowUpRight className="w-4 h-4" />
                                 </Link>
-                            </div>
+                            </motion.div>
                         ))}
                     </div>
                 </div>
@@ -1003,7 +957,7 @@ const StudentPerformanceView = () => {
 
             {/* ─── SECTION H: RECENT ACTIVITY TIMELINE ─────────────── */}
             {recent_activity && recent_activity.length > 0 && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs space-y-4">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xs space-y-4">
                     <div className="flex items-center gap-2">
                         <Activity className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                         <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
@@ -1012,9 +966,13 @@ const StudentPerformanceView = () => {
                     </div>
 
                     <div className="space-y-3 pt-1">
-                        {recent_activity.map((act) => (
-                            <div
+                        {recent_activity.map((act, actIdx) => (
+                            <motion.div
                                 key={act.id}
+                                initial={reduceMotion ? false : { opacity: 0, x: -16 }}
+                                whileInView={{ opacity: 1, x: 0 }}
+                                viewport={{ once: true, margin: '-30px' }}
+                                transition={{ duration: 0.4, delay: Math.min(actIdx, 8) * 0.05, ease: EASE }}
                                 className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 text-xs"
                             >
                                 <div className="flex items-center gap-3">
@@ -1036,10 +994,10 @@ const StudentPerformanceView = () => {
                                 <span className="text-[11px] text-slate-400 shrink-0 ml-2">
                                     {act.formatted_time}
                                 </span>
-                            </div>
+                            </motion.div>
                         ))}
                     </div>
-                </div>
+                </Reveal>
             )}
 
             {/* Assessment Details Modal */}

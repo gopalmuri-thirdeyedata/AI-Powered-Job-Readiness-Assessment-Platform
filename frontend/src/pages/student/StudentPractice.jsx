@@ -8,7 +8,10 @@ import {
     RefreshCw,
     Terminal,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import studentApi from '../../services/studentApi';
+import { PageHero, EmptyState } from '../../components/student-ui/StudentMotion';
+import { EASE } from '../../components/home/primitives';
 
 const StudentPractice = () => {
     const [topics, setTopics] = useState([]);
@@ -168,24 +171,16 @@ const StudentPractice = () => {
     }
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="space-y-5 sm:space-y-6 max-w-7xl mx-auto min-w-0">
             {/* Header & Category Controls */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
-                            <Code2 className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">DSA & Aptitude Practice Sandbox</h1>
-                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
-                                Server-evaluated coding challenges and placement aptitude drills
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Category Switcher */}
-                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <PageHero
+                icon={Code2}
+                eyebrow="Practice"
+                title="DSA & Aptitude Practice Sandbox"
+                subtitle="Server-evaluated coding challenges and placement aptitude drills"
+                actions={(
+                    /* Category Switcher */
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 w-full sm:w-auto">
                         {[
                             { key: 'ALL', label: 'All Modules' },
                             { key: 'CODING', label: 'DSA Coding' },
@@ -194,72 +189,96 @@ const StudentPractice = () => {
                             <button
                                 key={key}
                                 onClick={() => handleCategoryFilter(key)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                                className={`relative flex-1 sm:flex-none min-h-[40px] px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
                                     selectedCategory === key
-                                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                                        ? 'text-slate-900 dark:text-white'
                                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
-                                {label}
+                                {selectedCategory === key && (
+                                    <motion.span
+                                        layoutId="practice-category-pill"
+                                        className="absolute inset-0 rounded-lg bg-white dark:bg-slate-900 shadow-xs"
+                                        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                                    />
+                                )}
+                                <span className="relative">{label}</span>
                             </button>
                         ))}
                     </div>
-                </div>
-
+                )}
+            >
                 {/* Topic Pills */}
-                <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
                     <button
                         onClick={() => handleTopicFilter('All')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                        className={`relative min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors border ${
                             selectedTopic === 'All'
-                                ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30'
-                                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700'
+                                ? 'text-emerald-700 dark:text-emerald-400 border-transparent'
+                                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border-slate-200 dark:border-slate-700'
                         }`}
                     >
-                        All Topics ({questions.length})
+                        {selectedTopic === 'All' && (
+                            <motion.span
+                                layoutId="practice-topic-pill"
+                                className="absolute inset-0 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30"
+                                transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                            />
+                        )}
+                        <span className="relative">All Topics ({questions.length})</span>
                     </button>
                     {topics.map((t) => (
                         <button
                             key={t.topic}
                             onClick={() => handleTopicFilter(t.topic)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                            className={`relative min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors flex items-center gap-1.5 border ${
                                 selectedTopic === t.topic
-                                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-semibold'
-                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700'
+                                    ? 'text-emerald-700 dark:text-emerald-400 border-transparent font-semibold'
+                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border-slate-200 dark:border-slate-700'
                             }`}
                         >
-                            <span>{t.topic}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                            {selectedTopic === t.topic && (
+                                <motion.span
+                                    layoutId="practice-topic-pill"
+                                    className="absolute inset-0 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30"
+                                    transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                                />
+                            )}
+                            <span className="relative">{t.topic}</span>
+                            <span className="relative text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                                 {t.solved_count}/{t.total_questions}
                             </span>
                         </button>
                     ))}
                 </div>
-            </div>
+            </PageHero>
 
             {/* Split Screen Layout: Problem List & Problem Arena */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
                 {/* Left Column: Questions List (4 cols) */}
-                <div className="lg:col-span-4 space-y-3">
+                <div className="lg:col-span-4 space-y-3 min-w-0">
                     <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 px-1">
                         <span>Available Problems ({questions.length})</span>
                     </div>
 
-                    <div className="space-y-2 max-h-[700px] overflow-y-auto pr-1">
-                        {questions.map((q) => {
+                    <div className="space-y-2 max-h-[340px] lg:max-h-[700px] overflow-y-auto pr-1">
+                        {questions.map((q, qi) => {
                             const isSelected = activeQuestion?.id === q.id;
                             return (
-                                <div
+                                <motion.div
                                     key={q.id}
+                                    initial={{ opacity: 0, y: 12 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.4, delay: Math.min(qi, 10) * 0.04, ease: EASE }}
                                     onClick={() => selectQuestion(q)}
-                                    className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                                    className={`p-3.5 min-h-[56px] rounded-xl border transition-[transform,box-shadow,border-color,background-color] duration-200 cursor-pointer hover:-translate-y-0.5 hover:shadow-md ${
                                         isSelected
                                             ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-500/60 dark:border-emerald-500/40 shadow-xs'
                                             : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                                     }`}
                                 >
                                     <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
                                             {q.is_solved ? (
                                                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                             ) : (
@@ -275,24 +294,25 @@ const StudentPractice = () => {
                                         <span>{q.topic}</span>
                                         <span className="uppercase text-[9px] font-bold text-slate-400 dark:text-slate-500">{q.category}</span>
                                     </div>
-                                </div>
+                                </motion.div>
                             );
                         })}
                     </div>
                 </div>
 
                 {/* Right Column: Problem Workspace / Sandbox (8 cols) */}
-                <div className="lg:col-span-8">
+                <div className="lg:col-span-8 min-w-0">
                     {!activeQuestion ? (
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-500 dark:text-slate-400">
-                            Select a practice problem from the list to begin solving.
-                        </div>
+                        <EmptyState
+                            icon={Code2}
+                            title="Select a practice problem from the list to begin solving."
+                        />
                     ) : (
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-6">
+                        <motion.div key={activeQuestion.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: EASE }} className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xs space-y-5 sm:space-y-6">
                             {/* Problem Header */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                                 <div>
-                                    <div className="flex items-center gap-2 mb-1">
+                                    <div className="flex flex-wrap items-center gap-2 mb-1">
                                         <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${getDifficultyBadge(activeQuestion.difficulty)}`}>
                                             {activeQuestion.difficulty}
                                         </span>
@@ -303,7 +323,7 @@ const StudentPractice = () => {
                                             </span>
                                         )}
                                     </div>
-                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">{activeQuestion.title}</h2>
+                                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white break-words">{activeQuestion.title}</h2>
                                 </div>
 
                                 {/* Coding Language (Python only) */}
@@ -318,7 +338,7 @@ const StudentPractice = () => {
                             </div>
 
                             {/* Problem Description */}
-                            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
+                            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-sans">
                                 {activeQuestion.description}
                             </div>
 
@@ -338,7 +358,7 @@ const StudentPractice = () => {
                                         onChange={(e) => setCode(e.target.value)}
                                         rows={12}
                                         spellCheck={false}
-                                        className="w-full bg-slate-900 dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 rounded-xl p-4 font-mono text-sm text-emerald-400 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-y"
+                                        className="w-full bg-slate-900 dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 rounded-xl p-4 font-mono text-sm text-emerald-400 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-y min-h-[220px] sm:min-h-[260px] overflow-x-auto"
                                         placeholder="Write your solution here..."
                                     />
 
@@ -350,7 +370,7 @@ const StudentPractice = () => {
                                             </h4>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 {activeQuestion.public_test_cases.map((tc, idx) => (
-                                                    <div key={idx} className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3 text-xs font-mono space-y-1">
+                                                    <div key={idx} className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3 text-xs font-mono space-y-1 min-w-0 hover:-translate-y-0.5 hover:shadow-sm transition-all">
                                                         <div className="text-slate-500 font-sans font-bold text-[10px]">Sample #{idx + 1}</div>
                                                         <div className="text-slate-700 dark:text-slate-300 truncate"><strong>Input:</strong> {tc.input}</div>
                                                         <div className="text-emerald-600 dark:text-emerald-400 truncate"><strong>Expected:</strong> {tc.expected_output}</div>
@@ -375,7 +395,7 @@ const StudentPractice = () => {
                                                 <div
                                                     key={opt.key}
                                                     onClick={() => setSelectedOption(opt.key)}
-                                                    className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center gap-3 ${
+                                                    className={`p-4 min-h-[52px] rounded-xl border transition-all cursor-pointer flex items-center gap-3 hover:-translate-y-0.5 active:scale-[0.99] ${
                                                         isChecked
                                                             ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500 text-slate-900 dark:text-white'
                                                             : 'bg-slate-50/60 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -398,7 +418,11 @@ const StudentPractice = () => {
 
                             {/* Submission Results Callout */}
                             {submissionResult && (
-                                <div className={`p-4 rounded-xl border flex flex-col gap-2 ${
+                                <motion.div
+                                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    transition={{ duration: 0.4, ease: EASE }}
+                                    className={`p-4 rounded-xl border flex flex-col gap-2 ${
                                     submissionResult.is_correct
                                         ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
                                         : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30 text-rose-800 dark:text-rose-300'
@@ -419,13 +443,26 @@ const StudentPractice = () => {
                                     {/* Public execution trace table */}
                                     {submissionResult.public_results?.length > 0 && (
                                         <div className="mt-2 space-y-1.5 font-mono text-xs">
-                                            {submissionResult.public_results.map((tr) => (
-                                                <div key={tr.test_case_number} className="bg-white/80 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800 p-2 rounded-lg flex items-center justify-between">
-                                                    <span>Test Case #{tr.test_case_number}:</span>
-                                                    <span className={tr.passed ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}>
+                                            {submissionResult.public_results.map((tr, ti) => (
+                                                <motion.div
+                                                    key={tr.test_case_number}
+                                                    initial={{ opacity: 0, x: -12 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    transition={{ duration: 0.35, delay: 0.15 + ti * 0.08, ease: EASE }}
+                                                    className={`bg-white/80 dark:bg-slate-950/80 border border-l-4 p-2 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-w-0 ${
+                                                        tr.passed ? 'border-slate-200/60 dark:border-slate-800 border-l-emerald-500' : 'border-slate-200/60 dark:border-slate-800 border-l-rose-500'
+                                                    }`}
+                                                >
+                                                    <span className="flex items-center gap-1.5 shrink-0">
+                                                        {tr.passed
+                                                            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                                            : <XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />}
+                                                        Test Case #{tr.test_case_number}:
+                                                    </span>
+                                                    <span className={`break-words min-w-0 ${tr.passed ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}`}>
                                                         {tr.passed ? 'PASSED' : 'FAILED'} (Expected: {tr.expected_output}, Got: {tr.actual_output || 'None'})
                                                     </span>
-                                                </div>
+                                                </motion.div>
                                             ))}
                                         </div>
                                     )}
@@ -435,18 +472,18 @@ const StudentPractice = () => {
                                             <strong>Concept Explanation:</strong> {submissionResult.explanation}
                                         </div>
                                     )}
-                                </div>
+                                </motion.div>
                             )}
 
                             {/* Footer / Submit Button */}
-                            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <span className="text-xs text-slate-500 dark:text-slate-400">
                                     All hidden test cases and answer keys are securely evaluated server-side.
                                 </span>
                                 <button
                                     onClick={handleSubmit}
                                     disabled={isSubmitting || (activeQuestion.category === 'APTITUDE' && !selectedOption)}
-                                    className="inline-flex items-center gap-2 px-6 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-xs cursor-pointer disabled:cursor-not-allowed"
+                                    className="inline-flex items-center justify-center gap-2 px-6 h-12 sm:h-11 w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-xs cursor-pointer disabled:cursor-not-allowed active:scale-95"
                                 >
                                     {isSubmitting ? (
                                         <>
@@ -461,7 +498,7 @@ const StudentPractice = () => {
                                     )}
                                 </button>
                             </div>
-                        </div>
+                        </motion.div>
                     )}
                 </div>
             </div>

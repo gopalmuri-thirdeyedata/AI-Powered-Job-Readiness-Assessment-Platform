@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { 
     Sparkles, 
     Target, 
@@ -14,6 +15,9 @@ import {
     AlertCircle 
 } from 'lucide-react';
 import studentApi from '../../services/studentApi';
+
+const EASE = [0.16, 1, 0.3, 1];
+const STEP_LABELS = ['Goal', 'Academics', 'Skills', 'Resume'];
 
 const COMMON_ROLES = [
     'Full Stack Developer',
@@ -43,6 +47,11 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
     const [resumeFile, setResumeFile] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [errorMsg, setErrorMsg] = useState(null);
+    const reduceMotion = useReducedMotion();
+    // Purely visual: remember the previous step so slides go forward/back
+    const prevStepRef = useRef(1);
+    const stepDir = currentStep >= prevStepRef.current ? 1 : -1;
+    prevStepRef.current = currentStep;
 
     if (!isOpen) return null;
 
@@ -123,16 +132,26 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
     };
 
     return (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 font-sans">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 font-sans"
+        >
+            <motion.div
+                initial={reduceMotion ? false : { opacity: 0, y: 40, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.4, ease: EASE }}
+                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-t-2xl sm:rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+            >
                 {/* Header */}
-                <div className="p-6 bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/30">
+                <div className="p-4 sm:p-6 bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/30 shrink-0">
                             <Sparkles className="w-5 h-5" />
                         </div>
                         <div>
-                            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-x-2 gap-y-1">
                                 <span>Career Readiness Onboarding</span>
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-500/30">
                                     Step {currentStep} of 4
@@ -144,33 +163,68 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
 
                     <button
                         onClick={onClose}
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg cursor-pointer transition-colors"
+                        aria-label="Close"
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg cursor-pointer transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 {/* Stepper Progress Bar */}
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5">
-                    <div
-                        className="bg-emerald-500 h-full transition-all duration-300"
-                        style={{ width: `${(currentStep / 4) * 100}%` }}
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={currentStep}>
+                    <motion.div
+                        className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-r-full"
+                        initial={false}
+                        animate={{ width: `${(currentStep / 4) * 100}%` }}
+                        transition={{ duration: 0.5, ease: EASE }}
                     />
+                </div>
+                <div className="px-4 sm:px-6 pt-3 grid grid-cols-4 gap-1 text-center" aria-hidden="true">
+                    {STEP_LABELS.map((label, i) => {
+                        const n = i + 1;
+                        const done = n < currentStep;
+                        const active = n === currentStep;
+                        return (
+                            <div key={label} className="flex flex-col items-center gap-1 min-w-0">
+                                <motion.span
+                                    animate={{ scale: active ? 1.1 : 1 }}
+                                    transition={{ type: 'spring', stiffness: 400, damping: 24 }}
+                                    className={`w-6 h-6 rounded-full text-[11px] font-bold flex items-center justify-center border transition-colors ${
+                                        done || active
+                                            ? 'bg-emerald-600 text-white border-emerald-600'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
+                                    }`}
+                                >
+                                    {done ? <Check className="w-3.5 h-3.5" /> : n}
+                                </motion.span>
+                                <span className={`text-[10px] font-semibold truncate max-w-full ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400 dark:text-slate-500'}`}>{label}</span>
+                            </div>
+                        );
+                    })}
                 </div>
 
                 {/* Error Banner */}
                 {errorMsg && (
-                    <div className="mx-6 mt-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                    <div role="alert" className="mx-4 sm:mx-6 mt-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 shrink-0" />
                         <span>{errorMsg}</span>
                     </div>
                 )}
 
                 {/* Step Body */}
-                <div className="p-6 overflow-y-auto flex-1 space-y-5 text-xs text-slate-700 dark:text-slate-200">
+                <div className="p-4 sm:p-6 overflow-y-auto overflow-x-hidden flex-1 space-y-5 text-xs text-slate-700 dark:text-slate-200">
+                    <motion.div
+                        key={currentStep}
+                        initial={reduceMotion ? false : { opacity: 0, x: stepDir * 36 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.4, ease: EASE }}
+                    >
                     {/* STEP 1: TARGET ROLE & COMPANY */}
                     {currentStep === 1 && (
                         <div className="space-y-4 animate-in fade-in duration-200">
+                            <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-xs">
+                                Welcome! Four quick steps and we will tailor your practice, roadmap and drives to you. You can change everything later.
+                            </div>
                             <div>
                                 <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
                                     <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -187,7 +241,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                         key={role}
                                         type="button"
                                         onClick={() => setTargetRole(role)}
-                                        className={`p-3 rounded-xl text-left font-medium transition-all border flex items-center justify-between cursor-pointer ${
+                                        className={`p-3 min-h-[44px] rounded-xl text-left font-medium transition-all active:scale-[0.98] hover:-translate-y-0.5 border flex items-center justify-between cursor-pointer ${
                                             targetRole === role
                                                 ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/50 shadow-xs'
                                                 : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700/80 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -208,7 +262,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                     value={targetCompany}
                                     onChange={(e) => setTargetCompany(e.target.value)}
                                     placeholder="e.g. Google, Microsoft, Amazon, Stripe..."
-                                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    className="w-full px-3.5 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                 />
                             </div>
                         </div>
@@ -234,7 +288,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                     value={collegeName}
                                     onChange={(e) => setCollegeName(e.target.value)}
                                     placeholder="e.g. Institute of Technology"
-                                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                    className="w-full px-3.5 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
                                 />
                             </div>
 
@@ -244,7 +298,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                     <select
                                         value={branch}
                                         onChange={(e) => setBranch(e.target.value)}
-                                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                        className="w-full px-3 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
                                     >
                                         <option value="Computer Science">Computer Science</option>
                                         <option value="Information Technology">Information Technology</option>
@@ -258,7 +312,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                     <select
                                         value={graduationYear}
                                         onChange={(e) => setGraduationYear(e.target.value)}
-                                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                        className="w-full px-3 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
                                     >
                                         <option value={2025}>2025</option>
                                         <option value={2026}>2026</option>
@@ -279,7 +333,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                     max="10"
                                     value={cgpa}
                                     onChange={(e) => setCgpa(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                    className="w-full px-3.5 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
                                 />
                             </div>
                         </div>
@@ -312,7 +366,8 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                             <button
                                                 type="button"
                                                 onClick={() => handleRemoveSkill(s)}
-                                                className="hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
+                                                aria-label={`Remove ${s}`}
+                                                className="hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer p-1"
                                             >
                                                 <X className="w-3 h-3" />
                                             </button>
@@ -332,7 +387,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                             key={item}
                                             type="button"
                                             onClick={() => handleAddSkill(item)}
-                                            className={`px-2.5 py-1 rounded-lg text-[11px] border transition-all cursor-pointer ${
+                                            className={`px-3 py-2 min-h-[40px] rounded-lg text-[11px] border transition-all active:scale-95 cursor-pointer ${
                                                 skills.includes(item)
                                                     ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/40 opacity-60'
                                                     : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500'
@@ -351,7 +406,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                     value={customSkill}
                                     onChange={(e) => setCustomSkill(e.target.value)}
                                     placeholder="Add other skill (e.g. Kotlin, Kubernetes)..."
-                                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    className="flex-1 min-w-0 px-3 py-2 min-h-[44px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                                 />
                                 <button
                                     type="button"
@@ -359,7 +414,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                                         handleAddSkill(customSkill);
                                         setCustomSkill('');
                                     }}
-                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700 font-medium rounded-xl cursor-pointer transition-colors"
+                                    className="px-4 min-h-[44px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700 font-medium rounded-xl cursor-pointer transition-colors active:scale-95"
                                 >
                                     Add
                                 </button>
@@ -418,16 +473,17 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                             </div>
                         </div>
                     )}
+                    </motion.div>
                 </div>
 
                 {/* Footer Controls */}
-                <div className="p-4 bg-slate-50/80 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="p-4 bg-slate-50/80 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
                     {currentStep > 1 ? (
                         <button
                             type="button"
                             onClick={() => setCurrentStep(prev => prev - 1)}
                             disabled={isSaving}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                            className="px-4 min-h-[44px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
                         >
                             <ChevronLeft className="w-4 h-4" />
                             <span>Back</span>
@@ -439,7 +495,7 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                             type="button"
                             onClick={handleNextStep}
                             disabled={isSaving}
-                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition-all shadow-xs disabled:opacity-40 cursor-pointer"
+                            className="px-5 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition-all shadow-xs hover:shadow-lg hover:shadow-emerald-500/25 active:scale-95 disabled:opacity-40 cursor-pointer"
                         >
                             <span>Continue</span>
                             <ChevronRight className="w-4 h-4" />
@@ -449,15 +505,15 @@ const StudentOnboardingWizard = ({ isOpen, onClose, onCompleted, initialProfile 
                             type="button"
                             onClick={handleFinalizeOnboarding}
                             disabled={isSaving}
-                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs disabled:opacity-40 cursor-pointer"
+                            className="px-5 sm:px-6 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-lg hover:shadow-emerald-500/25 active:scale-95 disabled:opacity-40 cursor-pointer"
                         >
                             <Sparkles className="w-4 h-4" />
                             <span>{isSaving ? 'Activating...' : 'Complete & Launch Career Hub'}</span>
                         </button>
                     )}
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 };
 

@@ -62,7 +62,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
                         <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                             PrepWin
                         </div>
-                        <div className="text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
+                        <div className="hidden min-[420px]:block text-[10px] font-semibold uppercase tracking-wider mt-1 text-emerald-600 dark:text-emerald-400">
                             Job Readiness Platform
                         </div>
                     </div>
@@ -93,13 +93,13 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
             </div>
 
             {/* ── Right: Theme Toggle & User Actions ── */}
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
                 {/* Theme Toggle Button */}
                 <button
                     type="button"
                     onClick={toggleTheme}
                     aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                    className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
+                    className="w-10 h-10 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
                     title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 >
                     {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
@@ -125,7 +125,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
                             onClick={handleSignOut}
                             aria-label="Sign Out"
                             title="Sign Out"
-                            className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 dark:hover:text-red-400 border border-slate-200/80 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
+                            className="w-10 h-10 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 dark:hover:text-red-400 border border-slate-200/80 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
                         >
                             <LogOut className="w-4 h-4" />
                         </button>
@@ -145,7 +145,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
                     type="button"
                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                     aria-label="Toggle navigation menu"
-                    className="md:hidden w-9 h-9 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 transition-colors focus:outline-none cursor-pointer shrink-0"
+                    className="md:hidden w-10 h-10 sm:w-9 sm:h-9 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 transition-colors focus:outline-none cursor-pointer shrink-0"
                 >
                     {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
                 </button>

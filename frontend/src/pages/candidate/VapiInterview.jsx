@@ -849,7 +849,7 @@ const VapiInterview = () => {
     if (isSubmitted && !showTerminalOverlay) {
         return (
             <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 sm:p-6 text-white relative overflow-hidden selection:bg-emerald-500 selection:text-white">
-                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 sm:w-96 sm:h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
                 <motion.div
                     initial={{ opacity: 0, scale: 0.94, y: 20 }}
@@ -975,8 +975,8 @@ const VapiInterview = () => {
                         exit={{ opacity: 0, y: -60, scale: 0.97 }}
                         className="fixed top-0 left-0 right-0 z-[100] shadow-2xl bg-gradient-to-r from-red-600 to-rose-700 border-b border-red-400/50"
                     >
-                        <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
+                        <div className="max-w-5xl mx-auto px-3 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between gap-3 sm:gap-4">
+                            <div className="flex items-center gap-3 min-w-0">
                                 <AlertTriangle className="w-5 h-5 text-white animate-pulse shrink-0" />
                                 <div>
                                     <p className="font-bold text-white text-sm leading-tight">{warningMessage}</p>
@@ -1003,7 +1003,7 @@ const VapiInterview = () => {
                         animate={{ opacity: 1 }}
                         className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 text-center"
                     >
-                        <div className="bg-slate-900 border border-red-500/50 p-8 rounded-3xl max-w-md w-full shadow-2xl">
+                        <div className="bg-slate-900 border border-red-500/50 p-5 sm:p-8 rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl">
                             <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <PhoneOff size={32} className="text-red-500 animate-pulse" />
                             </div>
@@ -1022,7 +1022,7 @@ const VapiInterview = () => {
             </AnimatePresence>
 
             {/* ── Top Bar ── */}
-            <header className="h-16 bg-slate-900/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between border-b border-slate-800 shrink-0 z-20">
+            <header className="min-h-[4rem] py-2 flex-wrap gap-y-2 gap-x-2 bg-slate-900/90 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between border-b border-slate-800 shrink-0 z-20">
                 {/* Left: Branding & Role */}
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
@@ -1040,7 +1040,7 @@ const VapiInterview = () => {
                 </div>
 
                 {/* Center: Live Conversation Status Badge */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center gap-2 order-last w-full sm:order-none sm:w-auto">
                     {callState === 'connecting' && (
                         <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold animate-pulse">
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1078,7 +1078,7 @@ const VapiInterview = () => {
                 </div>
 
                 {/* Right: Timer & Integrity Badge */}
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     {/* Live Audio / Volume Pill */}
                     <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px]" title="Microphone Activity">
                         {isMuted ? <MicOff className="w-3.5 h-3.5 text-red-400" /> : <Mic className="w-3.5 h-3.5 text-emerald-400" />}
@@ -1104,7 +1104,7 @@ const VapiInterview = () => {
                     <button
                         type="button"
                         onClick={() => setShowEndConfirm(true)}
-                        className="px-3 py-1 rounded-lg bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-red-400 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                        className="px-3 py-1.5 min-h-[36px] rounded-lg bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-red-400 hover:text-white text-xs font-bold transition-all cursor-pointer"
                         title="End interview session"
                     >
                         End
@@ -1128,7 +1128,7 @@ const VapiInterview = () => {
                             {/* Ambient glow ripples behind avatar */}
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <motion.div
-                                    className="w-48 h-48 rounded-full bg-emerald-500/10 blur-xl"
+                                    className="w-40 h-40 sm:w-48 sm:h-48 rounded-full bg-emerald-500/10 blur-xl"
                                     animate={{
                                         scale: callState === 'ai_speaking' ? [1, 1.25, 1] : 1,
                                         opacity: callState === 'ai_speaking' ? [0.4, 0.8, 0.4] : 0.2
@@ -1276,13 +1276,13 @@ const VapiInterview = () => {
                             </div>
 
                             {/* Step Dots */}
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
                                 {questions.map((q, idx) => (
                                     <button
                                         key={idx}
                                         type="button"
                                         onClick={() => setCurrentQuestionIndex(idx)}
-                                        className={`w-6 h-6 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                        className={`w-8 h-8 sm:w-6 sm:h-6 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             idx === currentQuestionIndex
                                                 ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-sm'
                                                 : idx < currentQuestionIndex
@@ -1308,11 +1308,11 @@ const VapiInterview = () => {
                         </div>
 
                         {/* Action Helper Strip */}
-                        <div className="flex items-center justify-between gap-3 mt-4 pt-3 border-t border-slate-800/80">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-slate-800/80">
                             <button
                                 type="button"
                                 onClick={toggleMute}
-                                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer border ${
+                                className={`px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer border ${
                                     isMuted
                                         ? 'bg-red-500/20 border-red-500/40 text-red-300'
                                         : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
@@ -1326,7 +1326,7 @@ const VapiInterview = () => {
                                 <button
                                     type="button"
                                     onClick={handleNextQuestion}
-                                    className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                    className="px-4 py-2 sm:py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                                 >
                                     <span>{currentQuestionIndex < questions.length - 1 ? 'Next Question' : 'Complete Interview'}</span>
                                     <ChevronRight className="w-3.5 h-3.5" />
@@ -1339,7 +1339,7 @@ const VapiInterview = () => {
                 {/* ═════════════════════════════════════════════════════════════════
                     RIGHT COLUMN: Live Conversation Transcript & Question Checklist
                    ═════════════════════════════════════════════════════════════════ */}
-                <div className="lg:w-5/12 xl:w-1/3 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col min-h-0">
+                <div className="lg:w-5/12 xl:w-1/3 max-lg:h-[45vh] max-lg:shrink-0 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col min-h-0">
                     {/* Panel Header Tabs */}
                     <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between shrink-0 bg-slate-900/90">
                         <div className="flex items-center gap-2">

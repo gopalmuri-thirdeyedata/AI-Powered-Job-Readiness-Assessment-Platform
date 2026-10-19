@@ -56,7 +56,7 @@ const CollegeStudents = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                    <h1 className="text-xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
                         <Users className="w-7 h-7 text-indigo-400" />
                         <span>Student Placement Roster</span>
                     </h1>
@@ -67,7 +67,7 @@ const CollegeStudents = () => {
             </div>
 
             {/* Filter Controls Bar */}
-            <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 flex flex-col md:flex-row items-center gap-3 justify-between shadow-sm">
+            <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3 sm:p-4 flex flex-col md:flex-row md:items-center gap-3 justify-between shadow-sm">
                 {/* Search Box */}
                 <form onSubmit={handleSearchSubmit} className="relative w-full md:w-96">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -76,19 +76,19 @@ const CollegeStudents = () => {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search student by name, email, target role..."
-                        className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                        className="w-full pl-10 pr-4 py-2.5 sm:py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                     />
                 </form>
 
                 {/* Dropdown Filters */}
-                <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
                     {/* Branch Filter */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                         <Filter className="w-3.5 h-3.5 text-slate-400" />
                         <select
                             value={selectedBranch}
                             onChange={(e) => setSelectedBranch(e.target.value)}
-                            className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none"
+                            className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 sm:py-2 text-xs text-slate-300 focus:outline-none min-w-0 max-w-full"
                         >
                             <option value="">All Branches</option>
                             <option value="Computer Science">Computer Science</option>
@@ -102,7 +102,7 @@ const CollegeStudents = () => {
                     <select
                         value={readinessFilter}
                         onChange={(e) => setReadinessFilter(e.target.value)}
-                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none"
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 sm:py-2 text-xs text-slate-300 focus:outline-none min-w-0 max-w-full"
                     >
                         <option value="">All Readiness Tiers</option>
                         <option value="high">High (≥ 75%)</option>
@@ -112,7 +112,7 @@ const CollegeStudents = () => {
 
                     <button
                         onClick={loadStudents}
-                        className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
+                        className="px-3 py-2.5 sm:py-2 min-h-[40px] bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
                     >
                         <RefreshCw className="w-3.5 h-3.5" />
                         <span>Filter</span>
@@ -137,7 +137,7 @@ const CollegeStudents = () => {
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
+                        <table className="w-full min-w-[720px] text-left text-xs border-collapse">
                             <thead>
                                 <tr className="border-b border-slate-700/80 bg-slate-900/40 text-slate-400 uppercase tracking-wider text-[11px]">
                                     <th className="py-3.5 px-4 font-semibold">Student Name</th>

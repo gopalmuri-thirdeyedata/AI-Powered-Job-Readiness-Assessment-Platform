@@ -123,7 +123,7 @@ const CollegeDrives = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                    <h1 className="text-xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
                         <Building2 className="w-7 h-7 text-indigo-400" />
                         <span>Campus Placement Drives</span>
                     </h1>
@@ -143,7 +143,7 @@ const CollegeDrives = () => {
             </div>
 
             {/* Status Filter Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
                 {[
                     { label: 'All Drives', val: '' },
                     { label: 'Open Drives', val: 'OPEN' },
@@ -199,7 +199,7 @@ const CollegeDrives = () => {
                             >
                                 <div>
                                     <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div>
+                                        <div className="min-w-0">
                                             <h3 className="font-bold text-white text-base group-hover:text-indigo-300 transition-colors">
                                                 {drive.company_name}
                                             </h3>
@@ -270,7 +270,7 @@ const CollegeDrives = () => {
             {/* Create Placement Drive Modal */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-4 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                             <h2 className="text-base font-bold text-white flex items-center gap-2">
                                 <Building2 className="w-5 h-5 text-indigo-400" />
@@ -278,7 +278,7 @@ const CollegeDrives = () => {
                             </h2>
                             <button
                                 onClick={() => setIsCreateModalOpen(false)}
-                                className="text-slate-400 hover:text-white"
+                                className="p-2 text-slate-400 hover:text-white"
                             >
                                 <X className="w-5 h-5" />
                             </button>
@@ -401,7 +401,7 @@ const CollegeDrives = () => {
             {/* Review Applicants Modal */}
             {isApplicantsModalOpen && selectedDrive && (
                 <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                             <div>
                                 <h2 className="text-base font-bold text-white flex items-center gap-2">
@@ -412,7 +412,7 @@ const CollegeDrives = () => {
                             </div>
                             <button
                                 onClick={() => setIsApplicantsModalOpen(false)}
-                                className="text-slate-400 hover:text-white"
+                                className="p-2 text-slate-400 hover:text-white"
                             >
                                 <X className="w-5 h-5" />
                             </button>
@@ -431,12 +431,12 @@ const CollegeDrives = () => {
                             <div className="divide-y divide-slate-800">
                                 {applicants.map((app) => (
                                     <div key={app.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                                        <div>
-                                            <div className="flex items-center gap-2">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-x-2 break-all">
                                                 <span className="font-bold text-white">{app.student_name}</span>
                                                 <span className="text-[11px] text-slate-400">({app.student_email})</span>
                                             </div>
-                                            <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-400">
                                                 <span>Branch: <strong>{app.student_branch || 'N/A'}</strong></span>
                                                 <span>CGPA: <strong className="text-emerald-400">{app.student_cgpa || 'N/A'}</strong></span>
                                                 <span>Readiness: <strong className="text-indigo-400">{Math.round(app.student_readiness_score || 0)}%</strong></span>

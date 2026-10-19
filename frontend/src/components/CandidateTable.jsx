@@ -82,7 +82,7 @@ const PerformanceModal = ({ candidate, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform scale-100 transition-all">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto transform scale-100 transition-all">
                 <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                     <h3 className="font-bold text-gray-900">Performance Report</h3>
                     <button onClick={onClose}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
@@ -93,7 +93,7 @@ const PerformanceModal = ({ candidate, onClose }) => {
                         <p className="text-sm text-gray-500 font-medium uppercase tracking-wide">Accuracy Score</p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="bg-green-50 p-3 rounded-xl border border-green-100 text-center">
                             <div className="text-xl font-bold text-green-700">{correctCount}</div>
                             <div className="text-xs text-green-600 font-bold uppercase">{correctLabel}</div>
@@ -821,7 +821,7 @@ const CandidateTable = ({
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: 10 }}
-                                        className="absolute right-0 mt-2 w-72 bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-2 origin-top-right overflow-hidden"
+                                        className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-2 origin-top-right overflow-hidden"
                                     >
                                         <div className="px-4 py-2 border-b border-gray-100 bg-gray-50/50">
                                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Export Scope</span>

@@ -479,7 +479,7 @@ const Dashboard = () => {
                             {/* Dropzone */}
                             <div
                                 {...getRootProps()}
-                                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
+                                className={`border-2 border-dashed rounded-2xl p-5 sm:p-8 text-center cursor-pointer transition-all ${
                                     isDragActive
                                         ? 'border-[#5d8c2c] bg-[#5d8c2c]/5 scale-[0.99]'
                                         : 'border-slate-300 dark:border-slate-700 hover:border-[#5d8c2c] bg-slate-50/50 dark:bg-slate-800/30'
@@ -519,8 +519,8 @@ const Dashboard = () => {
                                         <span className="text-slate-500">Review and correct emails before proceeding</span>
                                     </div>
 
-                                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-                                        <table className="w-full text-left text-xs border-collapse">
+                                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto shadow-xs">
+                                        <table className="w-full text-left text-xs border-collapse min-w-[480px]">
                                             <thead>
                                                 <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
                                                     <th className="py-3 px-4">#</th>
@@ -787,8 +787,8 @@ const Dashboard = () => {
                             </div>
 
                             {/* Recipient List Preview */}
-                            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-                                <table className="w-full text-left text-xs border-collapse">
+                            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto shadow-xs">
+                                <table className="w-full text-left text-xs border-collapse min-w-[480px]">
                                     <thead>
                                         <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
                                             <th className="py-3 px-4">#</th>
@@ -1265,8 +1265,8 @@ const Dashboard = () => {
                         </div>
 
                         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-                                <table className="w-full text-left text-xs border-collapse">
+                            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto shadow-xs">
+                                <table className="w-full text-left text-xs border-collapse min-w-[560px]">
                                     <thead>
                                         <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
                                             <th className="py-3 px-4">Candidate</th>

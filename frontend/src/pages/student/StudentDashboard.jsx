@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
     LayoutDashboard,
     Award,
@@ -28,7 +29,26 @@ import { useUser } from '@clerk/clerk-react';
 import studentApi from '../../services/studentApi';
 import StudentOnboardingWizard from '../../components/student/StudentOnboardingWizard';
 import StudentPerformanceView from '../../components/student/StudentPerformanceView';
+import { PageHero, Stagger, StaggerItem, EmptyState } from '../../components/student-ui/StudentMotion';
+import { Counter, EASE } from '../../components/home/primitives';
 import useStudentTaskStatus, { markStudentTaskCompleted, clearStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
+
+/* ─── Animated gradient progress bar (fills when scrolled into view) ── */
+const GradBar = ({ value = 0, grad = 'from-emerald-600 to-teal-500', height = 'h-2', className = '', track = 'bg-slate-100 dark:bg-slate-800' }) => {
+    const reduce = useReducedMotion();
+    const v = Math.max(0, Math.min(100, Number(value) || 0));
+    return (
+        <div className={`w-full ${track} ${height} rounded-full overflow-hidden ${className}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)}>
+            <motion.div
+                className={`h-full rounded-full bg-gradient-to-r ${grad}`}
+                initial={reduce ? false : { width: 0 }}
+                whileInView={{ width: `${v}%` }}
+                viewport={{ once: true }}
+                transition={{ duration: 1.0, ease: EASE }}
+            />
+        </div>
+    );
+};
 
 /* ─── Circular Score Gauge ─────────────────────────── */
 const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "Readiness" }) => {
@@ -131,6 +151,7 @@ const StudentDashboard = () => {
             return dateString;
         }
     };
+    const reduceMotion = useReducedMotion();
     const [activeTab, setActiveTab] = useState(urlTab === 'readiness' ? 'readiness' : 'performance');
     // Sub-view inside the Readiness hub: switching it is purely in-page (no route change, no refetch)
     const [section, setSection] = useState('all');
@@ -296,25 +317,42 @@ const StudentDashboard = () => {
 
     const readinessBadge = getReadinessBadge(readiness_score);
 
+    // Next best action: derived only from data already loaded above
+    const nextAction = assessmentHistory?.active_session?.continue_url
+        ? { to: assessmentHistory.active_session.continue_url, icon: PlayCircle, label: 'Continue your unfinished assessment', hint: 'Pick up where you left off and finish all three rounds.' }
+        : !resume_score
+            ? { to: '/student/resume', icon: FileText, label: 'Upload your resume for an ATS score', hint: 'Unlocks precise readiness scoring and recommendations.' }
+            : !roadmapStats.total_tasks
+                ? { to: '/student/roadmap', icon: Compass, label: 'Build your personalised roadmap', hint: 'Turn your skill gaps into a day-by-day plan.' }
+                : !practiceStats.solved_count
+                    ? { to: '/student/practice', icon: Code2, label: 'Solve your first DSA problem', hint: 'Practice builds the coding score that recruiters weigh most.' }
+                    : { to: '/student/simulation', icon: Award, label: 'Try a placement drive simulation', hint: 'Test yourself end-to-end under real drive conditions.' };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-300 pb-12">
             {/* ─── Dashboard View Segmented Switcher ────────────────── */}
             <div className="flex items-center justify-between flex-wrap gap-4 pb-1">
-                <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
-                    <button
-                        onClick={() => handleTabChange('performance')}
-                        className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'performance' ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs border border-emerald-200/80 dark:border-emerald-500/20' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                    >
-                        <BarChart3 className="w-3.5 h-3.5" />
-                        <span>Performance & Analytics</span>
-                    </button>
-                    <button
-                        onClick={() => handleTabChange('readiness')}
-                        className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'readiness' ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs border border-emerald-200/80 dark:border-emerald-500/20' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                    >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Readiness & Profile Hub</span>
-                    </button>
+                <div className="relative flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 max-w-full overflow-x-auto student-scrollbar">
+                    {[
+                        { id: 'performance', label: 'Performance & Analytics', Icon: BarChart3 },
+                        { id: 'readiness', label: 'Readiness & Profile Hub', Icon: Sparkles },
+                    ].map(({ id, label, Icon }) => (
+                        <button
+                            key={id}
+                            onClick={() => handleTabChange(id)}
+                            className={`relative px-3.5 sm:px-4 py-2.5 min-h-[40px] rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap ${activeTab === id ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                        >
+                            {activeTab === id && (
+                                <motion.span
+                                    layoutId="student-dash-tab-pill"
+                                    transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 34 }}
+                                    className="absolute inset-0 rounded-xl bg-white dark:bg-slate-900 shadow-xs border border-emerald-200/80 dark:border-emerald-500/20"
+                                />
+                            )}
+                            <Icon className="relative w-3.5 h-3.5" />
+                            <span className="relative">{label}</span>
+                        </button>
+                    ))}
                 </div>
             </div>
 
@@ -324,74 +362,86 @@ const StudentDashboard = () => {
             ) : (
                 <div className="space-y-8 animate-in fade-in duration-200">
                     {/* ─── Hero Header & Quick Actions ───────────────────── */}
-                    <div className="relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-sm overflow-hidden">
-                {/* Ambient glow decoration */}
-                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-50 dark:bg-emerald-500/5 rounded-full blur-[90px] pointer-events-none" />
-
-                <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-                    <div>
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs font-semibold mb-3">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                            <span>Campus Placement Command Center</span>
-                        </div>
-                        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-                            {greeting}
-                        </h1>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-2xl leading-relaxed">
-                            Monitor your real-time placement readiness, target role skill benchmarks, and active campus drive preparations in one unified hub.
-                        </p>
-                        <div className="flex flex-wrap items-center gap-3 mt-4 text-xs">
-                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80">
-                                <span className="text-slate-400 font-medium">Target Role:</span>
-                                <strong className="text-slate-800 dark:text-slate-200 font-semibold">{target_role || 'Software Engineer'}</strong>
+                    <PageHero
+                        icon={Sparkles}
+                        eyebrow="Campus Placement Command Center"
+                        title={greeting}
+                        subtitle="Monitor your real-time placement readiness, target role skill benchmarks, and active campus drive preparations in one unified hub."
+                        actions={
+                            <>
+                                <Link
+                                    to="/assessment/setup"
+                                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs font-semibold flex items-center gap-2 shadow-md shadow-emerald-600/20 hover:-translate-y-0.5 hover:shadow-lg transition-all cursor-pointer"
+                                >
+                                    <Sparkles className="w-4 h-4" />
+                                    <span>Start New Assessment</span>
+                                </Link>
+                                <Link
+                                    to="/student/practice"
+                                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-50 hover:bg-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs hover:-translate-y-0.5 hover:shadow-md active:scale-95 cursor-pointer"
+                                >
+                                    <Code2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    <span>Solve DSA</span>
+                                </Link>
+                                <Link
+                                    to="/student/simulation"
+                                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-50 hover:bg-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs hover:-translate-y-0.5 hover:shadow-md active:scale-95 cursor-pointer"
+                                >
+                                    <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                    <span>Simulate Drive</span>
+                                </Link>
+                                <Link
+                                    to="/student/resume"
+                                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-50 hover:bg-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs hover:-translate-y-0.5 hover:shadow-md active:scale-95 cursor-pointer"
+                                >
+                                    <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                    <span>Resume</span>
+                                </Link>
+                            </>
+                        }
+                    >
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 max-w-full">
+                                <span className="text-slate-400 font-medium shrink-0">Target Role:</span>
+                                <strong className="text-slate-800 dark:text-slate-200 font-semibold truncate">{target_role || 'Software Engineer'}</strong>
                             </div>
-                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80">
-                                <span className="text-slate-400 font-medium">Target Company:</span>
-                                <strong className="text-slate-800 dark:text-slate-200 font-semibold">{target_company || 'Top Tech & Product Firms'}</strong>
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 max-w-full">
+                                <span className="text-slate-400 font-medium shrink-0">Target Company:</span>
+                                <strong className="text-slate-800 dark:text-slate-200 font-semibold truncate">{target_company || 'Top Tech & Product Firms'}</strong>
                             </div>
                             <Link
                                 to="/student/skill-gap"
-                                className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                                className="inline-flex items-center gap-1 min-h-[40px] px-1 text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
                             >
                                 <span>Skill Gap</span>
                                 <ArrowUpRight className="w-3 h-3" />
                             </Link>
                         </div>
-                    </div>
+                    </PageHero>
 
-                    {/* Quick Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                        <Link
-                            to="/assessment/setup"
-                            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
-                        >
-                            <Sparkles className="w-4 h-4" />
-                            <span>Start New Assessment</span>
-                        </Link>
-                        <Link
-                            to="/student/practice"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
-                        >
-                            <Code2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            <span>Solve DSA</span>
-                        </Link>
-                        <Link
-                            to="/student/simulation"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
-                        >
-                            <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                            <span>Simulate Drive</span>
-                        </Link>
-                        <Link
-                            to="/student/resume"
-                            className="px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
-                        >
-                            <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                            <span>Resume</span>
-                        </Link>
-                    </div>
-                </div>
-            </div>
+            {/* ─── Next Best Action (derived from loaded data only) ── */}
+            {nextAction && (
+                <motion.div
+                    initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, ease: EASE }}
+                >
+                    <Link
+                        to={nextAction.to}
+                        className="group flex items-center gap-3 sm:gap-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-500/30 bg-gradient-to-r from-emerald-50 via-white to-teal-50 dark:from-emerald-950/30 dark:via-slate-900 dark:to-slate-900 px-4 py-3.5 min-h-[56px] shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all"
+                    >
+                        <span className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <nextAction.icon className="w-5 h-5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Next best action</span>
+                            <span className="block text-sm font-semibold text-slate-900 dark:text-white truncate">{nextAction.label}</span>
+                            <span className="block text-xs text-slate-500 dark:text-slate-400 truncate">{nextAction.hint}</span>
+                        </span>
+                        <ArrowRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 transition-transform group-hover:translate-x-1" />
+                    </Link>
+                </motion.div>
+            )}
 
             {/* ─── Unfinished Assessment Alert Banner ─────────────── */}
             {assessmentHistory?.active_session && (
@@ -457,9 +507,10 @@ const StudentDashboard = () => {
             )}
 
             {/* ─── Top 4 High-Impact Metric Cards ────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+            <Stagger className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
                 {/* 1. Total Assessments (Attempted & Completed) */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
+<StaggerItem className="h-full [&>*]:h-full">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm hover:shadow-lg hover:-translate-y-1 flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Assessments
@@ -472,7 +523,7 @@ const StudentDashboard = () => {
                     <div className="my-5">
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                {assessmentHistory?.total_attempted ?? 0}
+                                <Counter to={Number(assessmentHistory?.total_attempted) || 0} />
                             </span>
                             <span className="text-slate-400 font-medium text-xs">
                                 attempted • {assessmentHistory?.total_completed ?? 0} completed
@@ -497,9 +548,11 @@ const StudentDashboard = () => {
                         </button>
                     </div>
                 </div>
+</StaggerItem>
 
                 {/* 2. Latest Assessment Score & Date */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-purple-300 dark:hover:border-purple-500/40 transition-all duration-200">
+<StaggerItem className="h-full [&>*]:h-full">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm hover:shadow-lg hover:-translate-y-1 flex flex-col justify-between group hover:border-purple-300 dark:hover:border-purple-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Latest Assessment
@@ -541,9 +594,11 @@ const StudentDashboard = () => {
                         )}
                     </div>
                 </div>
+</StaggerItem>
 
                 {/* 3. Placement Readiness Hero Card */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
+<StaggerItem className="h-full [&>*]:h-full">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm hover:shadow-lg hover:-translate-y-1 flex flex-col justify-between group hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Placement Readiness
@@ -557,7 +612,7 @@ const StudentDashboard = () => {
                         <div>
                             <div className="flex items-baseline gap-1.5">
                                 <span className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                    {Math.round(readiness_score)}
+                                    <Counter to={Math.round(readiness_score) || 0} />
                                 </span>
                                 <span className="text-slate-400 font-medium text-sm">/ 100</span>
                             </div>
@@ -576,9 +631,11 @@ const StudentDashboard = () => {
                         </Link>
                     </div>
                 </div>
+</StaggerItem>
 
                 {/* 4. Resume ATS Score */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between group hover:border-blue-300 dark:hover:border-blue-500/40 transition-all duration-200">
+<StaggerItem className="h-full [&>*]:h-full">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-sm hover:shadow-lg hover:-translate-y-1 flex flex-col justify-between group hover:border-blue-300 dark:hover:border-blue-500/40 transition-all duration-200">
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                             Resume Score
@@ -591,16 +648,11 @@ const StudentDashboard = () => {
                     <div className="my-5">
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                {Math.round(resume_score)}
+                                <Counter to={Math.round(resume_score) || 0} />
                             </span>
                             <span className="text-slate-400 font-medium text-sm">/ 100</span>
                         </div>
-                        <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
-                            <div 
-                                className="bg-gradient-to-r from-blue-600 to-cyan-500 h-full rounded-full transition-all duration-700"
-                                style={{ width: `${Math.min(100, Math.max(5, resume_score))}%` }}
-                            />
-                        </div>
+                        <GradBar value={Math.min(100, Math.max(5, resume_score))} grad="from-blue-600 to-cyan-500" height="h-2" track="bg-slate-100 dark:bg-slate-800" className="mt-3" />
                     </div>
 
                     <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px]">
@@ -612,7 +664,8 @@ const StudentDashboard = () => {
                         </Link>
                     </div>
                 </div>
-            </div>
+</StaggerItem>
+            </Stagger>
 
             {/* ─── Section View Switcher Tabs ────────────────────── */}
             <div className="flex items-center gap-2 border-b border-slate-200/80 dark:border-slate-800 pb-3 overflow-x-auto student-scrollbar">
@@ -628,9 +681,9 @@ const StudentDashboard = () => {
                         <button
                             key={tab.id}
                             onClick={() => setSection(tab.id)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                            className={`relative flex items-center gap-2 px-4 py-2.5 min-h-[40px] rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
                                 active
-                                    ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
                                     : 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                             }`}
                         >
@@ -643,7 +696,7 @@ const StudentDashboard = () => {
 
             {/* ─── Previous Assessment Records (My Assessments) ─── */}
             {(section === 'all' || section === 'assessments') && (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-500">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 tracking-tight">
@@ -694,7 +747,7 @@ const StudentDashboard = () => {
 
                         if (allRecords.length === 0) {
                             return (
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-10 text-center shadow-xs">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-10 text-center shadow-xs">
                                     <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto mb-4">
                                         <ClipboardList className="w-8 h-8" />
                                     </div>
@@ -898,7 +951,7 @@ const StudentDashboard = () => {
 
             {/* ─── Progress Trends & Areas for Improvement ───────── */}
             {(section === 'all' || section === 'progress') && (
-                <div className="space-y-6">
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
                     {/* Progress Trends Bar Chart / Visual Timeline */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-xs">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
@@ -917,9 +970,12 @@ const StudentDashboard = () => {
                         </div>
 
                         {(!assessmentHistory?.trends || assessmentHistory.trends.length === 0) ? (
-                            <p className="text-xs text-slate-500 dark:text-slate-400 italic py-4 text-center">
-                                No assessment trend records available yet. Complete your first assessment to track score progression over time.
-                            </p>
+                            <EmptyState
+                                icon={TrendingUp}
+                                title="Your trajectory starts here"
+                                body="No assessment trend records available yet. Complete your first assessment to track score progression over time."
+                                action={<Link to="/assessment/setup" className="px-5 py-2.5 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-all"><Sparkles className="w-4 h-4" /><span>Take an assessment</span></Link>}
+                            />
                         ) : (
                             <div className="space-y-4">
                                 {assessmentHistory.trends.map((tr, idx) => (
@@ -936,12 +992,7 @@ const StudentDashboard = () => {
                                         </div>
 
                                         {/* Overall bar */}
-                                        <div className="w-full bg-slate-200/80 dark:bg-slate-700 h-2 rounded-full overflow-hidden mb-3">
-                                            <div 
-                                                className="bg-gradient-to-r from-emerald-600 to-teal-500 h-full rounded-full transition-all duration-700"
-                                                style={{ width: `${Math.min(100, Math.max(5, tr.overall))}%` }}
-                                            />
-                                        </div>
+                                        <GradBar value={Math.min(100, Math.max(5, tr.overall))} grad="from-emerald-600 to-teal-500" height="h-2" track="bg-slate-200/80 dark:bg-slate-700" className="mb-3" />
 
                                         {/* Round mini-breakdown */}
                                         <div className="grid grid-cols-3 gap-2 text-center text-[11px] pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
@@ -1037,7 +1088,7 @@ const StudentDashboard = () => {
                         const completed = (assessmentHistory?.assessments || []).filter(a => a.is_completed);
                         if (completed.length === 0) {
                             return (
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-10 text-center shadow-xs">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 sm:p-10 text-center shadow-xs">
                                     <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 mx-auto mb-4">
                                         <Award className="w-8 h-8" />
                                     </div>
@@ -1127,8 +1178,9 @@ const StudentDashboard = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     {/* 1. Roadmap Plan */}
+<StaggerItem className="h-full [&>*]:h-full">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-cyan-400 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all duration-200 group">
                         <div>
                             <div className="flex items-center justify-between mb-3">
@@ -1144,20 +1196,17 @@ const StudentDashboard = () => {
                                 <span className="text-slate-500 dark:text-slate-400 text-xs">/ {roadmapStats.total_tasks || 0} tasks</span>
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Daily curriculum pacing</p>
-                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-                                <div 
-                                    className="bg-cyan-500 h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${roadmapStats.total_tasks ? Math.round((roadmapStats.completed_tasks / roadmapStats.total_tasks) * 100) : 0}%` }}
-                                />
-                            </div>
+                            <GradBar value={roadmapStats.total_tasks ? Math.round((roadmapStats.completed_tasks / roadmapStats.total_tasks) * 100) : 0} grad="from-cyan-500 to-cyan-400" height="h-1.5" track="bg-slate-100 dark:bg-slate-800" className="mt-3" />
                         </div>
                         <Link to="/student/roadmap" className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-cyan-600 dark:text-cyan-400 font-semibold flex items-center justify-between group-hover:translate-x-0.5 transition-transform">
                             <span>Open Roadmap</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                         </Link>
                     </div>
+</StaggerItem>
 
                     {/* 2. DSA & Aptitude Practice */}
+<StaggerItem className="h-full [&>*]:h-full">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-emerald-400 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all duration-200 group">
                         <div>
                             <div className="flex items-center justify-between mb-3">
@@ -1173,20 +1222,17 @@ const StudentDashboard = () => {
                                 <span className="text-slate-500 dark:text-slate-400 text-xs">solved</span>
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Algorithmic & reasoning questions</p>
-                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-                                <div 
-                                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${Math.min(100, practiceStats.solved_count * 5)}%` }}
-                                />
-                            </div>
+                            <GradBar value={Math.min(100, practiceStats.solved_count * 5)} grad="from-emerald-500 to-emerald-400" height="h-1.5" track="bg-slate-100 dark:bg-slate-800" className="mt-3" />
                         </div>
                         <Link to="/student/practice" className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between group-hover:translate-x-0.5 transition-transform">
                             <span>Practice Arena</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                         </Link>
                     </div>
+</StaggerItem>
 
                     {/* 3. AI Mock Interviews */}
+<StaggerItem className="h-full [&>*]:h-full">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-indigo-400 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all duration-200 group">
                         <div>
                             <div className="flex items-center justify-between mb-3">
@@ -1206,20 +1252,17 @@ const StudentDashboard = () => {
                                 )}
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Completed panel sessions</p>
-                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-                                <div 
-                                    className="bg-indigo-500 h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${Math.min(100, interviewStats.avg_score || 0)}%` }}
-                                />
-                            </div>
+                            <GradBar value={Math.min(100, interviewStats.avg_score || 0)} grad="from-indigo-500 to-indigo-400" height="h-1.5" track="bg-slate-100 dark:bg-slate-800" className="mt-3" />
                         </div>
                         <Link to="/student/interview" className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold flex items-center justify-between group-hover:translate-x-0.5 transition-transform">
                             <span>Launch Interview</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                         </Link>
                     </div>
+</StaggerItem>
 
                     {/* 4. Portfolio Projects */}
+<StaggerItem className="h-full [&>*]:h-full">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-amber-400 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all duration-200 group">
                         <div>
                             <div className="flex items-center justify-between mb-3">
@@ -1235,20 +1278,17 @@ const StudentDashboard = () => {
                                 <span className="text-slate-500 dark:text-slate-400 text-xs">analyzed</span>
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Architecture & repo audits</p>
-                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-                                <div 
-                                    className="bg-amber-500 h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${Math.min(100, projectStats.total_projects * 33)}%` }}
-                                />
-                            </div>
+                            <GradBar value={Math.min(100, projectStats.total_projects * 33)} grad="from-amber-500 to-amber-400" height="h-1.5" track="bg-slate-100 dark:bg-slate-800" className="mt-3" />
                         </div>
                         <Link to="/student/projects" className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center justify-between group-hover:translate-x-0.5 transition-transform">
                             <span>Audit Project</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                         </Link>
                     </div>
+</StaggerItem>
 
                     {/* 5. Placement Simulation */}
+<StaggerItem className="h-full [&>*]:h-full">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-rose-400 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all duration-200 group">
                         <div>
                             <div className="flex items-center justify-between mb-3">
@@ -1265,19 +1305,15 @@ const StudentDashboard = () => {
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                                 {simulationStats.score !== null ? 'Latest drive scorecard' : '4-round placement test'}
                             </p>
-                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-                                <div 
-                                    className="bg-rose-500 h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${simulationStats.score !== null ? Math.round(simulationStats.score) : 25}%` }}
-                                />
-                            </div>
+                            <GradBar value={simulationStats.score !== null ? Math.round(simulationStats.score) : 25} grad="from-rose-500 to-rose-400" height="h-1.5" track="bg-slate-100 dark:bg-slate-800" className="mt-3" />
                         </div>
                         <Link to="/student/simulation" className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-rose-600 dark:text-rose-400 font-semibold flex items-center justify-between group-hover:translate-x-0.5 transition-transform">
                             <span>Simulate Drive</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                         </Link>
                     </div>
-                </div>
+</StaggerItem>
+            </Stagger>
             </div>
 
             {/* ─── Readiness Score Breakdown (6 Dimensions) ────────── */}
@@ -1312,16 +1348,11 @@ const StudentDashboard = () => {
                             return (
                                 <div 
                                     key={key} 
-                                    className="bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 rounded-2xl p-4 text-center transition-all"
+                                    className="bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 rounded-2xl p-4 text-center transition-all hover:-translate-y-0.5 hover:shadow-md"
                                 >
                                     <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 block truncate mb-1">{label}</span>
                                     <span className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">{val}%</span>
-                                    <div className="w-full bg-slate-200/70 dark:bg-slate-700 h-1.5 rounded-full mt-2.5 overflow-hidden">
-                                        <div
-                                            className={`h-full rounded-full bg-gradient-to-r ${barGrad} transition-all duration-700`}
-                                            style={{ width: `${Math.min(100, Math.max(0, val))}%` }}
-                                        />
-                                    </div>
+                                    <GradBar value={Math.min(100, Math.max(0, val))} grad={barGrad} height="h-1.5" track="bg-slate-200/70 dark:bg-slate-700" className="mt-2.5" />
                                 </div>
                             );
                         })}
@@ -1352,7 +1383,7 @@ const StudentDashboard = () => {
                         {copilotSuggestions.map((suggestion, idx) => (
                             <div 
                                 key={idx}
-                                className="p-3.5 bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 hover:border-emerald-300 rounded-2xl text-xs text-slate-700 dark:text-slate-300 flex items-start gap-3 shadow-2xs transition-colors"
+                                className="p-3.5 bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 hover:border-emerald-300 hover:-translate-y-0.5 hover:shadow-sm rounded-2xl text-xs text-slate-700 dark:text-slate-300 flex items-start gap-3 shadow-2xs transition-all"
                             >
                                 <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                                 <span className="leading-relaxed">{suggestion}</span>

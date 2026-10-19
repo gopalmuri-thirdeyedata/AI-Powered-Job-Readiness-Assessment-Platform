@@ -93,7 +93,7 @@ export default function RoleReadyAuthGuard({ children }) {
 
     if (!isLoaded || isVerifying) {
         return (
-            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center text-slate-600 dark:text-slate-400">
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 text-center text-slate-600 dark:text-slate-400">
                 <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-3" />
                 <span className="text-xs font-mono">Verifying student authorization...</span>
             </div>

@@ -457,7 +457,7 @@ export default function PlatformAdminDashboard() {
                         onClick={() => setIsCreateModalOpen(false)}
                     />
 
-                    <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-lg w-full p-6 z-10 animate-in fade-in zoom-in-95">
+                    <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-lg w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 z-10 animate-in fade-in zoom-in-95">
                         <div className="flex justify-between items-center pb-4 mb-4 border-b border-gray-100">
                             <div className="flex items-center gap-2.5">
                                 <span className="p-2 bg-green-50 text-green-700 rounded-xl">

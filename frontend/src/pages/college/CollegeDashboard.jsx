@@ -49,7 +49,7 @@ const CollegeDashboard = () => {
 
     if (error) {
         return (
-            <div className="max-w-2xl mx-auto bg-slate-800/80 border border-rose-500/30 rounded-2xl p-8 text-center">
+            <div className="max-w-2xl mx-auto bg-slate-800/80 border border-rose-500/30 rounded-2xl p-5 sm:p-8 text-center">
                 <AlertTriangle className="w-12 h-12 text-rose-400 mx-auto mb-4" />
                 <h2 className="text-xl font-bold text-white mb-2">Unable to load cohort overview</h2>
                 <p className="text-slate-300 text-sm mb-6">{error}</p>
@@ -87,7 +87,7 @@ const CollegeDashboard = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                    <h1 className="text-xl sm:text-3xl font-bold text-white tracking-tight">
                         Cohort Placement & Readiness Intelligence
                     </h1>
                     <p className="text-sm text-slate-400 mt-1">
@@ -97,7 +97,7 @@ const CollegeDashboard = () => {
                 <div className="flex items-center gap-3">
                     <Link
                         to="/college/drives"
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-sm transition-all"
+                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-sm transition-all"
                     >
                         <Building2 className="w-4 h-4" />
                         <span>Manage Placement Drives</span>
@@ -194,7 +194,7 @@ const CollegeDashboard = () => {
             </div>
 
             {/* Readiness Tier Distribution Breakdown */}
-            <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm">
+            <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 sm:p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <TrendingUp className="w-5 h-5 text-indigo-400" />
@@ -263,7 +263,7 @@ const CollegeDashboard = () => {
             {/* Top Skills & Common Curriculum Gaps */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Top Skills in Cohort */}
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm">
+                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 sm:p-6 shadow-sm">
                     <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-700/60">
                         <Sparkles className="w-5 h-5 text-indigo-400" />
                         <h2 className="text-base font-bold text-white">Top Technical Skills in Cohort</h2>
@@ -274,7 +274,7 @@ const CollegeDashboard = () => {
                         <div className="space-y-3">
                             {top_cohort_skills.map((item, idx) => (
                                 <div key={idx} className="flex items-center justify-between text-xs">
-                                    <span className="text-slate-200 font-medium">{item.skill}</span>
+                                    <span className="text-slate-200 font-medium min-w-0 truncate pr-2">{item.skill}</span>
                                     <div className="flex items-center gap-3">
                                         <div className="w-28 bg-slate-700 h-2 rounded-full overflow-hidden hidden sm:block">
                                             <div 
@@ -293,7 +293,7 @@ const CollegeDashboard = () => {
                 </div>
 
                 {/* Common Skill Gaps & Deficits */}
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm">
+                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 sm:p-6 shadow-sm">
                     <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-700/60">
                         <Target className="w-5 h-5 text-amber-400" />
                         <h2 className="text-base font-bold text-white">Cohort Skill Deficits & Training Needs</h2>
@@ -328,7 +328,7 @@ const CollegeDashboard = () => {
 
             {/* Branch Distribution */}
             {Object.keys(branch_distribution).length > 0 && (
-                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-sm">
+                <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 sm:p-6 shadow-sm">
                     <div className="flex items-center gap-2 mb-3">
                         <BookOpen className="w-5 h-5 text-cyan-400" />
                         <h2 className="text-base font-bold text-white">Branch Enrollment Distribution</h2>

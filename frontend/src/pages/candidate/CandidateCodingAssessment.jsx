@@ -647,7 +647,7 @@ const CandidateCodingAssessment = () => {
     if (submitted) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-gray-900 p-4">
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-gray-800 border border-gray-700 rounded-2xl shadow-xl p-8 max-w-lg w-full text-center">
+                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-gray-800 border border-gray-700 rounded-2xl shadow-xl p-5 sm:p-8 max-w-lg w-full text-center">
                     <div className="w-20 h-20 bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
                         <CheckCircle className="text-green-500" size={40} />
                     </div>
@@ -682,7 +682,7 @@ const CandidateCodingAssessment = () => {
             />
 
             {/* ── Corner Camera Preview Widget (bottom-right, above console) ── */}
-            <div className="fixed bottom-6 right-4 z-40 group">
+            <div className="fixed bottom-3 right-2 sm:bottom-6 sm:right-4 z-40 group origin-bottom-right scale-[0.6] sm:scale-100">
                 {/* Bounding box — solid colored border */}
                 <div style={{
                     position: 'relative',
@@ -771,12 +771,12 @@ const CandidateCodingAssessment = () => {
                         initial={{ opacity: 0, y: -50 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -50 }}
-                        className="fixed top-0 left-0 right-0 z-[100] bg-red-600 text-white px-6 py-4 shadow-2xl"
+                        className="fixed top-0 left-0 right-0 z-[100] bg-red-600 text-white px-4 sm:px-6 py-3 sm:py-4 shadow-2xl"
                     >
-                        <div className="max-w-5xl mx-auto flex items-center gap-4">
+                        <div className="max-w-5xl mx-auto flex items-center gap-3 sm:gap-4">
                             <AlertTriangle size={28} className="flex-shrink-0 animate-pulse" />
                             <div className="flex-1">
-                                <p className="font-bold text-lg">{warningMessage}</p>
+                                <p className="font-bold text-base sm:text-lg">{warningMessage}</p>
                                 <p className="text-sm text-red-100 mt-1">Warning: {violationCount}/3 - Further violations will result in automatic submission.</p>
                             </div>
                             {violationCount < 3 && (
@@ -801,7 +801,7 @@ const CandidateCodingAssessment = () => {
                         <motion.div
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            className="bg-gray-900 border border-red-500/50 p-8 rounded-2xl max-w-md shadow-2xl"
+                            className="bg-gray-900 border border-red-500/50 p-5 sm:p-8 rounded-2xl w-full max-w-md shadow-2xl"
                         >
                             <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <AlertTriangle size={40} className="text-red-500 animate-pulse" />
@@ -820,9 +820,9 @@ const CandidateCodingAssessment = () => {
             </AnimatePresence>
 
             {/* --- HEADER --- */}
-            <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4 shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
+            <header className="min-h-[3.5rem] py-1.5 bg-gray-900 border-b border-gray-800 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3 sm:px-4 shrink-0">
+                <div className="flex items-center gap-2 sm:gap-4 min-w-0 basis-full md:basis-auto md:flex-1">
+                    <div className="flex items-center gap-2 shrink-0">
                         <div className="bg-blue-600/20 p-1.5 rounded-lg">
                             <Code size={18} className="text-blue-500" />
                         </div>
@@ -831,8 +831,8 @@ const CandidateCodingAssessment = () => {
                             <span className="text-xs text-gray-500">Question {currentQuestionIndex + 1}/{questions.length}</span>
                         </div>
                     </div>
-                    <div className="h-6 w-px bg-gray-800 mx-2" />
-                    <div className="flex flex-1 overflow-x-auto gap-1">
+                    <div className="h-6 w-px bg-gray-800 mx-1 sm:mx-2 shrink-0" />
+                    <div className="flex flex-1 min-w-0 overflow-x-auto gap-1">
                         {questions.map((q, idx) => (
                             <button
                                 key={q.id}
@@ -849,14 +849,14 @@ const CandidateCodingAssessment = () => {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 sm:gap-4 ml-auto">
                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded bg-gray-800 border border-gray-700`}>
                         <Clock size={14} className={timeLeft < 300 ? 'text-red-500' : 'text-gray-400'} />
                         <span className={`text-sm font-mono font-bold ${timeLeft < 300 ? 'text-red-400' : 'text-gray-200'}`}>{formatTime(timeLeft)}</span>
                     </div>
                     <button
                         onClick={() => handleSubmit()}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-semibold transition-colors shadow-lg shadow-green-900/20"
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 sm:py-1.5 rounded text-sm font-semibold transition-colors shadow-lg shadow-green-900/20"
                     >
                         Submit
                     </button>
@@ -865,7 +865,7 @@ const CandidateCodingAssessment = () => {
 
             {/* --- MAIN CONTENT (SPLIT LAYOUT) --- */}
             <div
-                className="flex-1 flex overflow-hidden select-none bg-gray-900"
+                className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden select-none bg-gray-900"
                 onMouseMove={(e) => {
                     // Fallback move handler needed here if mouse leaves iframe/document
                     // Although main logic is in useEffect, having it here helps propagation
@@ -874,7 +874,7 @@ const CandidateCodingAssessment = () => {
 
                 {/* LEFT PANEL (Resizable) */}
                 <div
-                    className={`flex flex-col border-r border-gray-800 bg-gray-900 transition-none ${isCollaspedLeft ? 'hidden' : 'flex'}`}
+                    className={`flex flex-col border-r border-gray-800 bg-gray-900 transition-none max-lg:!w-full max-lg:!min-w-0 max-lg:!max-w-none max-lg:!h-[50vh] max-lg:shrink-0 max-lg:border-r-0 max-lg:border-b ${isCollaspedLeft ? 'hidden' : 'flex'}`}
                     style={{ width: `${leftPanelWidth}%`, minWidth: '15%', maxWidth: '50%' }}
                 >
                     {/* Tabs */}
@@ -884,7 +884,7 @@ const CandidateCodingAssessment = () => {
                                 <button
                                     key={tab}
                                     onClick={() => setActiveLeftTab(tab.toLowerCase())}
-                                    className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeLeftTab === tab.toLowerCase()
+                                    className={`px-3 sm:px-4 py-2.5 sm:py-2 text-xs font-medium border-b-2 transition-colors ${activeLeftTab === tab.toLowerCase()
                                         ? 'border-blue-500 text-blue-400 font-semibold'
                                         : 'border-transparent text-gray-300 hover:text-white'
                                         }`}
@@ -903,7 +903,7 @@ const CandidateCodingAssessment = () => {
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={activeLeftTab}
@@ -1011,7 +1011,7 @@ const CandidateCodingAssessment = () => {
                 {/* HORIZONTAL RESIZER */}
                 {!isCollaspedLeft && (
                     <div
-                        className="w-1 cursor-col-resize hover:bg-blue-600 active:bg-blue-600 bg-gray-900 transition-colors z-20 flex items-center justify-center group shrink-0"
+                        className="max-lg:hidden w-1 cursor-col-resize hover:bg-blue-600 active:bg-blue-600 bg-gray-900 transition-colors z-20 flex items-center justify-center group shrink-0"
                         onMouseDown={(e) => { e.preventDefault(); setIsDragging('horizontal'); }}
                     >
                         <div className="h-8 w-0.5 bg-gray-800 group-hover:bg-blue-300 rounded-full transition-colors" />
@@ -1020,12 +1020,12 @@ const CandidateCodingAssessment = () => {
 
 
                 {/* RIGHT PANEL: EDITOR & CONSOLE */}
-                <div className="flex-1 flex flex-col bg-gray-900 overflow-hidden relative min-w-0" data-right-panel style={{ isolation: 'isolate' }}>
+                <div className="flex-1 flex flex-col bg-gray-900 overflow-hidden relative min-w-0 max-lg:h-[90vh] max-lg:flex-none max-lg:shrink-0" data-right-panel style={{ isolation: 'isolate' }}>
 
                     {/* EDITOR CONTAINER (FLEX-1: Takes remaining space) */}
                     <div className="flex-1 relative flex flex-col min-h-0 bg-gray-900" style={{ contain: 'layout paint', willChange: 'auto' }}>
                         {/* Language Selector Header */}
-                        <div className="flex items-center justify-between bg-gray-900 border-b border-gray-800 px-4 py-2 shrink-0">
+                        <div className="flex items-center justify-between bg-gray-900 border-b border-gray-800 px-3 sm:px-4 py-2 shrink-0">
                             <div className="flex items-center gap-2">
                                 <Code size={14} className="text-gray-500" />
                                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Code Editor</span>
@@ -1083,7 +1083,7 @@ const CandidateCodingAssessment = () => {
 
                     {/* VERTICAL RESIZER */}
                     <div
-                        className="h-1 cursor-row-resize hover:bg-blue-600 active:bg-blue-600 bg-gray-900 transition-colors z-30 w-full flex justify-center items-center group shrink-0"
+                        className="max-lg:hidden h-1 cursor-row-resize hover:bg-blue-600 active:bg-blue-600 bg-gray-900 transition-colors z-30 w-full flex justify-center items-center group shrink-0"
                         onMouseDown={(e) => { e.preventDefault(); setIsDragging('vertical'); }}
                     >
                         <div className="w-12 h-0.5 bg-gray-700 group-hover:bg-blue-300 rounded-full transition-colors" />
@@ -1100,7 +1100,7 @@ const CandidateCodingAssessment = () => {
                         willChange: isDragging === 'vertical' ? 'flex-basis' : 'auto'
                     }}>
                         {/* Console Tabs */}
-                        <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-2 min-h-[40px] shrink-0">
+                        <div className="flex flex-wrap items-center justify-between border-b border-gray-800 bg-gray-900 px-2 min-h-[40px] shrink-0">
                             <div className="flex gap-1">
                                 <button
                                     onClick={() => setActiveRightTab('testcases')}
@@ -1225,22 +1225,22 @@ const CandidateCodingAssessment = () => {
                                                             <span className="text-[10px] text-gray-600 font-mono">{res.runtime}</span>
                                                         </div>
                                                         <div className="bg-gray-800/50 rounded-lg p-3 space-y-2 border border-gray-800 group-hover:border-gray-700 transition-colors">
-                                                            <div className="grid grid-cols-[60px_1fr] gap-2">
+                                                            <div className="grid grid-cols-[60px_minmax(0,1fr)] gap-2">
                                                                 <span className="text-xs text-gray-300">Input:</span>
-                                                                <code className="text-xs font-mono text-gray-300 bg-gray-900 px-1.5 py-0.5 rounded w-fit">
+                                                                <code className="text-xs font-mono text-gray-300 bg-gray-900 px-1.5 py-0.5 rounded w-fit max-w-full break-all">
                                                                     {typeof res.input === 'object' ? JSON.stringify(res.input) : String(res.input)}
                                                                 </code>
                                                             </div>
-                                                            <div className="grid grid-cols-[60px_1fr] gap-2">
+                                                            <div className="grid grid-cols-[60px_minmax(0,1fr)] gap-2">
                                                                 <span className="text-xs text-gray-300">Output:</span>
-                                                                <code className={`text-xs font-mono px-1.5 py-0.5 rounded w-fit ${res.status === 'passed' ? 'text-green-300 bg-green-900/20' : 'text-red-300 bg-red-900/20'}`}>
+                                                                <code className={`text-xs font-mono px-1.5 py-0.5 rounded w-fit max-w-full break-all ${res.status === 'passed' ? 'text-green-300 bg-green-900/20' : 'text-red-300 bg-red-900/20'}`}>
                                                                     {typeof res.output === 'object' ? JSON.stringify(res.output) : String(res.output)}
                                                                 </code>
                                                             </div>
                                                             {res.status !== 'passed' && (
-                                                                <div className="grid grid-cols-[60px_1fr] gap-2">
+                                                                <div className="grid grid-cols-[60px_minmax(0,1fr)] gap-2">
                                                                     <span className="text-xs text-gray-300">Expected:</span>
-                                                                    <code className="text-xs font-mono text-gray-300 bg-gray-900 px-1.5 py-0.5 rounded w-fit">
+                                                                    <code className="text-xs font-mono text-gray-300 bg-gray-900 px-1.5 py-0.5 rounded w-fit max-w-full break-all">
                                                                         {typeof res.expected === 'object' ? JSON.stringify(res.expected) : String(res.expected)}
                                                                     </code>
                                                                 </div>

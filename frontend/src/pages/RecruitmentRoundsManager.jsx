@@ -278,7 +278,7 @@ const AptitudeConfig = ({ config, onChange }) => (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-5">
                     <FormHelper title="Assessment Topics" required>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {['Logical Reasoning', 'Quantitative Analysis', 'Verbal', 'Data Interpretation'].map(topic => (
                                 <label key={topic} className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-all ${(config.topics || []).includes(topic) ? 'bg-white border-blue-500 shadow-md ring-1 ring-blue-500/10' : 'bg-white border-gray-200 hover:border-blue-300'
                                     }`}>
@@ -298,7 +298,7 @@ const AptitudeConfig = ({ config, onChange }) => (
                         </div>
                     </FormHelper>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FormHelper title="Duration (mins)" required>
                             <div className="relative">
                                 <Clock className="absolute left-3 top-2.5 text-gray-400" size={16} />
@@ -463,7 +463,7 @@ const CodingConfig = ({ config, onChange }) => (
                         <DifficultySelector selected={config.difficulty} onSelect={(val) => onChange('difficulty', val)} />
                     </FormHelper>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* NEW FIELD: Number of Questions */}
                         <FormHelper title="Questions" required>
                             <div className="relative">
@@ -864,7 +864,7 @@ const RecruitmentRoundsManager = () => {
 
                         <div className="p-6 flex-1 flex flex-col overflow-hidden">
                             {entryMode === 'manual' ? (
-                                <div className="flex-1 flex flex-col justify-center items-center text-center p-8 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                                <div className="flex-1 flex flex-col justify-center items-center text-center p-5 sm:p-8 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
                                     <div className="w-16 h-16 bg-white border border-gray-200 shadow-sm rounded-full flex items-center justify-center mb-4">
                                         <Mail className="text-green-600" size={32} />
                                     </div>
@@ -884,7 +884,7 @@ const RecruitmentRoundsManager = () => {
                                 </div>
                             ) : (
                                 <div className="flex flex-col h-full gap-4">
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="w-full">
                                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Stage</label>
                                             <div className="relative">

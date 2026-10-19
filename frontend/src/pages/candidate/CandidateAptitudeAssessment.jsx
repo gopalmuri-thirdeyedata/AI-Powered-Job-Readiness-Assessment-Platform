@@ -410,7 +410,7 @@ const CandidateAptitudeAssessment = () => {
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="bg-white rounded-2xl shadow-xl p-8 max-w-lg w-full text-center"
+                    className="bg-white rounded-2xl shadow-xl p-5 sm:p-8 max-w-lg w-full text-center"
                 >
                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <CheckCircle className="text-green-600" size={40} />
@@ -583,7 +583,7 @@ const CandidateAptitudeAssessment = () => {
                             borderBottom: '3px solid #fca5a5'
                         }}
                     >
-                        <div className="max-w-5xl mx-auto px-6 py-4 flex items-start gap-4">
+                        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-start gap-3 sm:gap-4">
                             <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0 animate-pulse mt-0.5">
                                 <AlertCircle size={22} className="text-white" />
                             </div>
@@ -624,7 +624,7 @@ const CandidateAptitudeAssessment = () => {
                         <motion.div
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            className="bg-gray-900 border border-red-500/50 p-8 rounded-2xl max-w-md shadow-2xl"
+                            className="bg-gray-900 border border-red-500/50 p-5 sm:p-8 rounded-2xl w-full max-w-md shadow-2xl"
                         >
                             <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <AlertCircle size={40} className="text-red-500 animate-pulse" />
@@ -775,7 +775,7 @@ const CandidateAptitudeAssessment = () => {
                         <button
                             onClick={handlePrev}
                             disabled={currentQuestion === 0}
-                            className={`px-6 py-2.5 rounded-lg font-medium transition-colors ${currentQuestion === 0
+                            className={`px-4 sm:px-6 py-2.5 rounded-lg font-medium transition-colors ${currentQuestion === 0
                                 ? 'text-gray-300 cursor-not-allowed'
                                 : 'text-gray-600 hover:bg-gray-100'
                                 }`}
@@ -786,14 +786,14 @@ const CandidateAptitudeAssessment = () => {
                         {currentQuestion === questions.length - 1 ? (
                             <button
                                 onClick={() => handleSubmit()}
-                                className="px-8 py-2.5 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-200 transition-all"
+                                className="px-5 sm:px-8 py-2.5 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-200 transition-all"
                             >
                                 Submit Assessment
                             </button>
                         ) : (
                             <button
                                 onClick={handleNext}
-                                className="px-8 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
+                                className="px-5 sm:px-8 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
                             >
                                 Next Question
                             </button>

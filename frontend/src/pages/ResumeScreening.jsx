@@ -221,7 +221,7 @@ const CandidateResultCard = ({ candidate, rank }) => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-0 sm:pl-8">
                             <div>
                                 <h5 className="text-xs font-bold text-green-700 uppercase tracking-wide mb-2">Relevant Strengths</h5>
                                 <div className="flex flex-wrap gap-2">
@@ -1430,7 +1430,7 @@ const ResumeScreening = () => {
                             initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.95, opacity: 0 }}
-                            className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 overflow-hidden border border-gray-100"
+                            className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto border border-gray-100"
                         >
                             {/* Modal Header with Branding */}
                             <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-5">

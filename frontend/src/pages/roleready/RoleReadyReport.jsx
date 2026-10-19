@@ -26,53 +26,12 @@ import {
 import rolereadyApi from '../../services/rolereadyApi';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
-
-const CircularGauge = ({ score = 0, size = 130, strokeWidth = 10 }) => {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = 2 * Math.PI * radius;
-    const validScore = Math.min(100, Math.max(0, Math.round(score)));
-    const strokeDashoffset = circumference - (validScore / 100) * circumference;
-
-    let strokeColor = '#10B981';
-    if (validScore < 50) strokeColor = '#F43F5E';
-    else if (validScore < 75) strokeColor = '#F59E0B';
-
-    return (
-        <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-            <svg className="transform -rotate-90" width={size} height={size}>
-                <circle
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    stroke="currentColor"
-                    className="text-slate-200 dark:text-slate-800"
-                    strokeWidth={strokeWidth}
-                    fill="transparent"
-                />
-                <circle
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    stroke={strokeColor}
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    fill="transparent"
-                    className="transition-all duration-1000 ease-out"
-                />
-            </svg>
-            <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-none">
-                    {validScore}%
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mt-1">
-                    Job Fit
-                </span>
-            </div>
-        </div>
-    );
-};
+import { motion } from 'framer-motion';
+import { Counter } from '../../components/home/primitives';
+import {
+    PrintStyles, Rv, AnimBar, ConfettiBurst, AnimatedGauge as CircularGauge,
+    SectionNav, SummaryStrip, PlanTimeline,
+} from '../../components/report-ui/ReportMotion';
 
 const formatDuration = (seconds = 0) => {
     const m = Math.floor(seconds / 60);
@@ -175,7 +134,7 @@ const RoleReadyReport = () => {
         const activeStep = Math.min(steps.length - 1, 1 + Math.floor(waitedSeconds / 10));
         return (
             <div className="rr-page flex flex-col items-center justify-center p-6 text-center">
-                <div className="rr-card p-8 max-w-md w-full space-y-5">
+                <div className="rr-card p-5 sm:p-8 max-w-md w-full space-y-5">
                     {failed ? <AlertTriangle className="w-10 h-10 text-[var(--rr-warning)] mx-auto" /> : <RefreshCw className="w-10 h-10 text-[var(--brand)] animate-spin mx-auto" />}
                     <div>
                         <h2 className="text-lg font-bold text-[var(--rr-text)]">{failed ? "Evaluation did not finish" : "Preparing your report"}</h2>
@@ -248,8 +207,16 @@ const RoleReadyReport = () => {
         ? final_report.interview_communication_score 
         : interview_score;
 
+    const isDisqualified = !!final_report.is_disqualified;
+    const isStrong = !isDisqualified && overall_readiness_score >= 80;
+    const needsSupport = isDisqualified || overall_readiness_score < 50;
+    const strengthsCount = skillsVerified.length + skillGap.filter(g => g.status === "Demonstrated").length;
+    const gapsCount = areasToImprove.length + skillGap.filter(g => g.status !== "Demonstrated").length;
+    const nextStepsCount = recommendations.length + Object.keys(learningRoadmap).length;
+
     return (
-        <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-emerald-100 selection:text-emerald-900 flex flex-col">
+        <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-emerald-100 selection:text-emerald-900 flex flex-col overflow-x-hidden">
+            <PrintStyles />
             <RoleReadyNavbar title="Assessment Report" />
             <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
                 {/* Header Actions */}
@@ -273,7 +240,7 @@ const RoleReadyReport = () => {
                         )}
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <button
                             onClick={() => window.print()}
                             className="rr-btn-secondary"
@@ -291,8 +258,8 @@ const RoleReadyReport = () => {
                 </div>
 
                 {/* Malpractice Disqualification Banner */}
-                {final_report.is_disqualified && (
-                    <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-3 shadow-xs">
+                {isDisqualified && (
+                    <Rv className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-3 shadow-xs">
                         <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
                         <div>
                             <h3 className="font-bold text-sm text-red-900">Assessment Disqualified (Malpractice Violations Recorded)</h3>
@@ -300,12 +267,19 @@ const RoleReadyReport = () => {
                                 {final_report.disqualification_note || final_report.termination_reason || "Maximum proctoring violations reached during this assessment. Scores have been forfeited."}
                             </p>
                         </div>
-                    </div>
+                    </Rv>
                 )}
 
+                <SectionNav />
+
                 {/* Hero Readiness Overview Card */}
-                <div className="rr-card p-8 flex flex-col md:flex-row md:items-center justify-between gap-8 border-l-4 border-[var(--brand)]">
-                    <div className="space-y-4 max-w-xl">
+                <Rv id="sec-overview" className="scroll-mt-20 space-y-4">
+                <div className={`rr-card relative overflow-hidden p-5 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-5 sm:gap-8 border-l-4 ${needsSupport ? 'border-slate-400' : 'border-[var(--brand)]'}`}>
+                    {isStrong && <ConfettiBurst />}
+                    {!needsSupport && (
+                        <div aria-hidden="true" className="pw-noprint pointer-events-none absolute -top-16 -right-16 w-56 h-56 rounded-full bg-emerald-400/10 blur-3xl animate-pw-blob" />
+                    )}
+                    <div className="relative space-y-4 max-w-xl min-w-0">
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[var(--rr-bg)] border border-[var(--rr-border)] text-xs font-semibold">
                             <Sparkles className="w-3.5 h-3.5 text-[var(--brand)]" />
                             <span className="text-[var(--rr-text-2)]">Composite Readiness Tier:</span>
@@ -313,23 +287,39 @@ const RoleReadyReport = () => {
                         </div>
 
                         <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--rr-text)] leading-tight">
-                            Overall Job Readiness: <span className="text-[var(--brand)]">{Math.round(overall_readiness_score)}%</span>
+                            Overall Job Readiness: <span className="text-[var(--brand)]"><Counter to={Math.round(overall_readiness_score)} suffix="%" /></span>
                         </h2>
 
                         <p className="text-sm text-[var(--rr-text-2)] leading-relaxed">
                             Based on your multi-round performance in role-specific aptitude, sandboxed coding challenges, and AI technical interview articulation against the verified target JD.
                         </p>
+                        {isStrong && (
+                            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                                Great work. You are showing strong role readiness. Keep the momentum going.
+                            </p>
+                        )}
+                        {needsSupport && (
+                            <div className="rounded-lg bg-[var(--rr-bg)] border border-[var(--rr-border)] p-3 text-sm text-[var(--rr-text-2)]">
+                                <strong className="text-[var(--rr-text)]">What to do next:</strong> a report is a starting point, not a verdict. Review your gaps and follow the improvement plan below, then take a new assessment when you are ready.
+                                <button type="button" onClick={() => document.getElementById('sec-plan')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="pw-noprint ml-2 inline-flex items-center min-h-[40px] font-bold text-[var(--brand-dark)] underline underline-offset-2">
+                                    Jump to the plan
+                                </button>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="flex items-center justify-center shrink-0">
+                    <div className="relative flex items-center justify-center shrink-0">
                         <CircularGauge score={overall_readiness_score} size={140} strokeWidth={11} />
                     </div>
                 </div>
+                <SummaryStrip strengths={strengthsCount} gaps={gapsCount} next={nextStepsCount} />
+                </Rv>
 
                 {/* 3-Round Assessment Score Breakdown */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div id="sec-rounds" className="scroll-mt-20 grid grid-cols-1 sm:grid-cols-3 gap-5">
                     {/* 1. Aptitude */}
-                    <div className="rr-card p-6 space-y-3">
+                    <Rv delay={0} className="h-full">
+                    <div className="rr-card p-6 space-y-3 h-full hover:-translate-y-1 hover:shadow-lg transition-[transform,box-shadow] duration-300">
                         <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--rr-muted)]">Round 1</span>
                             <div className="w-8 h-8 rounded-lg bg-[var(--brand-light)] border border-[var(--brand-faint)] flex items-center justify-center text-[var(--brand)]">
@@ -338,16 +328,18 @@ const RoleReadyReport = () => {
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-[var(--rr-text)]">Aptitude & Reasoning</h3>
-                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1">{Math.round(aptitude_score)}%</div>
+                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><Counter to={Math.round(aptitude_score)} suffix="%" /></div>
                         </div>
                         <div className="w-full bg-[var(--rr-border)] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[var(--brand)] h-full rounded-full" style={{ width: `${Math.min(100, Math.max(5, aptitude_score))}%` }} />
+                            <AnimBar className="bg-[var(--brand)]" pct={Math.min(100, Math.max(5, aptitude_score))} delay={0.3} />
                         </div>
                         <p className="text-[11px] text-[var(--rr-muted)]">Quantitative & logic score</p>
                     </div>
+                    </Rv>
 
                     {/* 2. Coding */}
-                    <div className="rr-card p-6 space-y-3">
+                    <Rv delay={0.12} className="h-full">
+                    <div className="rr-card p-6 space-y-3 h-full hover:-translate-y-1 hover:shadow-lg transition-[transform,box-shadow] duration-300">
                         <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--rr-muted)]">Round 2</span>
                             <div className="w-8 h-8 rounded-lg bg-blue-100 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -356,16 +348,18 @@ const RoleReadyReport = () => {
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-[var(--rr-text)]">Practical Coding</h3>
-                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1">{Math.round(coding_score)}%</div>
+                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><Counter to={Math.round(coding_score)} suffix="%" /></div>
                         </div>
                         <div className="w-full bg-[var(--rr-border)] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-blue-500 h-full rounded-full" style={{ width: `${Math.min(100, Math.max(5, coding_score))}%` }} />
+                            <AnimBar className="bg-blue-500" pct={Math.min(100, Math.max(5, coding_score))} delay={0.3} />
                         </div>
                         <p className="text-[11px] text-[var(--rr-muted)]">Hidden test suite execution</p>
                     </div>
+                    </Rv>
 
                     {/* 3. Interview */}
-                    <div className="rr-card p-6 space-y-3">
+                    <Rv delay={0.24} className="h-full">
+                    <div className="rr-card p-6 space-y-3 h-full hover:-translate-y-1 hover:shadow-lg transition-[transform,box-shadow] duration-300">
                         <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--rr-muted)]">Round 3</span>
                             <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400">
@@ -374,13 +368,14 @@ const RoleReadyReport = () => {
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-[var(--rr-text)]">AI Technical Interview</h3>
-                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1">{Math.round(interview_score)}%</div>
+                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><Counter to={Math.round(interview_score)} suffix="%" /></div>
                         </div>
                         <div className="w-full bg-[var(--rr-border)] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${Math.min(100, Math.max(5, interview_score))}%` }} />
+                            <AnimBar className="bg-amber-500" pct={Math.min(100, Math.max(5, interview_score))} delay={0.3} />
                         </div>
                         <p className="text-[11px] text-[var(--rr-muted)]">Concept & communication depth</p>
                     </div>
+                    </Rv>
                 </div>
 
                 {/* 5-Question AI Technical Interview Defense & Evidence */}
@@ -634,6 +629,7 @@ const RoleReadyReport = () => {
 
                 {/* Resume vs JD skill-gap analysis */}
                 {skillGap.length > 0 && (
+                    <Rv id="sec-skills" className="scroll-mt-20">
                     <div className="rr-card p-6 sm:p-7 space-y-4">
                         <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--rr-border)] flex-wrap">
                             <div className="flex items-center gap-2.5">
@@ -648,20 +644,25 @@ const RoleReadyReport = () => {
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             {skillGap.map((g, i) => (
-                                <div key={i} className="p-3 rounded-lg border border-[var(--rr-border)] bg-[var(--rr-bg)] text-xs flex items-start gap-2.5">
-                                    <span className={`mt-0.5 font-bold ${g.status === "Demonstrated" ? "text-emerald-600" : "text-amber-600"}`}>{g.status === "Demonstrated" ? "✓" : "!"}</span>
-                                    <div>
+                                <Rv key={i} delay={Math.min(i, 8) * 0.05} y={14}>
+                                <div className={`h-full p-3 rounded-lg border text-xs flex items-start gap-2.5 hover:-translate-y-0.5 transition-transform ${g.status === "Demonstrated" ? "border-emerald-300/60 bg-emerald-500/5 dark:border-emerald-800" : "border-amber-300/60 bg-amber-500/5 dark:border-amber-800"}`}>
+                                    {g.status === "Demonstrated"
+                                        ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" aria-label="Demonstrated" />
+                                        : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" aria-label="Gap" />}
+                                    <div className="min-w-0 break-words">
                                         <p className="font-semibold text-[var(--rr-text)]">{g.skill} <span className="font-normal text-[var(--rr-muted)]">— {g.status}</span></p>
                                         <p className="text-[var(--rr-text-2)] mt-0.5">{g.evidence || g.recommendation}</p>
                                     </div>
                                 </div>
+                                </Rv>
                             ))}
                         </div>
                     </div>
+                    </Rv>
                 )}
 
                 {/* Qualitative Skills Matrix & Areas for Improvement */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id={skillGap.length > 0 ? undefined : "sec-skills"} className="scroll-mt-20 grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Verified Strengths */}
                     <div className="rr-card p-6 sm:p-7 space-y-4">
                         <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--rr-border)]">
@@ -670,10 +671,12 @@ const RoleReadyReport = () => {
                         </div>
                         <div className="space-y-2.5">
                             {skillsVerified.map((s, idx) => (
-                                <div key={idx} className="flex items-center gap-2.5 text-sm text-[var(--rr-text-2)] p-2.5 rounded-lg bg-[var(--rr-bg)] border border-[var(--rr-border)]">
-                                    <span className="text-[var(--rr-success)] font-bold">✓</span>
-                                    <span>{s}</span>
+                                <Rv key={idx} delay={Math.min(idx, 8) * 0.06} y={12}>
+                                <div className="flex items-center gap-2.5 text-sm text-[var(--rr-text-2)] p-2.5 rounded-lg bg-[var(--rr-bg)] border border-[var(--rr-border)]">
+                                    <CheckCircle2 className="w-4 h-4 shrink-0 text-[var(--rr-success)]" />
+                                    <span className="min-w-0 break-words">{s}</span>
                                 </div>
+                                </Rv>
                             ))}
                         </div>
                     </div>
@@ -686,10 +689,12 @@ const RoleReadyReport = () => {
                         </div>
                         <div className="space-y-2.5">
                             {areasToImprove.map((a, idx) => (
-                                <div key={idx} className="flex items-center gap-2.5 text-sm text-[var(--rr-text-2)] p-2.5 rounded-lg bg-[var(--rr-bg)] border border-[var(--rr-border)]">
-                                    <span className="text-[var(--rr-warning)] font-bold">!</span>
-                                    <span>{a}</span>
+                                <Rv key={idx} delay={Math.min(idx, 8) * 0.06} y={12}>
+                                <div className="flex items-center gap-2.5 text-sm text-[var(--rr-text-2)] p-2.5 rounded-lg bg-[var(--rr-bg)] border border-[var(--rr-border)]">
+                                    <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--rr-warning)]" />
+                                    <span className="min-w-0 break-words">{a}</span>
                                 </div>
+                                </Rv>
                             ))}
                         </div>
                     </div>
@@ -697,7 +702,7 @@ const RoleReadyReport = () => {
 
                 {/* Personalised next steps */}
                 {(recommendations.length > 0 || Object.keys(learningRoadmap).length > 0) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div id="sec-plan" className="scroll-mt-20 grid grid-cols-1 md:grid-cols-2 gap-6">
                         {recommendations.length > 0 && (
                             <div className="rr-card p-6 sm:p-7 space-y-3">
                                 <h3 className="text-base font-bold text-[var(--rr-text)] flex items-center gap-2"><Lightbulb className="w-5 h-5 text-blue-500" /> Recommendations</h3>
@@ -709,21 +714,15 @@ const RoleReadyReport = () => {
                         {Object.keys(learningRoadmap).length > 0 && (
                             <div className="rr-card p-6 sm:p-7 space-y-3">
                                 <h3 className="text-base font-bold text-[var(--rr-text)] flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /> 4-Week Improvement Plan</h3>
-                                <div className="space-y-2">
-                                    {Object.entries(learningRoadmap).map(([wk, task]) => (
-                                        <div key={wk} className="flex items-start gap-3 text-sm">
-                                            <span className="shrink-0 px-2 py-0.5 rounded bg-[var(--rr-bg)] border border-[var(--rr-border)] text-[10px] font-bold uppercase text-[var(--rr-muted)]">{wk.replace("_", " ")}</span>
-                                            <span className="text-[var(--rr-text-2)]">{task}</span>
-                                        </div>
-                                    ))}
-                                </div>
+                                <PlanTimeline entries={Object.entries(learningRoadmap)} />
                             </div>
                         )}
                     </div>
                 )}
 
                 {/* Footer Next Steps */}
-                <div className="p-6 bg-[var(--rr-bg)] border border-[var(--rr-border)] rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                <Rv>
+                <div className="relative overflow-hidden p-4 sm:p-6 bg-gradient-to-r from-emerald-500/10 via-[var(--rr-bg)] to-blue-500/10 bg-[length:200%_100%] animate-pw-shimmer motion-reduce:animate-none border border-[var(--rr-border)] rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div>
                         <h4 className="text-sm font-bold text-[var(--rr-text)]">Ready to benchmark against another role?</h4>
                         <p className="text-xs text-[var(--rr-muted)] mt-0.5">Upload a different JD or refine your resume to take a new PrepWin assessment.</p>
@@ -739,13 +738,15 @@ const RoleReadyReport = () => {
                         </Link>
                         <Link
                             to="/assessment/setup"
-                            className="rr-btn-primary shrink-0"
+                            className="rr-btn-primary shrink-0 relative overflow-hidden group"
                         >
-                            <span>New Self-Assessment</span>
-                            <ArrowRight className="w-4 h-4" />
+                            <span className="pw-noprint pointer-events-none absolute inset-y-0 -left-full w-1/2 bg-gradient-to-r from-transparent via-white/40 to-transparent -skew-x-12 group-hover:left-[150%] transition-[left] duration-700 motion-reduce:hidden" aria-hidden="true" />
+                            <span className="relative">New Self-Assessment</span>
+                            <ArrowRight className="w-4 h-4 relative" />
                         </Link>
                     </div>
                 </div>
+                </Rv>
             </div>
         </div>
 

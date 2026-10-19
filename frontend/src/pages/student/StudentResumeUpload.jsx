@@ -16,7 +16,55 @@ import {
     Binary,
     RefreshCw,
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 import studentApi from '../../services/studentApi';
+import { PageHero, Stagger, StaggerItem, EmptyState } from '../../components/student-ui/StudentMotion';
+import { Reveal, Counter, EASE } from '../../components/home/primitives';
+import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
+
+const ANALYSIS_STAGES = [
+    { icon: FileText, label: 'Reading your resume' },
+    { icon: Binary, label: 'Checking ATS keywords' },
+    { icon: Layers, label: 'Scoring 9 dimensions' },
+    { icon: Sparkles, label: 'Writing recommendations' },
+];
+const ANALYSIS_TIPS = [
+    'Use standard section headings so ATS parsers can read your resume.',
+    'Quantify impact: numbers make achievements believable.',
+    'Keep it to one page if you are early in your career.',
+];
+
+/** Animated radial score ring with count-up value (display only). */
+const ScoreRing = ({ value = 0, label, color = '#10b981', delay = 0 }) => {
+    const reduce = useReducedMotion();
+    const v = Math.max(0, Math.min(100, Number(value) || 0));
+    const R = 46;
+    const C = 2 * Math.PI * R;
+    return (
+        <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center">
+            <div className="relative w-28 h-28 sm:w-32 sm:h-32">
+                <svg viewBox="0 0 110 110" className="w-full h-full -rotate-90">
+                    <circle cx="55" cy="55" r={R} fill="none" strokeWidth="9" className="stroke-slate-200 dark:stroke-slate-800" />
+                    <motion.circle
+                        cx="55" cy="55" r={R} fill="none" strokeWidth="9" strokeLinecap="round"
+                        stroke={color}
+                        strokeDasharray={C}
+                        initial={reduce ? false : { strokeDashoffset: C }}
+                        whileInView={{ strokeDashoffset: C * (1 - v / 100) }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 1.3, delay, ease: EASE }}
+                        style={reduce ? { strokeDashoffset: C * (1 - v / 100) } : undefined}
+                    />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-extrabold text-slate-900 dark:text-white tabular-nums"><Counter to={Math.round(v)} /></span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">/ 100</span>
+                </div>
+            </div>
+            <span className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+        </div>
+    );
+};
 
 const StudentResumeUpload = () => {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -27,6 +75,7 @@ const StudentResumeUpload = () => {
     const [currentAnalysis, setCurrentAnalysis] = useState(null);
     const [activeVersion, setActiveVersion] = useState(null);
     const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(true);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Load latest analysis on mount
     const fetchAnalysis = async (ver = null) => {
@@ -103,39 +152,48 @@ const StudentResumeUpload = () => {
     const analysis = currentAnalysis?.analysis_json || currentAnalysis || {};
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-300">
+        <div className="space-y-6 sm:space-y-8">
+            <AssessmentLoadingOverlay
+                open={isUploading}
+                title="Analysing your resume"
+                subtitle="Our AI is scoring your resume across 9 dimensions."
+                stages={ANALYSIS_STAGES}
+                tips={ANALYSIS_TIPS}
+                footnote="Please keep this page open. This usually takes a few seconds."
+            />
             {/* Header */}
-            <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-                    AI Resume Screening & Analysis
-                </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Upload your resume for comprehensive 9-dimension career evaluation, ATS compatibility scoring, and actionable feedback.
-                </p>
-            </div>
+            <PageHero
+                icon={FileText}
+                eyebrow="Resume Lab"
+                title="AI Resume Screening & Analysis"
+                subtitle="Upload your resume for comprehensive 9-dimension career evaluation, ATS compatibility scoring, and actionable feedback."
+            />
 
             {/* Upload Section */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+            <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                     <Upload className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     Upload New Resume Version
                 </h2>
 
                 <form onSubmit={handleUpload} className="space-y-4">
-                    <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 rounded-xl p-8 text-center transition-colors bg-slate-50 dark:bg-slate-900/40 cursor-pointer relative">
+                    <div className={`border-2 border-dashed rounded-2xl p-6 sm:p-10 text-center transition-all duration-300 cursor-pointer relative overflow-hidden min-h-[160px] ${isDragging ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 scale-[1.01]' : 'border-slate-200 dark:border-slate-700 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 bg-slate-50 dark:bg-slate-900/40'}`}>
                         <input
                             type="file"
                             accept=".pdf,.docx,.doc"
                             onChange={handleFileChange}
+                            onDragEnter={() => setIsDragging(true)}
+                            onDragLeave={() => setIsDragging(false)}
+                            onDrop={() => setIsDragging(false)}
                             disabled={isUploading}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         />
                         <div className="flex flex-col items-center justify-center gap-2 pointer-events-none">
-                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                                <FileText className="w-6 h-6" />
+                            <div className={`w-14 h-14 rounded-2xl bg-white dark:bg-slate-800 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center ${isDragging ? 'animate-bounce' : 'animate-pw-float'} motion-reduce:animate-none`}>
+                                <FileText className="w-7 h-7" />
                             </div>
                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                {selectedFile ? selectedFile.name : 'Click to select or drag and drop your resume'}
+                                {selectedFile ? selectedFile.name : (isDragging ? 'Drop it here' : 'Click to select or drag and drop your resume')}
                             </p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
                                 Supports PDF, DOCX, DOC up to 15MB
@@ -166,7 +224,7 @@ const StudentResumeUpload = () => {
                         <button
                             type="submit"
                             disabled={!selectedFile || isUploading}
-                            className={`h-11 px-6 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all ${
+                            className={`h-12 w-full sm:w-auto justify-center px-6 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all active:scale-[0.98] ${
                                 !selectedFile || isUploading
                                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                                     : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-xs cursor-pointer'
@@ -186,7 +244,7 @@ const StudentResumeUpload = () => {
                         </button>
                     </div>
                 </form>
-            </div>
+            </Reveal>
 
             {/* Analysis Results View */}
             {isLoadingAnalysis ? (
@@ -195,17 +253,15 @@ const StudentResumeUpload = () => {
                     <p className="text-sm text-slate-500 dark:text-slate-400">Fetching resume analysis...</p>
                 </div>
             ) : !currentAnalysis ? (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-12 text-center shadow-xs">
-                    <FileText className="w-12 h-12 text-slate-400 dark:text-slate-500 mx-auto mb-3" />
-                    <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-1">No Resume Uploaded Yet</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                        Upload your PDF or DOCX resume using the uploader above to unlock AI-driven insights, ATS scores, and placement guidance.
-                    </p>
-                </div>
+                <EmptyState
+                    icon={FileText}
+                    title="No Resume Uploaded Yet"
+                    body="Upload your PDF or DOCX resume using the uploader above to unlock AI-driven insights, ATS scores, and placement guidance."
+                />
             ) : (
                 <div className="space-y-6">
                     {/* Version & Overview Header */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+                    <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                             <div className="flex items-center gap-3">
                                 <span className="px-3 py-1 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 rounded-full font-bold text-xs">
@@ -225,35 +281,15 @@ const StudentResumeUpload = () => {
 
                         {/* Top Score Summary */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-                            <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 text-center">
-                                <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Overall Resume Score</span>
-                                <span className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">
-                                    {Math.round(currentAnalysis.overall_score || 0)}
-                                    <span className="text-lg text-slate-400 dark:text-slate-500 font-normal"> / 100</span>
-                                </span>
-                            </div>
-
-                            <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 text-center">
-                                <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">ATS Compatibility</span>
-                                <span className="text-3xl font-extrabold text-blue-600 dark:text-blue-400">
-                                    {Math.round(analysis.ats_compatibility?.score || currentAnalysis.overall_score || 0)}
-                                    <span className="text-lg text-slate-400 dark:text-slate-500 font-normal"> / 100</span>
-                                </span>
-                            </div>
-
-                            <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 text-center">
-                                <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Content & Structure Quality</span>
-                                <span className="text-3xl font-extrabold text-purple-600 dark:text-purple-400">
-                                    {Math.round(analysis.resume_quality?.score || currentAnalysis.overall_score || 0)}
-                                    <span className="text-lg text-slate-400 dark:text-slate-500 font-normal"> / 100</span>
-                                </span>
-                            </div>
+                            <ScoreRing label="Overall Resume Score" color="#10b981" value={Math.round(currentAnalysis.overall_score || 0)} />
+                            <ScoreRing label="ATS Compatibility" color="#3b82f6" delay={0.15} value={Math.round(analysis.ats_compatibility?.score || currentAnalysis.overall_score || 0)} />
+                            <ScoreRing label="Content & Structure Quality" color="#a855f7" delay={0.3} value={Math.round(analysis.resume_quality?.score || currentAnalysis.overall_score || 0)} />
                         </div>
-                    </div>
+                    </Reveal>
 
                     {/* Strengths & Weaknesses */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+                        <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
                             <h3 className="text-sm font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mb-4">
                                 <CheckCircle className="w-4 h-4" /> Strengths
                             </h3>
@@ -265,9 +301,9 @@ const StudentResumeUpload = () => {
                                     </li>
                                 ))}
                             </ul>
-                        </div>
+                        </Reveal>
 
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+                        <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
                             <h3 className="text-sm font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-2 mb-4">
                                 <AlertTriangle className="w-4 h-4" /> Weaknesses
                             </h3>
@@ -279,11 +315,11 @@ const StudentResumeUpload = () => {
                                     </li>
                                 ))}
                             </ul>
-                        </div>
+                        </Reveal>
                     </div>
 
                     {/* Missing Information (Never Hallucinate Policy Card) */}
-                    <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 rounded-2xl p-6 shadow-xs">
+                    <Reveal className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-500/30 rounded-3xl p-5 sm:p-6 shadow-xs">
                         <h3 className="text-sm font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-2 mb-3">
                             <HelpCircle className="w-4 h-4" /> Missing Information In Resume
                         </h3>
@@ -302,10 +338,10 @@ const StudentResumeUpload = () => {
                                 ))}
                             </ul>
                         )}
-                    </div>
+                    </Reveal>
 
                     {/* Actionable Recommendations */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+                    <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
                         <h3 className="text-sm font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-4">
                             <Sparkles className="w-4 h-4" /> Improvement Recommendations
                         </h3>
@@ -319,7 +355,7 @@ const StudentResumeUpload = () => {
                                 </li>
                             ))}
                         </ol>
-                    </div>
+                    </Reveal>
 
                     {/* 9 Structured Dimensions Accordions/Grids */}
                     <div className="space-y-4">
@@ -328,9 +364,9 @@ const StudentResumeUpload = () => {
                             Detailed 9-Dimension Assessment Breakdown
                         </h3>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Stagger className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* 1. Technical Skills */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <Code className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Technical Skills
                                 </h4>
@@ -345,10 +381,10 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">None detected</span>
                                     )}
                                 </div>
-                            </div>
+                            </StaggerItem>
 
                             {/* 2. Soft Skills */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <Award className="w-4 h-4 text-cyan-600 dark:text-cyan-400" /> Soft Skills
                                 </h4>
@@ -363,10 +399,10 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">None explicitly identified</span>
                                     )}
                                 </div>
-                            </div>
+                            </StaggerItem>
 
                             {/* 3. DSA Indicators */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <Binary className="w-4 h-4 text-amber-500" /> DSA & Problem Solving Indicators
                                 </h4>
@@ -381,10 +417,10 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">No DSA keywords or competitive programming references detected</span>
                                     )}
                                 </div>
-                            </div>
+                            </StaggerItem>
 
                             {/* 4. Education */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <BookOpen className="w-4 h-4 text-indigo-500" /> Education
                                 </h4>
@@ -401,10 +437,10 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">No education details parsed</span>
                                     )}
                                 </div>
-                            </div>
+                            </StaggerItem>
 
                             {/* 5. Projects */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs md:col-span-2">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full md:col-span-2">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <Cpu className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Projects
                                 </h4>
@@ -429,10 +465,10 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">No projects found</span>
                                     )}
                                 </div>
-                            </div>
+                            </StaggerItem>
 
                             {/* 6. Experience */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <Briefcase className="w-4 h-4 text-blue-500" /> Experience & Internships
                                 </h4>
@@ -448,10 +484,10 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">No prior experience listed (common for entry-level candidates)</span>
                                     )}
                                 </div>
-                            </div>
+                            </StaggerItem>
 
                             {/* 7. Certifications */}
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+                            <StaggerItem className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs h-full">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
                                     <Award className="w-4 h-4 text-purple-500" /> Certifications
                                 </h4>
@@ -466,8 +502,8 @@ const StudentResumeUpload = () => {
                                         <span className="text-xs text-slate-400 italic">No certifications listed</span>
                                     )}
                                 </div>
-                            </div>
-                        </div>
+                            </StaggerItem>
+                        </Stagger>
                     </div>
                 </div>
             )}

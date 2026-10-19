@@ -65,7 +65,7 @@ const CandidateInvitationPortal = () => {
     if (error) {
         return (
             <div className="rr-page flex flex-col items-center justify-center p-6 text-center">
-                <div className="max-w-md w-full rr-card border border-rose-500/30 rounded-2xl p-8 shadow-xl">
+                <div className="max-w-md w-full rr-card border border-rose-500/30 rounded-2xl p-5 sm:p-8 shadow-xl">
                     <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
                     <h2 className="text-lg font-bold text-[var(--rr-text)]">Invitation Invalid</h2>
                     <p className="text-xs text-[var(--rr-muted)] mt-2 leading-relaxed">{error}</p>

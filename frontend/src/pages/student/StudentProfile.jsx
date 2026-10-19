@@ -13,7 +13,10 @@ import {
     X,
     RefreshCw,
 } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import studentApi from '../../services/studentApi';
+import { PageHero } from '../../components/student-ui/StudentMotion';
+import { Reveal, Counter, EASE } from '../../components/home/primitives';
 
 const COMMON_ROLES = [
     'Software Engineer',
@@ -140,6 +143,18 @@ const StudentProfile = () => {
         }
     };
 
+    const reduce = useReducedMotion();
+    const completenessChecks = [
+        fullName.trim(),
+        targetRole === 'Other' ? customRole.trim() : targetRole,
+        targetCompany.trim(),
+        education.trim(),
+        graduationYear,
+        cgpa,
+        skills.length > 0,
+    ];
+    const completeness = Math.round((completenessChecks.filter(Boolean).length / completenessChecks.length) * 100);
+
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
@@ -150,18 +165,14 @@ const StudentProfile = () => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300">
+        <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
             {/* Header */}
-            <div className="border-b border-slate-200 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-                        Student Career Profile
-                    </h1>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        Configure your target role, dream company, education details, and key technical skills.
-                    </p>
-                </div>
-                {profile && (
+            <PageHero
+                icon={User}
+                eyebrow="Your Career Profile"
+                title="Student Career Profile"
+                subtitle="Configure your target role, dream company, education details, and key technical skills."
+                actions={profile && (
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3 shadow-xs">
                         <Award className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                         <div>
@@ -174,10 +185,33 @@ const StudentProfile = () => {
                         </div>
                     </div>
                 )}
-            </div>
+            >
+                <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Profile completeness</span>
+                        <span className="text-sm font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums"><Counter to={completeness} suffix="%" /></span>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={completeness} aria-label="Profile completeness">
+                        <motion.div
+                            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                            initial={reduce ? false : { width: 0 }}
+                            animate={{ width: `${completeness}%` }}
+                            transition={{ duration: 1, ease: EASE }}
+                        />
+                    </div>
+                    <p className="mt-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                        {completeness >= 100 ? 'Your profile is fully filled in. Great work!' : 'Fill in the remaining fields to get sharper recommendations.'}
+                    </p>
+                </div>
+            </PageHero>
 
+            <AnimatePresence>
             {saveStatus && (
-                <div
+                <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.3, ease: EASE }}
                     className={`p-4 rounded-xl text-sm flex items-center gap-3 ${
                         saveStatus.type === 'success'
                             ? 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
@@ -190,12 +224,13 @@ const StudentProfile = () => {
                         <AlertTriangle className="w-5 h-5 shrink-0" />
                     )}
                     <span>{saveStatus.message}</span>
-                </div>
+                </motion.div>
             )}
+            </AnimatePresence>
 
             <form onSubmit={handleSave} className="space-y-6">
                 {/* 1. Basic Info */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
                     <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
                         <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Personal & Account Information
                     </h2>
@@ -209,7 +244,7 @@ const StudentProfile = () => {
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder="e.g. Alex Kumar"
-                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
@@ -224,10 +259,10 @@ const StudentProfile = () => {
                             />
                         </div>
                     </div>
-                </div>
+                </Reveal>
 
                 {/* 2. Target Role & Company */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
                     <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
                         <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Career Targets
                     </h2>
@@ -240,7 +275,7 @@ const StudentProfile = () => {
                             <select
                                 value={targetRole}
                                 onChange={(e) => setTargetRole(e.target.value)}
-                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                             >
                                 {COMMON_ROLES.map((r) => (
                                     <option key={r} value={r} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
@@ -258,7 +293,7 @@ const StudentProfile = () => {
                                     value={customRole}
                                     onChange={(e) => setCustomRole(e.target.value)}
                                     placeholder="Enter your custom target role"
-                                    className="h-11 w-full mt-2.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                    className="h-11 w-full mt-2.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                                 />
                             )}
                         </div>
@@ -275,7 +310,7 @@ const StudentProfile = () => {
                                     value={targetCompany}
                                     onChange={(e) => setTargetCompany(e.target.value)}
                                     placeholder="e.g. Google, Microsoft, Startup (Optional)"
-                                    className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                    className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                                 />
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
@@ -283,10 +318,10 @@ const StudentProfile = () => {
                             </p>
                         </div>
                     </div>
-                </div>
+                </Reveal>
 
                 {/* 3. Education Details */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
                     <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
                         <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Education & Graduation
                     </h2>
@@ -300,7 +335,7 @@ const StudentProfile = () => {
                                 value={education}
                                 onChange={(e) => setEducation(e.target.value)}
                                 placeholder="e.g. B.Tech Computer Science"
-                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
@@ -314,7 +349,7 @@ const StudentProfile = () => {
                                 value={graduationYear}
                                 onChange={(e) => setGraduationYear(e.target.value)}
                                 placeholder="e.g. 2026"
-                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                         <div>
@@ -329,14 +364,14 @@ const StudentProfile = () => {
                                 value={cgpa}
                                 onChange={(e) => setCgpa(e.target.value)}
                                 placeholder="e.g. 8.5"
-                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                                className="h-11 w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                             />
                         </div>
                     </div>
-                </div>
+                </Reveal>
 
                 {/* 4. Current Skills */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
                     <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
                         <Code className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Current Skills
                     </h2>
@@ -344,7 +379,7 @@ const StudentProfile = () => {
                         Add the programming languages, frameworks, and tools in your current repertoire.
                     </p>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                         <input
                             type="text"
                             value={newSkillInput}
@@ -356,12 +391,12 @@ const StudentProfile = () => {
                                 }
                             }}
                             placeholder="Add a skill (e.g. React, Python, Docker) and press Add"
-                            className="h-11 flex-1 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                            className="h-11 flex-1 min-w-0 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 hover:border-emerald-400/60 dark:hover:border-emerald-600/50 focus:border-emerald-500 transition-colors"
                         />
                         <button
                             type="button"
                             onClick={handleAddSkill}
-                            className="h-11 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                            className="h-11 px-4 justify-center bg-slate-100 hover:bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                         >
                             <Plus className="w-4 h-4" /> Add
                         </button>
@@ -372,30 +407,34 @@ const StudentProfile = () => {
                             <span className="text-xs text-slate-400 dark:text-slate-500 italic">No skills added yet.</span>
                         ) : (
                             skills.map((skill, idx) => (
-                                <span
+                                <motion.span
                                     key={idx}
+                                    initial={reduce ? false : { opacity: 0, scale: 0.7 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ duration: 0.3, ease: EASE }}
                                     className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 rounded-lg text-xs font-medium flex items-center gap-1.5"
                                 >
                                     <span>{skill}</span>
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveSkill(skill)}
-                                        className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
+                                        className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 p-1 -m-0.5 min-w-6 min-h-6 flex items-center justify-center rounded transition-colors cursor-pointer"
                                     >
                                         <X className="w-3 h-3" />
                                     </button>
-                                </span>
+                                </motion.span>
                             ))
                         )}
                     </div>
-                </div>
+                </Reveal>
 
                 {/* Save Button */}
-                <div className="flex justify-end pt-2">
-                    <button
+                <div className="flex justify-end pt-2 pb-2">
+                    <motion.button
+                        whileTap={{ scale: 0.97 }}
                         type="submit"
                         disabled={isSaving}
-                        className="h-11 px-8 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-xs transition-all cursor-pointer disabled:cursor-not-allowed"
+                        className="h-12 w-full sm:w-auto justify-center px-6 sm:px-8 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-xs transition-all cursor-pointer disabled:cursor-not-allowed"
                     >
                         {isSaving ? (
                             <>
@@ -408,7 +447,7 @@ const StudentProfile = () => {
                                 <span>Save Changes</span>
                             </>
                         )}
-                    </button>
+                    </motion.button>
                 </div>
             </form>
         </div>

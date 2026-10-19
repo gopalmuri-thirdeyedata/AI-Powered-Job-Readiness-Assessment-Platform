@@ -33,7 +33,7 @@ const InterviewModal = ({ candidate, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl h-[80vh] flex flex-col overflow-hidden transform scale-100 transition-all">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl h-[85vh] max-h-[85vh] flex flex-col overflow-hidden transform scale-100 transition-all">
 
                 {/* Header */}
                 <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -80,7 +80,7 @@ const InterviewModal = ({ candidate, onClose }) => {
                 {interviewData.scores && (
                     <div className="bg-white px-6 py-4 border-b border-gray-200">
                         <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-3">AI Performance Evaluation</p>
-                        <div className="grid grid-cols-5 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                             <div className="bg-white rounded-lg p-3 text-center shadow-sm border border-gray-200">
                                 <p className="text-xs text-gray-500 font-medium mb-1">Technical</p>
                                 <p className="text-xl font-bold text-green-600">{interviewData.scores.technical_accuracy || 0}</p>

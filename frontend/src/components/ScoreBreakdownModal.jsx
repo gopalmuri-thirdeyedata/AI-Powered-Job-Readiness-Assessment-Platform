@@ -37,7 +37,7 @@ const ScoreBreakdownModal = ({ candidate, onClose, onViewTranscript }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden transform scale-100 transition-all">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform scale-100 transition-all">
 
                 {/* Header */}
                 <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-white">

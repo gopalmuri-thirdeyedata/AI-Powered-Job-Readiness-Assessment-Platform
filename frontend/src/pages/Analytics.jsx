@@ -1388,7 +1388,7 @@ export default function Analytics() {
                             </div>
                             
                             {/* Interactive Legend Chips */}
-                            <div className="w-full grid grid-cols-2 gap-2 mt-4">
+                            <div className="w-full grid grid-cols-1 min-[400px]:grid-cols-2 gap-2 mt-4">
                                 {recommendationData.map((d, i) => (
                                     <button
                                         key={i}

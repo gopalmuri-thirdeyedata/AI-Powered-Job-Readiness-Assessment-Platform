@@ -90,7 +90,7 @@ const ConfirmationModal = ({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.94, y: 8 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                        className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100"
+                        className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-gray-100"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header */}

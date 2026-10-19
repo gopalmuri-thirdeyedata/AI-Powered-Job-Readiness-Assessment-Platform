@@ -236,7 +236,7 @@ export default function CandidateDetailDrawer({ candidate, isOpen, onClose }) {
                         </div>
 
                         {/* Candidate Snapshot: 3 Equal-Height Cards */}
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3">
                             {/* Talent Score */}
                             <div className="bg-[#162033] border border-slate-800/80 rounded-xl p-3.5 flex flex-col justify-between min-h-[110px]">
                                 <div>

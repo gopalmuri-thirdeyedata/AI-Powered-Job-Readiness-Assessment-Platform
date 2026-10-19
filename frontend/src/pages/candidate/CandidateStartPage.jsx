@@ -226,28 +226,28 @@ const CandidateStartPage = () => {
 
     // ─── MAIN START PAGE (after camera confirmed) ─────────────────────────────
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-50 flex flex-col items-center justify-center p-6">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-50 flex flex-col items-center justify-center p-3 sm:p-6">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="max-w-3xl w-full">
 
                 <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
 
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 border-b border-blue-100 p-8 text-center">
+                    <div className="bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 border-b border-blue-100 p-5 sm:p-8 text-center">
                         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2 }}
                             className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-200/50">
                             <Award className="text-white" size={40} />
                         </motion.div>
-                        <h1 className="text-3xl font-extrabold text-gray-900 mb-2">{type} Round</h1>
+                        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-2 break-words">{type} Round</h1>
                         <p className="text-gray-600 font-medium">Please review the test details carefully before starting</p>
                         <button onClick={() => { localStorage.clear(); navigate('/portal/login'); }} className="text-xs text-blue-600 hover:text-blue-800 mt-2 underline block mx-auto">
                             Log out & Exit
                         </button>
                     </div>
 
-                    <div className="p-8 space-y-6">
+                    <div className="p-4 sm:p-8 space-y-6">
 
                         {/* Info Cards */}
-                        <div className={`grid grid-cols-1 ${showFormat ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-5`}>
+                        <div className={`grid grid-cols-1 ${showFormat ? 'sm:grid-cols-2 md:grid-cols-3' : 'sm:grid-cols-2'} gap-5`}>
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                                 className="group bg-gradient-to-br from-blue-50 to-white p-5 rounded-xl border border-blue-100 hover:border-blue-200 hover:shadow-md transition-all">
                                 <div className="flex flex-col items-center text-center space-y-3">

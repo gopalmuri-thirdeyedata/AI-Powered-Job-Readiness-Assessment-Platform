@@ -42,11 +42,11 @@ const CandidateLayout = () => {
                 </main>
             ) : (
                 // Centered layout for other pages
-                <main className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 pb-32 relative overflow-y-auto overflow-x-hidden">
+                <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 md:p-12 pb-24 sm:pb-32 relative overflow-y-auto overflow-x-hidden">
                     {/* Background Decor */}
                     <div className="absolute inset-0 z-0 opacity-30 pointer-events-none">
-                        <div className="absolute top-0 left-0 w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-                        <div className="absolute top-0 right-0 w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+                        <div className="absolute top-0 left-0 w-64 h-64 sm:w-96 sm:h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+                        <div className="absolute top-0 right-0 w-64 h-64 sm:w-96 sm:h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
                     </div>
 
                     <div className="w-full max-w-4xl z-10">
