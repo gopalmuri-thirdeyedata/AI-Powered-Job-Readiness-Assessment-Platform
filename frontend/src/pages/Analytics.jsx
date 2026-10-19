@@ -41,9 +41,6 @@ import {
     Pie,
     Cell,
 } from 'recharts';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import API_URL from '../apiConfig';
 import CandidateDetailDrawer from '../components/analytics/CandidateDetailDrawer';
 
@@ -618,11 +615,13 @@ export default function Analytics() {
     };
 
     // EXPORT HANDLERS (Real Database Records)
-    const handleExportPDF = () => {
+    const handleExportPDF = async () => {
         if (filteredCandidates.length === 0) {
             alert("No candidate data available to export.");
             return;
         }
+        const { jsPDF } = await import('jspdf');
+        const { default: autoTable } = await import('jspdf-autotable');
         const doc = new jsPDF();
         
         // Brand Header
@@ -795,12 +794,13 @@ export default function Analytics() {
         setShowExportDropdown(false);
     };
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
         if (filteredCandidates.length === 0) {
             alert("No candidate data available to export.");
             return;
         }
 
+        const XLSX = await import('xlsx');
         const workbook = XLSX.utils.book_new();
         const reportData = [
             ["PrepWin - Recruitment Intelligence Report"],

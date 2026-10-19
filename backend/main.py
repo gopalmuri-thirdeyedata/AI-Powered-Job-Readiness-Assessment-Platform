@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Depends, HTTPException, status, Header, Qu
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 import os
 from pathlib import Path
 from typing import Optional
@@ -191,6 +192,7 @@ else:
         "http://127.0.0.1:8212"
     ]))
 
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,

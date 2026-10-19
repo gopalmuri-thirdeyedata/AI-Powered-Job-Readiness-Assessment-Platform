@@ -145,15 +145,26 @@ def get_cohort_students(
 
     students = query.order_by(models.StudentProfile.readiness_score.desc()).offset(offset).limit(limit).all()
 
+    # Batched lookups (replaces 2 queries per student)
+    student_ids = [s.id for s in students]
+    latest_resumes = {}
+    app_counts = {}
+    if student_ids:
+        for r in db.query(models.StudentResume).filter(
+            models.StudentResume.student_profile_id.in_(student_ids)
+        ).order_by(models.StudentResume.version.desc()).all():
+            latest_resumes.setdefault(r.student_profile_id, r)
+        app_counts = dict(db.query(
+            models.PlacementDriveApplication.student_profile_id,
+            func.count(models.PlacementDriveApplication.id)
+        ).filter(
+            models.PlacementDriveApplication.student_profile_id.in_(student_ids)
+        ).group_by(models.PlacementDriveApplication.student_profile_id).all())
+
     results = []
     for s in students:
-        latest_resume = db.query(models.StudentResume).filter(
-            models.StudentResume.student_profile_id == s.id
-        ).order_by(models.StudentResume.version.desc()).first()
-
-        app_count = db.query(models.PlacementDriveApplication).filter(
-            models.PlacementDriveApplication.student_profile_id == s.id
-        ).count()
+        latest_resume = latest_resumes.get(s.id)
+        app_count = app_counts.get(s.id, 0)
 
         results.append({
             "id": s.id,
@@ -219,11 +230,19 @@ def list_placement_drives(
 
     drives = query.order_by(models.PlacementDrive.created_at.desc()).all()
 
+    drive_ids = [d.id for d in drives]
+    applicant_counts = {}
+    if drive_ids:
+        applicant_counts = dict(db.query(
+            models.PlacementDriveApplication.drive_id,
+            func.count(models.PlacementDriveApplication.id)
+        ).filter(
+            models.PlacementDriveApplication.drive_id.in_(drive_ids)
+        ).group_by(models.PlacementDriveApplication.drive_id).all())
+
     results = []
     for d in drives:
-        applicant_count = db.query(models.PlacementDriveApplication).filter(
-            models.PlacementDriveApplication.drive_id == d.id
-        ).count()
+        applicant_count = applicant_counts.get(d.id, 0)
 
         results.append({
             "id": d.id,

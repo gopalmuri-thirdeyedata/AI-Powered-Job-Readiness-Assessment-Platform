@@ -13,7 +13,7 @@ Never fabricates results, fakes scores, or leaks confidential evaluation keys.
 
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 import math
 
 import models
@@ -63,7 +63,9 @@ def _gather_raw_student_assessments(
     records: List[Dict[str, Any]] = []
 
     # 1. RoleReady Sessions
-    rr_sessions = db.query(models.RoleReadySession).filter(
+    rr_sessions = db.query(models.RoleReadySession).options(
+        selectinload(models.RoleReadySession.round_attempts)
+    ).filter(
         models.RoleReadySession.student_profile_id == profile.id
     ).all()
 
@@ -129,7 +131,9 @@ def _gather_raw_student_assessments(
         })
 
     # 2. Student Placement Simulations
-    simulations = db.query(models.StudentPlacementSimulation).filter(
+    simulations = db.query(models.StudentPlacementSimulation).options(
+        selectinload(models.StudentPlacementSimulation.rounds)
+    ).filter(
         models.StudentPlacementSimulation.student_profile_id == profile.id
     ).all()
 

@@ -18,9 +18,6 @@ import AnalyticsModal from './AnalyticsModal';
 import InterviewModal from './InterviewModal';
 import ScoreBreakdownModal from './ScoreBreakdownModal';
 import { motion, AnimatePresence } from 'framer-motion';
-import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import API_URL from '../apiConfig';
 
 const STAGE_FLOW = {
@@ -275,12 +272,13 @@ const CandidateTable = ({
         });
     };
 
-    const handleExportExcel = (type) => {
+    const handleExportExcel = async (type) => {
         const data = prepareExportData(type);
         if (data.length === 0) {
             alert("No data available to export.");
             return;
         }
+        const XLSX = await import('xlsx');
         const worksheet = XLSX.utils.json_to_sheet(data);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates");
@@ -299,13 +297,15 @@ const CandidateTable = ({
         setShowExportDropdown(false);
     };
 
-    const handleExportPDF = (type) => {
+    const handleExportPDF = async (type) => {
         const data = prepareExportData(type);
         if (data.length === 0) {
             alert("No data available to export.");
             return;
         }
 
+        const { jsPDF } = await import('jspdf');
+        const { default: autoTable } = await import('jspdf-autotable');
         const doc = new jsPDF();
         
         // Add Title Header

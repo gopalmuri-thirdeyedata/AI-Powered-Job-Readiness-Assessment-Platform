@@ -17,9 +17,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import CandidateTable from '../components/CandidateTable';
 import ConfirmationModal from '../components/ConfirmationModal';
-import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 import API_URL from '../apiConfig';
 
@@ -271,7 +268,7 @@ const Candidates = () => {
     const [error, setError] = useState(null);
     const [showExportDropdown, setShowExportDropdown] = useState(false);
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
         if (candidates.length === 0) {
             alert("No candidate data available to export.");
             return;
@@ -286,6 +283,7 @@ const Candidates = () => {
             "Score": c.score !== undefined ? `${c.score}%` : '0%'
         }));
         
+        const XLSX = await import('xlsx');
         const worksheet = XLSX.utils.json_to_sheet(data);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates");
@@ -304,12 +302,14 @@ const Candidates = () => {
         setShowExportDropdown(false);
     };
 
-    const handleExportPDF = () => {
+    const handleExportPDF = async () => {
         if (candidates.length === 0) {
             alert("No candidate data available to export.");
             return;
         }
 
+        const { jsPDF } = await import('jspdf');
+        const { default: autoTable } = await import('jspdf-autotable');
         const doc = new jsPDF();
         
         // Add Title Header

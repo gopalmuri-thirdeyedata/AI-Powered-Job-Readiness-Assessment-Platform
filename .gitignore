@@ -254,8 +254,7 @@ $RECYCLE.BIN/
 # ====================================
 # PROJECT SPECIFIC
 # ====================================
-# Docker
-*.dockerignore
+# Docker (keep .dockerignore files tracked)
 docker-compose.override.yml
 
 # Backup files
@@ -316,3 +315,10 @@ backend/media_backup_before_clean/
 scratch/
 backend/scratch/
 
+# Local screenshots / temp artifacts
+*.png.tmp
+Screenshot*.png
+screenshots/
+tmp/
+temp/
+.pytest_cache/

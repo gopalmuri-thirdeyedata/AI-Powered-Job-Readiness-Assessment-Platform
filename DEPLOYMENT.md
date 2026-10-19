@@ -191,6 +191,8 @@ gunzip < /var/backups/hiringai_mysql/backup_YYYYMMDD_HHMMSS.sql.gz | \
 
 ## 15. Application Startup
 
+> **Which compose file?** There are two. `docker-compose.yml` (project `hiringai`, containers `hiringai_*`, host port 80) is the stack currently serving the live site. `docker-compose.prod.yml` (containers `interviewer_*`, host port 8212, own volumes/network) is the separate `interviewer.thirdeyedata.ai` / server2 stack. The `docker compose -f docker-compose.prod.yml` commands below apply only to that stack. On the live `hiringai` host use `docker compose up -d --build` (default file) and never run `docker-compose.prod.yml` against it.
+
 ### Option A: Using Docker Compose (Recommended)
 ```bash
 # 1. Populate production secrets in backend/.env and frontend/.env.production
@@ -293,3 +295,13 @@ sudo systemctl reload hiringai-backend.service
   * HTTP status >= 500 for > 2 minutes
   * CPU utilization > 85% for > 5 minutes
   * Disk usage > 80%
+
+---
+
+## 22. Rebuild Safely
+
+1. **Back up first.** Copy `backend/hiringai.db` out of the running backend container (if the app uses SQLite) and run a `mysqldump` (Section 14) plus a copy of the `backend_media` volume. Backend images bake in `backend/hiringai.db`; a rebuilt container without a persistent volume starts from that baked copy, so unsaved data is lost.
+2. **Use the right compose file** for the host (see Section 15). Never run `docker-compose.prod.yml` against the live `hiringai` stack.
+3. `docker compose up -d --build` rebuilds changed images and **recreates** the affected containers (brief downtime; container filesystems not backed by a volume are reset).
+4. Rebuild only what changed, e.g. `docker compose up -d --build frontend`, to avoid touching the backend.
+5. Verify with `curl -f http://localhost/health/live` afterwards.
