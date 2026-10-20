@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, Menu, Sun, Moon } from 'lucide-react';
+import { Bell, Menu, Sun, Moon, LogOut } from 'lucide-react';
 import CandidateLoginModal from './CandidateLoginModal';
-import { UserButton } from '@clerk/clerk-react';
+import { UserButton, useUser, useClerk } from '@clerk/clerk-react';
 import API_URL from '../apiConfig';
 import { useTheme } from '../context/ThemeContext';
 import useStudentTaskStatus from '../hooks/useStudentTaskStatus';
@@ -12,6 +12,18 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
     const location = useLocation();
     const { theme, toggleTheme } = useTheme();
     const { hasCompletedTask } = useStudentTaskStatus();
+    const clerk = useClerk();
+    const { user: clerkUser } = useUser();
+
+    const handleSignOut = async () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user_profile');
+        localStorage.removeItem('studentToken');
+        if (clerk && clerk.signOut) {
+            try { await clerk.signOut(); } catch (e) {}
+        }
+        navigate('/');
+    };
 
     const handleNotificationClick = async (notification) => {
         // 1. Mark as Read
@@ -281,16 +293,28 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                         </div>
                     )}
 
-                    {/* Clerk User Button */}
-                    <UserButton
-                        appearance={{
-                            elements: {
-                                avatarBox: "w-9 h-9",
-                                userButtonPopoverCard: "shadow-xl"
-                            }
-                        }}
-                        afterSignOutUrl="/"
-                    />
+                    {/* Admin Sign Out or Clerk User Button */}
+                    {clerkUser ? (
+                        <UserButton
+                            appearance={{
+                                elements: {
+                                    avatarBox: "w-9 h-9",
+                                    userButtonPopoverCard: "shadow-xl"
+                                }
+                            }}
+                            afterSignOutUrl="/"
+                        />
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={handleSignOut}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 transition-colors cursor-pointer"
+                            title="Sign Out"
+                        >
+                            <LogOut className="w-3.5 h-3.5 text-red-500" />
+                            <span className="hidden sm:inline">Sign Out</span>
+                        </button>
+                    )}
                 </div>
             </nav>
 

@@ -29,7 +29,7 @@ The codebase defines 5 primary operational portals and user roles in [backend/mo
 
 | Role / Actor | Frontend Layout / Access | Primary Functions |
 | :--- | :--- | :--- |
-| **Platform Admin** (`PLATFORM_ADMIN`) | `DashboardLayout` (`/platform/organizations`) | Global platform governor (`gopalmuri1919@gmail.com`). Provisions organizations, assigns enterprise tenant admins, oversees cross-tenant statistics and billing status. |
+| **Platform Admin** (`PLATFORM_ADMIN`) | `DashboardLayout` (`/platform/organizations`) | Global platform governor (`admin@thirdeyedata.ai`). Provisions organizations, assigns enterprise tenant admins, oversees cross-tenant statistics and billing status. |
 | **Organization Admin** (`ORGANIZATION_ADMIN`) | `DashboardLayout` (`/admin/dashboard`, `/settings`) | Manages company recruiters, invite codes, organization settings, scoring weights, and corporate branding. |
 | **HR Recruiter** (`HR` / `HR_ADMIN`) | `DashboardLayout` (`/admin/dashboard`, `/resume-screening`, `/candidates`, `/recruitment/rounds`, `/analytics`) | Creates structured JDs, uploads and screens candidate resumes in bulk, designs manual/AI assessments, schedules interviews, and inspects analytics dossiers. |
 | **Candidate** (`CANDIDATE`) | `CandidateLayout` (`/portal/*`) & RoleReady Portal (`/portal/roleready/:invitationToken`) | Authenticates via single-use token or candidate login; completes proctored aptitude, coding, and voice interviews in fullscreen. |

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from typing import List, Optional, Union, Dict, Any
@@ -137,7 +137,10 @@ def sanitize_assessment_for_candidate(assessment: Union[models.Assessment, Dict[
 def _get_tenant_org_id(current_user: models.User, db: Session) -> Optional[int]:
     """Resolves current organization ID for multi-tenant data isolation."""
     if getattr(current_user, "role", None) == models.UserRole.PLATFORM_ADMIN:
-        return getattr(current_user, "organization_id", None)
+        if getattr(current_user, "organization_id", None):
+            return current_user.organization_id
+        org = db.query(models.Organization).filter(models.Organization.status == "active").first()
+        return org.id if org else 1
     
     member = None
     if hasattr(current_user, "id") and current_user.id:
@@ -157,6 +160,7 @@ def _get_tenant_org_id(current_user: models.User, db: Session) -> Optional[int]:
 @router.post("/assign/", response_model=schemas.AssignResponse)
 def assign_assessment(
     request: schemas.AssessmentCreateRequest,
+    http_request: Request,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -344,8 +348,33 @@ def assign_assessment(
         # CRITICAL: Commit DB changes BEFORE sending email so login works immediately
         db.commit()
         
-        # 3. Send Email with Magic Link (Secure)
-        frontend_url = os.getenv("FRONTEND_URL", "http://127.0.0.1:5173")
+        # 3. Send Email with Magic Link (Dynamic Domain Resolution)
+        frontend_url = None
+        if http_request:
+            origin = http_request.headers.get("origin")
+            if origin and not origin.endswith(":5173"):
+                frontend_url = origin.strip().rstrip("/")
+            if not frontend_url:
+                referer = http_request.headers.get("referer")
+                if referer:
+                    try:
+                        from urllib.parse import urlparse
+                        p = urlparse(referer)
+                        if p.scheme and p.netloc and not p.netloc.endswith(":5173"):
+                            frontend_url = f"{p.scheme}://{p.netloc}"
+                    except Exception:
+                        pass
+            if not frontend_url:
+                forwarded = http_request.headers.get("x-forwarded-host") or http_request.headers.get("host")
+                if forwarded and not forwarded.endswith(":5173"):
+                    proto = http_request.headers.get("x-forwarded-proto", "http")
+                    frontend_url = f"{proto}://{forwarded}".rstrip("/")
+        if not frontend_url:
+            env_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+            if env_url and not env_url.endswith(":5173"):
+                frontend_url = env_url
+            else:
+                frontend_url = "http://localhost"
         
         # FIX: Use Candidate's specific role if available, fallback to Config role, then 'Candidate'
         target_role = candidate_record.role if candidate_record and candidate_record.role else config.get('role', 'Candidate')
@@ -632,9 +661,9 @@ def send_completion_emails(candidate_email: str, candidate_name: str, target_rol
                 # Check if the creator email is a dummy/generic one, otherwise use it
                 hr_email = creator_user.email if (creator_user and not creator_user.email.endswith('.internal')) else notifications_conf.get("recipientEmail")
                 
-                # If recipient email is a dummy (e.g. hr@company.com), fallback to the synced admin email (gopalmuri1919@gmail.com)
+                # If recipient email is a dummy (e.g. hr@company.com), fallback to the synced admin email (admin@thirdeyedata.ai)
                 if hr_email == "hr@company.com" or not hr_email:
-                    hr_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+                    hr_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
 
                 if hr_email:
                     hr_subject = f"Candidate Assessment Submitted: {candidate_name}"

@@ -18,7 +18,7 @@ Eliminating recruitment bottlenecks and cognitive bias, HiringAI provides an end
 ### 🏢 1. Enterprise Multi-Tenancy & B2B Authorization
 * **Tenant Isolation:** Every organization's jobs, candidates, resumes, assessments, and analytics are strictly partitioned by `organization_id`. Frontend-provided org parameters are never trusted; tenant scope is resolved server-side from verified membership.
 * **Role-Based Access Control (RBAC):**
-  * `PLATFORM_ADMIN`: Global software owner (`gopalmuri1919@gmail.com`) managing enterprise tenant provisioning, subscription lifecycle, and cross-organization governance.
+  * `PLATFORM_ADMIN`: Global software owner (`admin@thirdeyedata.ai`) managing enterprise tenant provisioning, subscription lifecycle, and cross-organization governance.
   * `ORG_ADMIN`: Company administrator managing organization recruiters, settings, and job pipelines.
   * `HR_RECRUITER`: Recruiter managing candidates, screening, assessments, and interview evaluations.
   * `CANDIDATE`: Restricted, one-time candidate session with scoped token access.
@@ -239,7 +239,7 @@ docker compose -f docker-compose.prod.yml ps
 
 * **Architect & Developer:** **Gopal Muri**
 * **Organization:** **ThirdEye Data**
-* **Contact:** `gopalmuri1919@gmail.com`
+* **Contact:** `admin@thirdeyedata.ai`
 
 ---
 

@@ -77,8 +77,8 @@ This document provides step-by-step instructions for deploying the **HiringAI En
 | `JWT_SECRET_KEY` | Yes | Cryptographically secure random secret (min 32 bytes) |
 | `CLERK_SECRET_KEY` | Yes | Production secret key (`sk_live_...`) |
 | `CLERK_PUBLISHABLE_KEY`| Yes | Production publishable key (`pk_live_...`) |
-| `PLATFORM_ADMIN_CLERK_USER_ID` | Yes | Clerk user ID of `gopalmuri1919@gmail.com` |
-| `PLATFORM_ADMIN_EMAIL` | Yes | Explicit owner email (`gopalmuri1919@gmail.com`) |
+| `PLATFORM_ADMIN_CLERK_USER_ID` | Optional | Clerk user ID if logging in via Clerk SSO |
+| `PLATFORM_ADMIN_EMAIL` | Yes | Explicit owner email (`admin@thirdeyedata.ai`) |
 | `GROQ_API_KEY` | Yes | Primary Groq API key |
 | `GROQ_API_KEY_FALLBACK_1` | Optional | Fallback Groq API key 1 |
 | `GROQ_API_KEY_FALLBACK_2` | Optional | Fallback Groq API key 2 |
@@ -113,7 +113,7 @@ This document provides step-by-step instructions for deploying the **HiringAI En
    * Enable Email + Password with Email verification code (OTP).
 4. **B2B Architecture Rules:**
    * Disable "Allow users to create organizations" in Clerk dashboard if using platform-admin-provisioned companies.
-   * The system strictly grants access based on `organization_members` database records or `PLATFORM_ADMIN` role (`gopalmuri1919@gmail.com`). Unknown users receive HTTP 403.
+   * The system strictly grants access based on `organization_members` database records or `PLATFORM_ADMIN` role (`admin@thirdeyedata.ai`). Unknown users receive HTTP 403.
 
 ---
 

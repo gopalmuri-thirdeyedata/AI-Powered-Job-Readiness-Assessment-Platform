@@ -250,6 +250,13 @@ const Home = () => {
     };
 
     const openAdminSignIn = () => {
+        const token = localStorage.getItem('token');
+        let profile = null;
+        try { profile = JSON.parse(localStorage.getItem('user_profile') || '{}'); } catch {}
+        if (token && profile && ['PLATFORM_ADMIN', 'ORGANIZATION_ADMIN', 'HR'].includes(profile.role)) {
+            navigate('/admin/dashboard');
+            return;
+        }
         if (user) {
             navigate('/admin/dashboard');
         } else {

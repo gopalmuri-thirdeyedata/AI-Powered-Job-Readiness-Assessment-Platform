@@ -39,7 +39,7 @@ class TestB2BProvisioningFlow(unittest.TestCase):
 
         db.commit()
 
-        cls.plat_email = 'gopalmuri1919@gmail.com'
+        cls.plat_email = 'admin@thirdeyedata.ai'
         plat = db.query(models.User).filter(models.User.email == cls.plat_email).first()
         if not plat:
             plat = models.User(
@@ -58,7 +58,7 @@ class TestB2BProvisioningFlow(unittest.TestCase):
 
     def test_01_platform_admin_login_success(self):
         res = self.client.post('/api/auth/clerk-sync/', json={
-            'email': 'gopalmuri1919@gmail.com',
+            'email': 'admin@thirdeyedata.ai',
             'clerk_user_id': 'clerk_plat_1919'
         })
         self.assertEqual(res.status_code, 200)
@@ -206,7 +206,7 @@ class TestB2BProvisioningFlow(unittest.TestCase):
 
     def test_10_check_email_pre_auth_registered_users(self):
         # Platform Admin
-        plat_res = self.client.post('/api/auth/check-email/', json={'email': 'gopalmuri1919@gmail.com'})
+        plat_res = self.client.post('/api/auth/check-email/', json={'email': 'admin@thirdeyedata.ai'})
         self.assertEqual(plat_res.status_code, 200)
         self.assertTrue(plat_res.json()['allowed'])
         self.assertEqual(plat_res.json()['role'], 'PLATFORM_ADMIN')

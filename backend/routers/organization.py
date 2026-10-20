@@ -97,8 +97,8 @@ def invite_organization_user(
         raise HTTPException(status_code=400, detail="Role must be 'HR', 'ORGANIZATION_ADMIN', or 'STUDENT'.")
 
     # Prevent inviting as Platform Admin
-    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
-    if email == platform_admin_email or email == "admin@hiringai.com":
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
+    if email in (platform_admin_email, "admin@hiringai.com", "admin@thirdeyedata.ai"):
         raise HTTPException(status_code=400, detail="Cannot invite Platform Admin account into an organization.")
 
     # Check if user already exists as a member in this organization

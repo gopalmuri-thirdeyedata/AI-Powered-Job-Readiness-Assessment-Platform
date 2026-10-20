@@ -95,7 +95,7 @@ def run_migration():
             """))
 
         # Update Platform Admin role for owner
-        platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+        platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
         conn.execute(text("""
             UPDATE users SET role = 'PLATFORM_ADMIN'
             WHERE LOWER(email) = :admin_email OR LOWER(email) = 'admin@hiringai.com'

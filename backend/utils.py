@@ -191,7 +191,7 @@ def send_email(to_email: str, subject: str, html_content: str):
 
     try:
         msg = MIMEMultipart()
-        msg['From'] = user
+        msg['From'] = f"PrepWin Recruiting <{user}>"
         msg['To'] = to_email
         msg['Subject'] = subject
 

@@ -56,7 +56,7 @@ DEFAULT_CONFIG = {
         "emailAlerts": True,
         "slackIntegration": False,
         "weeklyDigest": True,
-        "recipientEmail": "gopalmuri1919@gmail.com"
+        "recipientEmail": "admin@thirdeyedata.ai"
     }
 }
 

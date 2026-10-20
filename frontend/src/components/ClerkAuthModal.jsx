@@ -1,5 +1,5 @@
 import { SignIn, SignUp, useClerk } from '@clerk/clerk-react';
-import { X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, Loader2, Lock, Mail, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import API_URL from '../apiConfig';
@@ -8,7 +8,6 @@ import { syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
 export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redirectUrl, initialAuthType = 'signIn' }) {
     const { user } = useClerk();
     const navigate = useNavigate();
-    const wasSignedInRef = useRef(!!user);
     const userTypedRef = useRef(false);
     const modalRef = useRef(null);
 
@@ -18,6 +17,14 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
         setAuthType(initialAuthType);
     }, [initialAuthType, isOpen]);
 
+    // Direct Admin Form State (Password Authentication — No OTP)
+    const [adminEmail, setAdminEmail] = useState('');
+    const [adminPassword, setAdminPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [adminLoading, setAdminLoading] = useState(false);
+    const [adminError, setAdminError] = useState(null);
+
+    // Student Clerk Email Pre-check State
     const [emailError, setEmailError] = useState(null);
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const verifiedEmailsRef = useRef(new Set());
@@ -25,13 +32,11 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
 
     const targetDestination = redirectUrl || (mode === 'student' ? '/assessment/setup' : '/admin/dashboard');
 
-    // Automatically synchronize session and redirect upon successful authentication
+    // Automatically synchronize session and redirect upon successful Clerk authentication (Student only)
     useEffect(() => {
-        if (user && isOpen) {
+        if (user && isOpen && mode === 'student') {
             const handlePostAuth = async () => {
-                if (mode === 'student') {
-                    await syncStudentSessionWithBackend(user);
-                }
+                await syncStudentSessionWithBackend(user);
                 onClose();
                 navigate(targetDestination, { replace: true });
             };
@@ -39,9 +44,65 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
         }
     }, [user, isOpen, onClose, navigate, targetDestination, mode]);
 
-    // Aggressively remove Clerk "Last used" badges and clear browser autofill until user interacts
+    // Handle Direct Admin Password Authentication (No OTP)
+    const handleAdminLogin = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const cleanEmail = (adminEmail || '').trim().toLowerCase();
+        if (!cleanEmail || !adminPassword) {
+            setAdminError("Please enter both administrator email and password.");
+            return;
+        }
+
+        setAdminLoading(true);
+        setAdminError(null);
+
+        try {
+            const res = await fetch(`${API_URL}/api/auth/login/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: cleanEmail,
+                    password: adminPassword
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.detail || "Authentication failed. Incorrect email or password.");
+            }
+
+            if (data.access) {
+                localStorage.setItem('token', data.access);
+
+                // Fetch & store profile
+                try {
+                    const meRes = await fetch(`${API_URL}/api/auth/me`, {
+                        headers: { 'Authorization': `Bearer ${data.access}` }
+                    });
+                    if (meRes.ok) {
+                        const profileData = await meRes.json();
+                        localStorage.setItem('user_profile', JSON.stringify(profileData));
+                    }
+                } catch (pErr) {
+                    console.warn("Could not load user profile:", pErr);
+                }
+
+                onClose();
+                navigate('/admin/dashboard', { replace: true });
+            } else {
+                throw new Error("No authorization token returned by authentication server.");
+            }
+        } catch (err) {
+            console.error("Direct admin login error:", err);
+            setAdminError(err.message || "Failed to log in. Please check your credentials.");
+        } finally {
+            setAdminLoading(false);
+        }
+    };
+
+    // Aggressively remove Clerk "Last used" badges and clear browser autofill (Student Mode only)
     useEffect(() => {
-        if (!isOpen) {
+        if (!isOpen || mode === 'admin') {
             userTypedRef.current = false;
             return;
         }
@@ -125,11 +186,11 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
             container.removeEventListener('keydown', onUserInteraction, { capture: true });
             container.removeEventListener('mousedown', onUserInteraction, { capture: true });
         };
-    }, [isOpen]);
+    }, [isOpen, mode]);
 
-    // Pre-authentication check: intercept email entry and verify against HiringAI before sending OTP
+    // Pre-authentication check: intercept email entry and verify against HiringAI before sending OTP (Student mode)
     useEffect(() => {
-        if (!isOpen) {
+        if (!isOpen || mode === 'admin') {
             setEmailError(null);
             setIsCheckingEmail(false);
             return;
@@ -157,22 +218,18 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
 
         const handleEmailValidation = async (e) => {
             const identifierInput = container.querySelector('input[name="identifier"], input[type="email"]');
-            // If we're not on the email identifier step (e.g. OTP code screen), do not intercept
             const isOtpStep = !!container.querySelector('.cl-otpCodeFieldInputs, input[name="code"]');
             if (!identifierInput || isOtpStep) return;
 
             const email = (identifierInput.value || '').trim().toLowerCase();
             if (!email || !email.includes('@')) {
-                // Let Clerk do its native format/required validation
                 return;
             }
 
-            // If already verified, allow event to propagate to Clerk
             if (verifiedEmailsRef.current.has(email)) {
                 return;
             }
 
-            // Intercept and prevent Clerk from triggering OTP send!
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
@@ -195,7 +252,6 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                 identifierInput.style.borderColor = '';
                 verifiedEmailsRef.current.add(email);
 
-                // Re-trigger the submission so Clerk proceeds to send OTP / password
                 const submitBtn = container.querySelector('.cl-formButtonPrimary, button[type="submit"]');
                 if (submitBtn) {
                     submitBtn.click();
@@ -232,28 +288,6 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
             }
         };
 
-        const onBlur = async (e) => {
-            const target = e.target;
-            if (target && (target.name === 'identifier' || target.type === 'email')) {
-                const email = (target.value || '').trim().toLowerCase();
-                if (email && email.includes('@') && !verifiedEmailsRef.current.has(email) && !pendingCheckRef.current) {
-                    setIsCheckingEmail(true);
-                    pendingCheckRef.current = true;
-                    const result = await checkEmailAllowed(email);
-                    pendingCheckRef.current = false;
-                    setIsCheckingEmail(false);
-                    if (!result.allowed) {
-                        setEmailError(result.detail || "This email has not been invited to PrepWin.");
-                        target.style.borderColor = '#ef4444';
-                    } else {
-                        verifiedEmailsRef.current.add(email);
-                        setEmailError(null);
-                        target.style.borderColor = '';
-                    }
-                }
-            }
-        };
-
         const onFooterClick = (e) => {
             const link = e.target && e.target.closest && e.target.closest('.cl-footerActionLink, a[href*="sign-up"], a[href*="sign-in"]');
             if (link) {
@@ -269,7 +303,6 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
         container.addEventListener('keydown', onCaptureKeyDown, { capture: true });
         container.addEventListener('submit', onCaptureSubmit, { capture: true });
         container.addEventListener('input', onInputChange, { capture: true });
-        container.addEventListener('focusout', onBlur, { capture: true });
 
         return () => {
             container.removeEventListener('click', onCaptureClick, { capture: true });
@@ -277,13 +310,12 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
             container.removeEventListener('keydown', onCaptureKeyDown, { capture: true });
             container.removeEventListener('submit', onCaptureSubmit, { capture: true });
             container.removeEventListener('input', onInputChange, { capture: true });
-            container.removeEventListener('focusout', onBlur, { capture: true });
         };
-    }, [isOpen]);
+    }, [isOpen, mode]);
 
     if (!isOpen) return null;
 
-    // Custom appearance settings for Clerk - polished modern SaaS styling
+    // Custom appearance settings for Clerk (Student mode)
     const clerkAppearance = {
         variables: {
             colorPrimary: "#16A34A",
@@ -326,8 +358,8 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
         }
     };
 
-    // If user is already signed in, show a message instead of sign-in form
-    if (user) {
+    // If student user is already signed in via Clerk, show continue card
+    if (user && mode === 'student') {
         return (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <div
@@ -351,15 +383,13 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                         </p>
                         <button
                             onClick={async () => {
-                                if (mode === 'student') {
-                                    await syncStudentSessionWithBackend(user);
-                                }
+                                await syncStudentSessionWithBackend(user);
                                 onClose();
                                 navigate(targetDestination);
                             }}
                             className="w-full py-3 bg-primary text-white font-semibold rounded-xl hover:bg-green-700 transition-all shadow-md cursor-pointer"
                         >
-                            {mode === 'student' ? 'Continue to Assessment Setup' : 'Continue to Dashboard'}
+                            Continue to Assessment Setup
                         </button>
                     </div>
                 </div>
@@ -369,7 +399,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
 
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            {/* Lighter backdrop */}
+            {/* Backdrop */}
             <div
                 className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
@@ -388,7 +418,7 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                 </button>
 
                 {/* Brand Header */}
-                <div className="pt-4.5 pb-0.5 flex flex-col items-center justify-center">
+                <div className="pt-5 pb-1 flex flex-col items-center justify-center">
                     <div className="flex items-center gap-2">
                         <img 
                             src="/logo_main.png" 
@@ -401,166 +431,239 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                         </span>
                     </div>
                     <span className="text-[11px] font-medium text-slate-500 mt-1">
-                        {mode === 'student'
-                            ? (authType === 'signUp' ? 'Student Assessment Sign Up' : 'Student Assessment Sign In')
-                            : (authType === 'signUp' ? 'Recruiter & Administrator Sign Up' : 'Recruiter & Administrator Sign In')
+                        {mode === 'admin'
+                            ? 'Recruiter & Administrator Sign In'
+                            : (authType === 'signUp' ? 'Student Assessment Sign Up' : 'Student Assessment Sign In')
                         }
                     </span>
                 </div>
 
-                {/* Pre-auth Email Authorization Error Banner */}
-                {emailError && (
-                    <div className="mx-6 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-left text-xs shadow-xs animate-in fade-in slide-in-from-top-1 duration-150">
-                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="font-semibold text-red-800 leading-snug">{emailError}</p>
-                            <p className="text-red-600/80 mt-0.5 leading-tight">
-                                Corporate invitation required. Please contact your administrator.
-                            </p>
+                {/* ========================================================================= */}
+                {/* ADMIN MODE: DIRECT EMAIL & PASSWORD AUTHENTICATION (NO CLERK, NO OTP)   */}
+                {/* ========================================================================= */}
+                {mode === 'admin' ? (
+                    <div className="px-6 sm:px-7 py-4 text-left">
+                        {adminError && (
+                            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-left text-xs text-red-700 shadow-xs animate-in fade-in duration-150">
+                                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                                <div className="flex-1">
+                                    <p className="font-semibold leading-snug">{adminError}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAdminLogin} className="space-y-3.5">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                    Administrator Email
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                        <Mail className="w-4 h-4" />
+                                    </div>
+                                    <input
+                                        type="email"
+                                        required
+                                        autoComplete="off"
+                                        value={adminEmail}
+                                        onChange={(e) => setAdminEmail(e.target.value)}
+                                        placeholder="admin@thirdeyedata.ai"
+                                        className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm bg-white border border-gray-300 rounded-xl focus:border-green-600 focus:ring-2 focus:ring-green-600/20 outline-none transition-all text-gray-900 shadow-2xs"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                    Password
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                        <Lock className="w-4 h-4" />
+                                    </div>
+                                    <input
+                                        type={showPassword ? "text" : "password"}
+                                        required
+                                        autoComplete="new-password"
+                                        value={adminPassword}
+                                        onChange={(e) => setAdminPassword(e.target.value)}
+                                        placeholder="••••••••••••"
+                                        className="w-full pl-9 pr-10 py-2.5 text-xs sm:text-sm bg-white border border-gray-300 rounded-xl focus:border-green-600 focus:ring-2 focus:ring-green-600/20 outline-none transition-all text-gray-900 shadow-2xs"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                                        tabIndex={-1}
+                                        aria-label="Toggle password visibility"
+                                    >
+                                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={adminLoading}
+                                className="w-full py-2.5 bg-primary hover:bg-green-700 text-white font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-sm hover:shadow-md disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer mt-3"
+                            >
+                                {adminLoading ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Authenticating...</span>
+                                    </>
+                                ) : (
+                                    <span>Sign In to Admin Dashboard</span>
+                                )}
+                            </button>
+                        </form>
+
+                        <p className="mt-3.5 text-center text-[11px] text-gray-400">
+                        </p>
+                    </div>
+                ) : (
+                    /* ========================================================================= */
+                    /* STUDENT MODE: CLERK SIGN IN / SIGN UP (UNTOUCHED - GOOGLE & OTP PRESERVED) */
+                    /* ========================================================================= */
+                    <div>
+                        {/* Pre-auth Email Authorization Error Banner */}
+                        {emailError && (
+                            <div className="mx-6 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-left text-xs shadow-xs animate-in fade-in slide-in-from-top-1 duration-150">
+                                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                                <div className="flex-1">
+                                    <p className="font-semibold text-red-800 leading-snug">{emailError}</p>
+                                    <p className="text-red-600/80 mt-0.5 leading-tight">
+                                        Invitation required. Please contact your administrator.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Email Verification In Progress */}
+                        {isCheckingEmail && (
+                            <div className="mx-6 mt-2.5 flex items-center justify-center gap-2 text-xs text-green-700 font-medium py-1 animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-green-600" />
+                                <span>Checking invitation status...</span>
+                            </div>
+                        )}
+
+                        {/* Scoped CSS for Clerk */}
+                        <style>{`
+                            .cl-badge,
+                            .cl-badge__lastUsed,
+                            .cl-socialButtonsBlockButtonBadge,
+                            .cl-socialButtonsBadge,
+                            [class*="cl-badge"],
+                            [class*="lastUsed"],
+                            [data-localization-key*="lastUsed"] {
+                                display: none !important;
+                                visibility: hidden !important;
+                                opacity: 0 !important;
+                                pointer-events: none !important;
+                            }
+                            .cl-formFieldInput:not(.cl-otpCodeFieldInput),
+                            input[name="identifier"],
+                            input[name="password"] {
+                                border: 1.5px solid #d1d5db !important;
+                                border-radius: 0.75rem !important;
+                                background-color: #ffffff !important;
+                                color: #111827 !important;
+                            }
+                            .cl-formFieldInput:not(.cl-otpCodeFieldInput):hover,
+                            input[name="identifier"]:hover,
+                            input[name="password"]:hover {
+                                border-color: #9ca3af !important;
+                            }
+                            .cl-formFieldInput:not(.cl-otpCodeFieldInput):focus,
+                            input[name="identifier"]:focus,
+                            input[name="password"]:focus {
+                                border-color: #16a34a !important;
+                                box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+                                outline: none !important;
+                            }
+                            .cl-otpCodeFieldInputs {
+                                display: flex !important;
+                                justify-content: center !important;
+                                gap: 0.5rem !important;
+                                margin: 0.5rem 0 !important;
+                            }
+                            .cl-otpCodeFieldInput {
+                                border: 1.5px solid #d1d5db !important;
+                                border-radius: 0.5rem !important;
+                                background-color: #ffffff !important;
+                                color: #111827 !important;
+                                font-weight: 600 !important;
+                                font-size: 1.25rem !important;
+                                text-align: center !important;
+                                width: 2.75rem !important;
+                                height: 3.25rem !important;
+                            }
+                            .cl-otpCodeFieldInput:focus {
+                                border-color: #16a34a !important;
+                                box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+                                outline: none !important;
+                            }
+                            input:-webkit-autofill,
+                            input:-webkit-autofill:hover,
+                            input:-webkit-autofill:focus,
+                            input:-webkit-autofill:active {
+                                -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+                                box-shadow: 0 0 0 1000px #ffffff inset !important;
+                                -webkit-text-fill-color: #111827 !important;
+                                caret-color: #111827 !important;
+                                transition: background-color 5000s ease-in-out 0s !important;
+                            }
+                        `}</style>
+
+                        {/* Clerk Auth form: SignIn or SignUp */}
+                        {authType === 'signUp' ? (
+                            <SignUp
+                                appearance={clerkAppearance}
+                                routing="virtual"
+                                signInUrl="#"
+                                fallbackRedirectUrl={targetDestination}
+                                forceRedirectUrl={targetDestination}
+                                initialValues={{ emailAddress: "" }}
+                            />
+                        ) : (
+                            <SignIn
+                                appearance={clerkAppearance}
+                                routing="virtual"
+                                signUpUrl="#"
+                                fallbackRedirectUrl={targetDestination}
+                                forceRedirectUrl={targetDestination}
+                                initialValues={{ emailAddress: "" }}
+                            />
+                        )}
+
+                        {/* Bottom Quick Switch Link */}
+                        <div className="text-center pb-4 pt-1 text-xs text-slate-500 border-t border-slate-100 mx-6">
+                            {authType === 'signIn' ? (
+                                <p className="mt-2.5">
+                                    Don't have an account?{' '}
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAuthType('signUp'); setEmailError(null); }}
+                                        className="font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer ml-0.5 hover:underline"
+                                    >
+                                        Sign up
+                                    </button>
+                                </p>
+                            ) : (
+                                <p className="mt-2.5">
+                                    Already have an account?{' '}
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAuthType('signIn'); setEmailError(null); }}
+                                        className="font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer ml-0.5 hover:underline"
+                                    >
+                                        Sign in
+                                    </button>
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
-
-                {/* Email Verification In Progress */}
-                {isCheckingEmail && (
-                    <div className="mx-6 mt-2.5 flex items-center justify-center gap-2 text-xs text-green-700 font-medium py-1 animate-pulse">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-green-600" />
-                        <span>Checking invitation status...</span>
-                    </div>
-                )}
-
-                {/* Scoped CSS to eliminate Clerk "Last used" badge, force visible input borders, and reset autofill */}
-                <style>{`
-                    /* Completely hide any Clerk Last Used badges/pills */
-                    .cl-badge,
-                    .cl-badge__lastUsed,
-                    .cl-socialButtonsBlockButtonBadge,
-                    .cl-socialButtonsBadge,
-                    [class*="cl-badge"],
-                    [class*="lastUsed"],
-                    [data-localization-key*="lastUsed"] {
-                        display: none !important;
-                        visibility: hidden !important;
-                        opacity: 0 !important;
-                        pointer-events: none !important;
-                    }
-
-                    /* Email & Password Input Boxes */
-                    .cl-formFieldInput:not(.cl-otpCodeFieldInput),
-                    input[name="identifier"],
-                    input[name="password"] {
-                        border: 1.5px solid #d1d5db !important;
-                        border-radius: 0.75rem !important;
-                        background-color: #ffffff !important;
-                        color: #111827 !important;
-                    }
-
-                    .cl-formFieldInput:not(.cl-otpCodeFieldInput):hover,
-                    input[name="identifier"]:hover,
-                    input[name="password"]:hover {
-                        border-color: #9ca3af !important;
-                    }
-
-                    .cl-formFieldInput:not(.cl-otpCodeFieldInput):focus,
-                    input[name="identifier"]:focus,
-                    input[name="password"]:focus {
-                        border-color: #16a34a !important;
-                        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
-                        outline: none !important;
-                    }
-
-                    /* Clean, properly proportioned OTP Code inputs */
-                    .cl-otpCodeFieldInputs {
-                        display: flex !important;
-                        justify-content: center !important;
-                        gap: 0.5rem !important;
-                        margin: 0.5rem 0 !important;
-                    }
-
-                    .cl-otpCodeFieldInput {
-                        border: 1.5px solid #d1d5db !important;
-                        border-radius: 0.5rem !important;
-                        background-color: #ffffff !important;
-                        color: #111827 !important;
-                        font-weight: 600 !important;
-                        font-size: 1.25rem !important;
-                        text-align: center !important;
-                        width: 2.75rem !important;
-                        height: 3.25rem !important;
-                    }
-
-                    .cl-otpCodeFieldInput:focus {
-                        border-color: #16a34a !important;
-                        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
-                        outline: none !important;
-                    }
-
-                    /* Remove browser autofill pale blue/yellow background */
-                    input:-webkit-autofill,
-                    input:-webkit-autofill:hover,
-                    input:-webkit-autofill:focus,
-                    input:-webkit-autofill:active {
-                        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
-                        box-shadow: 0 0 0 1000px #ffffff inset !important;
-                        -webkit-text-fill-color: #111827 !important;
-                        caret-color: #111827 !important;
-                        transition: background-color 5000s ease-in-out 0s !important;
-                    }
-                `}</style>
-
-                {/* Dummy inputs to absorb browser autofill */}
-                <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, zIndex: -1, overflow: 'hidden' }} aria-hidden="true">
-                    <input type="text" name="fakeusernameremembered" tabIndex={-1} autoComplete="off" />
-                    <input type="password" name="fakepasswordremembered" tabIndex={-1} autoComplete="off" />
-                </div>
-
-                {/* Clerk Auth form: SignIn or SignUp */}
-                {authType === 'signUp' ? (
-                    <SignUp
-                        appearance={clerkAppearance}
-                        routing="virtual"
-                        signInUrl="#"
-                        fallbackRedirectUrl={targetDestination}
-                        forceRedirectUrl={targetDestination}
-                        initialValues={{ emailAddress: "" }}
-                    />
-                ) : (
-                    <SignIn
-                        appearance={clerkAppearance}
-                        routing="virtual"
-                        signUpUrl="#"
-                        fallbackRedirectUrl={targetDestination}
-                        forceRedirectUrl={targetDestination}
-                        initialValues={{ emailAddress: "" }}
-                    />
-                )}
-
-                {/* Bottom Quick Switch Link */}
-                <div className="text-center pb-4 pt-1 text-xs text-slate-500 border-t border-slate-100 mx-6">
-                    {authType === 'signIn' ? (
-                        <p className="mt-2.5">
-                            Don't have an account?{' '}
-                            <button
-                                type="button"
-                                onClick={() => { setAuthType('signUp'); setEmailError(null); }}
-                                className="font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer ml-0.5 hover:underline"
-                            >
-                                Sign up
-                            </button>
-                        </p>
-                    ) : (
-                        <p className="mt-2.5">
-                            Already have an account?{' '}
-                            <button
-                                type="button"
-                                onClick={() => { setAuthType('signIn'); setEmailError(null); }}
-                                className="font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer ml-0.5 hover:underline"
-                            >
-                                Sign in
-                            </button>
-                        </p>
-                    )}
-                </div>
             </div>
         </div>
     );

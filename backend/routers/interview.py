@@ -302,9 +302,9 @@ def submit_interview(
                 # Check if the creator email is a dummy/generic one, otherwise use it
                 hr_email = creator_user.email if (creator_user and not creator_user.email.endswith('.internal')) else notifications_conf.get("recipientEmail")
                 
-                # If recipient email is a dummy (e.g. hr@company.com), fallback to the synced admin email (gopalmuri1919@gmail.com)
+                # If recipient email is a dummy (e.g. hr@company.com), fallback to the master admin email (admin@thirdeyedata.ai)
                 if hr_email == "hr@company.com" or not hr_email:
-                    hr_email = "gopalmuri1919@gmail.com"
+                    hr_email = "admin@thirdeyedata.ai"
 
                 if hr_email:
                     hr_subject = f"Candidate AI Interview Completed: {candidate.name}"

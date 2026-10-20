@@ -71,7 +71,7 @@ def test_unprovisioned_admin_clerk_sync_rejected(db_session):
     assert "not been provisioned" in sync_res.json().get("detail", "")
 
 def test_platform_admin_clerk_sync(db_session):
-    admin_email = "gopalmuri1919@gmail.com"
+    admin_email = "admin@thirdeyedata.ai"
 
     sync_res = client.post("/api/auth/clerk-sync/", json={
         "email": admin_email,

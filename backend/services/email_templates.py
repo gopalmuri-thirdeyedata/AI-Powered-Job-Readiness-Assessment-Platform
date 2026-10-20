@@ -195,10 +195,13 @@ def get_invitation_email_template(
 
             {description_html}
 
-            {description_html}
-
             <div style="text-align: center;">
                 <a href="{login_url}" class="cta-button">Go to Candidate Portal</a>
+            </div>
+
+            <div style="background-color: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 12px; margin: 15px 0; word-break: break-all; text-align: left;">
+                <span style="font-size: 11px; font-weight: bold; color: #64748B; text-transform: uppercase;">Direct Portal Link:</span><br/>
+                <a href="{login_url}" style="font-size: 13px; color: #2563EB; font-family: monospace; font-weight: 600; text-decoration: underline;">{login_url}</a>
             </div>
 
             {credentials_html}

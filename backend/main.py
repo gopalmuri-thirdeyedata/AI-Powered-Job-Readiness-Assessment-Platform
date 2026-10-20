@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from jose import jwt, JWTError
 
 env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -200,6 +200,92 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Auto-seed default Platform Admin & primary organization for direct authentication
+@app.on_event("startup")
+def ensure_default_platform_admin():
+    try:
+        with database.SessionLocal() as db:
+            # 1. Ensure primary enterprise organization exists
+            default_org = db.query(models.Organization).filter_by(slug="thirdeyedata").first()
+            if not default_org:
+                default_org = db.query(models.Organization).first()
+            if not default_org:
+                default_org = models.Organization(
+                    name="ThirdEye Data",
+                    slug="thirdeyedata",
+                    status="active"
+                )
+                db.add(default_org)
+                db.commit()
+                db.refresh(default_org)
+                print(f"[Startup] Provisioned Primary Organization: {default_org.name} (id={default_org.id})")
+            elif default_org.status != "active":
+                default_org.status = "active"
+                db.commit()
+
+            # 2. Ensure Platform Admin user exists
+            admin_email = "admin@thirdeyedata.ai"
+            default_pass = os.getenv("ADMIN_DEFAULT_PASSWORD", "ThirdEyeAdmin@2026!").strip()
+            admin = db.query(models.User).filter(func.lower(models.User.email) == admin_email).first()
+            if not admin:
+                admin = models.User(
+                    email=admin_email,
+                    role=models.UserRole.PLATFORM_ADMIN,
+                    hashed_password=utils.get_password_hash(default_pass),
+                    is_active=True,
+                    organization_id=default_org.id
+                )
+                db.add(admin)
+                db.commit()
+                db.refresh(admin)
+                print(f"[Startup] Provisioned Platform Admin: {admin_email}")
+            else:
+                updated = False
+                if admin.role != models.UserRole.PLATFORM_ADMIN:
+                    admin.role = models.UserRole.PLATFORM_ADMIN
+                    updated = True
+                if not admin.is_active:
+                    admin.is_active = True
+                    updated = True
+                if admin.organization_id != default_org.id:
+                    admin.organization_id = default_org.id
+                    updated = True
+                if updated:
+                    db.commit()
+                    db.refresh(admin)
+
+            # 3. Ensure OrganizationMember entry for Platform Admin
+            member = db.query(models.OrganizationMember).filter(
+                models.OrganizationMember.user_id == admin.id,
+                models.OrganizationMember.organization_id == default_org.id
+            ).first()
+            if not member:
+                member = models.OrganizationMember(
+                    user_id=admin.id,
+                    organization_id=default_org.id,
+                    role="ORGANIZATION_ADMIN",
+                    status="active"
+                )
+                db.add(member)
+                db.commit()
+            elif member.status != "active":
+                member.status = "active"
+                db.commit()
+
+            # 4. Connect unlinked candidate and student records to the primary organization
+            db.query(models.Candidate).filter(models.Candidate.organization_id == None).update(
+                {"organization_id": default_org.id}, synchronize_session=False
+            )
+            db.query(models.StudentProfile).filter(models.StudentProfile.organization_id == None).update(
+                {"organization_id": default_org.id}, synchronize_session=False
+            )
+            db.query(models.RoleReadySession).filter(models.RoleReadySession.organization_id == None).update(
+                {"organization_id": default_org.id}, synchronize_session=False
+            )
+            db.commit()
+    except Exception as e:
+        print(f"[Startup Note] Platform Admin initialization: {e}")
 
 # Health Check Endpoints (Phase 20)
 @app.get("/health/live", tags=["health"])

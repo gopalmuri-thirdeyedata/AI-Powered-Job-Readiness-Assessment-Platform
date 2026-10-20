@@ -185,7 +185,7 @@ const GlobalSettings = () => {
             emailAlerts: true,
             slackIntegration: false,
             weeklyDigest: true,
-            recipientEmail: 'gopalmuri1919@gmail.com'
+            recipientEmail: 'admin@thirdeyedata.ai'
         }
     });
 

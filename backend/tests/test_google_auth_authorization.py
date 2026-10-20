@@ -181,7 +181,7 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         db = next(database.get_db())
         cls._cleanup_db(db)
         db.close()
-        os.environ["PLATFORM_ADMIN_EMAIL"] = "gopalmuri1919@gmail.com"
+        os.environ["PLATFORM_ADMIN_EMAIL"] = "admin@thirdeyedata.ai"
         os.environ["PLATFORM_ADMIN_CLERK_USER_ID"] = ""
 
     def test_01_unknown_google_user_rejected_with_403(self):

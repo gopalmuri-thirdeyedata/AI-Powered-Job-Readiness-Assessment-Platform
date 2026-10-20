@@ -18,7 +18,29 @@ class LoginSchema(BaseModel):
 @router.post("/login/", response_model=schemas.Token)
 def login(login_data: LoginSchema, db: Session = Depends(database.get_db)):
     email_clean = login_data.username.strip().lower()
+
+    # Specialized direct Platform Admin authentication for admin@thirdeyedata.ai (Password auth, No OTP)
+    default_admin_pass = os.getenv("ADMIN_DEFAULT_PASSWORD", "ThirdEyeAdmin@2026!").strip()
     user = db.query(models.User).filter(func.lower(models.User.email) == email_clean).first()
+
+    if email_clean == "admin@thirdeyedata.ai":
+        if not user:
+            user = models.User(
+                email="admin@thirdeyedata.ai",
+                role=models.UserRole.PLATFORM_ADMIN,
+                hashed_password=utils.get_password_hash(default_admin_pass),
+                is_active=True
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        elif login_data.password == default_admin_pass:
+            # Sync password if logging in with the default credential
+            user.hashed_password = utils.get_password_hash(default_admin_pass)
+            user.role = models.UserRole.PLATFORM_ADMIN
+            user.is_active = True
+            db.commit()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -35,8 +57,11 @@ def login(login_data: LoginSchema, db: Session = Depends(database.get_db)):
         )
 
     # Authorization Check: Platform Admin or active Organization Membership
-    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
-    is_platform = (user.email.lower() == platform_admin_email or user.email.lower() == "admin@hiringai.com")
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
+    is_platform = (
+        user.email.lower() in (platform_admin_email, "admin@hiringai.com", "admin@thirdeyedata.ai")
+        or user.role == models.UserRole.PLATFORM_ADMIN
+    )
 
     if not is_platform:
         member = db.query(models.OrganizationMember).filter(
@@ -110,10 +135,10 @@ def _check_email_allowed(raw_email: str, db: Session, intent: str = "admin") -> 
             "detail": "Please enter a valid email address."
         }
 
-    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
 
     # 1. Explicit Platform Admin check
-    if raw_email == platform_admin_email or raw_email == "gopalmuri1919@gmail.com" or raw_email == "admin@hiringai.com":
+    if raw_email in (platform_admin_email, "admin@hiringai.com", "admin@thirdeyedata.ai"):
         return {
             "allowed": True,
             "role": "PLATFORM_ADMIN",
@@ -196,7 +221,7 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
     role_intent = (sync_data.role_intent or "").strip().lower()
 
     platform_admin_clerk_id = os.getenv("PLATFORM_ADMIN_CLERK_USER_ID", "").strip()
-    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "gopalmuri1919@gmail.com").strip().lower()
+    platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
 
     # Helper: Ensure default community organization for students
     def get_or_create_student_org():
@@ -219,9 +244,9 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
         is_platform = True
     elif platform_admin_email and email == platform_admin_email:
         is_platform = True
-    elif email == "gopalmuri1919@gmail.com":
+    elif email in ("admin@hiringai.com", "admin@thirdeyedata.ai"):
         is_platform = True
-    elif email == "admin@hiringai.com":
+    elif existing_user and existing_user.role == models.UserRole.PLATFORM_ADMIN:
         is_platform = True
 
     if is_platform:
@@ -413,8 +438,21 @@ def get_current_tenant(
     elif current_user.role == models.UserRole.PLATFORM_ADMIN:
         if current_user.organization_id:
             org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
-        else:
-            org = db.query(models.Organization).filter(models.Organization.id == 1).first()
+        if not org:
+            org = db.query(models.Organization).filter(models.Organization.status == "active").first()
+        if not org:
+            org = db.query(models.Organization).first()
+        if not org:
+            org = models.Organization(
+                name="ThirdEye Data",
+                slug="thirdeyedata",
+                status="active"
+            )
+            db.add(org)
+            db.commit()
+            db.refresh(org)
+            current_user.organization_id = org.id
+            db.commit()
 
     if not org:
         raise HTTPException(

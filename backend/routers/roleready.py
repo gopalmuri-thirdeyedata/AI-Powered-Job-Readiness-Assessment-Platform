@@ -5,11 +5,12 @@ Exposes endpoints for:
 2. Workflow B: Administrator Recruitment (Batches, Bulk Candidate Import, Invitations, Consolidated Reporting)
 3. Candidate Invitation Portal: Verification and sequential assessment execution
 """
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Header, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from urllib.parse import urlparse
 import os
 import re
 import shutil
@@ -792,9 +793,38 @@ async def parse_admin_resumes(
     }
 
 
+def _resolve_portal_base_url(request: Request) -> str:
+    """
+    Dynamically determines the client-facing base URL for assessment invitation links.
+    Prevents broken localhost:5173 links when deployed across network / Docker.
+    """
+    origin = request.headers.get("origin")
+    if origin and not origin.endswith(":5173"):
+        return origin.strip().rstrip("/")
+    referer = request.headers.get("referer")
+    if referer:
+        try:
+            parsed = urlparse(referer)
+            if parsed.scheme and parsed.netloc and not parsed.netloc.endswith(":5173"):
+                return f"{parsed.scheme}://{parsed.netloc}"
+        except Exception:
+            pass
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if forwarded_host and not forwarded_host.endswith(":5173"):
+        proto = request.headers.get("x-forwarded-proto", "http")
+        return f"{proto}://{forwarded_host}".rstrip("/")
+    env_frontend = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    if env_frontend and not env_frontend.endswith(":5173"):
+        return env_frontend
+    if origin:
+        return origin.strip().rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
 @router.post("/admin/dispatch-batch")
 def dispatch_batch_assessments(
     payload: DispatchAssessmentPayload,
+    request: Request,
     current_user: models.User = Depends(require_hr_or_admin),
     current_tenant: Optional[models.Organization] = Depends(get_current_tenant),
     db: Session = Depends(database.get_db)
@@ -884,26 +914,43 @@ def dispatch_batch_assessments(
         db.add(invitation)
         db.flush()
 
-        # Send invitation email
-        portal_url = f"http://localhost:5173/portal/roleready?token={token}"
+        # Send invitation email with dynamic domain resolution
+        portal_base = _resolve_portal_base_url(request)
+        portal_url = f"{portal_base}/portal/roleready?token={token}"
         email_subject = f"RoleReady Assessment Invitation: {target_role} at {target_company}"
         email_html = f"""
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <h2 style="color: #2e7d32;">RoleReady Assessment Invitation</h2>
-            <p>Dear {cand.name},</p>
-            <p>You have been invited by <strong>{target_company}</strong> to take an AI-powered job readiness assessment for the <strong>{target_role}</strong> position.</p>
-            <p>The assessment consists of three sequential stages:</p>
-            <ol>
-                <li><strong>Aptitude Assessment</strong> (15 mins)</li>
-                <li><strong>Coding Sandbox</strong> (30 mins)</li>
-                <li><strong>Technical AI Interview</strong> (15 mins)</li>
-            </ol>
-            <p style="margin: 30px 0;">
-                <a href="{portal_url}" style="background-color: #5d8c2c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-                    Start Assessment
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <h2 style="color: #2e7d32; margin: 0; font-size: 24px;">RoleReady Assessment Invitation</h2>
+                <p style="color: #64748b; font-size: 13px; margin-top: 4px;">AI-Powered Job Readiness Platform</p>
+            </div>
+            <p style="font-size: 15px;">Dear <strong>{cand.name}</strong>,</p>
+            <p style="font-size: 14px; line-height: 1.6;">You have been invited by <strong>{target_company}</strong> to take an AI-powered job readiness assessment for the <strong>{target_role}</strong> position.</p>
+            
+            <div style="background-color: #f8fafc; border-left: 4px solid #5d8c2c; padding: 14px 16px; margin: 20px 0; border-radius: 4px;">
+                <p style="margin: 0 0 8px 0; font-weight: bold; font-size: 14px; color: #0f172a;">Assessment Stages:</p>
+                <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #334155; line-height: 1.7;">
+                    <li><strong>Aptitude Assessment</strong> (15 mins)</li>
+                    <li><strong>Coding Sandbox</strong> (30 mins)</li>
+                    <li><strong>Technical AI Voice Interview</strong> (15 mins)</li>
+                </ol>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{portal_url}" style="background-color: #5d8c2c; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 2px 8px rgba(93, 140, 44, 0.3);">
+                    Start Assessment Now
                 </a>
-            </p>
-            <p style="font-size: 12px; color: #64748b;">This is a unique single-use link that will expire in 7 days. Do not share this link with anyone else.</p>
+            </div>
+
+            <div style="background-color: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; margin: 20px 0; word-break: break-all;">
+                <span style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Direct Assessment URL:</span><br/>
+                <a href="{portal_url}" style="font-size: 13px; color: #166534; font-family: monospace; font-weight: 600; text-decoration: underline;">{portal_url}</a>
+            </div>
+
+            <p style="font-size: 12px; color: #64748b; line-height: 1.5;">This single-use access link expires in 7 days. Please ensure you are in a quiet environment with a microphone and webcam enabled before beginning.</p>
+            <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; text-align: center; font-size: 11px; color: #94a3b8;">
+                &copy; 2026 PrepWin Assessment Platform. All rights reserved.
+            </div>
         </div>
         """
         email_sent = utils.send_email(cand_email, email_subject, email_html)
@@ -934,6 +981,7 @@ def dispatch_batch_assessments(
 @router.post("/admin/invitations/{invitation_id}/retry")
 def retry_candidate_invitation_email(
     invitation_id: int,
+    request: Request,
     current_user: models.User = Depends(require_hr_or_admin),
     current_tenant: Optional[models.Organization] = Depends(get_current_tenant),
     db: Session = Depends(database.get_db)
@@ -955,20 +1003,28 @@ def retry_candidate_invitation_email(
     if not cand or not cand.email:
         raise HTTPException(status_code=400, detail="Candidate email is missing.")
 
-    portal_url = f"http://localhost:5173/portal/roleready?token={invitation.invitation_token}"
+    portal_base = _resolve_portal_base_url(request)
+    portal_url = f"{portal_base}/portal/roleready?token={invitation.invitation_token}"
     role_name = cand.role or "Software Engineer"
     email_subject = f"RoleReady Assessment Invitation: {role_name}"
     email_html = f"""
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #2e7d32;">RoleReady Assessment Invitation</h2>
-        <p>Dear {cand.name},</p>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+        <h2 style="color: #2e7d32; margin-top: 0;">RoleReady Assessment Invitation</h2>
+        <p>Dear <strong>{cand.name}</strong>,</p>
         <p>This is a reminder to complete your RoleReady job assessment for the <strong>{role_name}</strong> position.</p>
-        <p style="margin: 30px 0;">
-            <a href="{portal_url}" style="background-color: #5d8c2c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+        
+        <div style="text-align: center; margin: 28px 0;">
+            <a href="{portal_url}" style="background-color: #5d8c2c; color: #ffffff; padding: 13px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block;">
                 Start Assessment
             </a>
-        </p>
-        <p style="font-size: 12px; color: #64748b;">Single-use assessment invitation link.</p>
+        </div>
+        
+        <div style="background-color: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin: 18px 0; word-break: break-all;">
+            <span style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Direct Link:</span><br/>
+            <a href="{portal_url}" style="font-size: 13px; color: #166534; font-family: monospace; font-weight: 600; text-decoration: underline;">{portal_url}</a>
+        </div>
+        
+        <p style="font-size: 12px; color: #64748b;">Single-use secure assessment invitation link.</p>
     </div>
     """
     sent = utils.send_email(cand.email, email_subject, email_html)

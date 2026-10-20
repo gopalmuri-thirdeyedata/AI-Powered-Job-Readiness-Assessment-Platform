@@ -17,7 +17,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
@@ -2816,8 +2816,70 @@ def get_admin_tracking_data(db: Session, org_id: int) -> List[Dict[str, Any]]:
             "interview_score": session.interview_score if session and session.interview_score is not None and session.current_state in [RoleReadySessionState.INTERVIEW_EVALUATED, RoleReadySessionState.COMPLETED] else None,
             "overall_score": session.overall_readiness_score if session and session.current_state == RoleReadySessionState.COMPLETED else None,
             "session_uuid": session.session_uuid if session else None,
+            "invitation_token": inv.invitation_token,
             "created_at": inv.created_at.isoformat() if inv.created_at else None,
             "completed_at": session.completed_at.isoformat() if session and session.completed_at else None
+        })
+
+    # Also include direct student sessions (Self-Assessment or portal sessions not initiated via batch invitation)
+    direct_query = db.query(RoleReadySession).filter(
+        or_(
+            RoleReadySession.organization_id == org_id,
+            RoleReadySession.organization_id == None
+        )
+    )
+    if seen_session_ids:
+        direct_query = direct_query.filter(RoleReadySession.id.notin_(seen_session_ids))
+    direct_sessions = direct_query.order_by(RoleReadySession.created_at.desc()).all()
+
+    for sess in direct_sessions:
+        student_name = "Student Candidate"
+        student_email = "student@prepwin.ai"
+        if sess.student_profile:
+            student_name = sess.student_profile.full_name or sess.student_profile.name or student_name
+            student_email = sess.student_profile.email or student_email
+        elif sess.candidate:
+            student_name = sess.candidate.name or student_name
+            student_email = sess.candidate.email or student_email
+
+        st = sess.current_state
+        readable_status = "Assessment Started"
+        if st == RoleReadySessionState.NOT_STARTED:
+            readable_status = "Ready to Start"
+        elif st == RoleReadySessionState.APTITUDE_IN_PROGRESS:
+            readable_status = "Aptitude In Progress"
+        elif st in [RoleReadySessionState.APTITUDE_SUBMITTED, RoleReadySessionState.APTITUDE_EVALUATED, RoleReadySessionState.CODING_UNLOCKED]:
+            readable_status = "Aptitude Completed"
+        elif st == RoleReadySessionState.CODING_IN_PROGRESS:
+            readable_status = "Coding In Progress"
+        elif st in [RoleReadySessionState.CODING_SUBMITTED, RoleReadySessionState.CODING_EVALUATED, RoleReadySessionState.INTERVIEW_UNLOCKED]:
+            readable_status = "Coding Completed"
+        elif st == RoleReadySessionState.INTERVIEW_IN_PROGRESS:
+            readable_status = "Interview In Progress"
+        elif st in [RoleReadySessionState.INTERVIEW_SUBMITTED, RoleReadySessionState.INTERVIEW_EVALUATED]:
+            readable_status = "Interview Completed"
+        elif st == RoleReadySessionState.COMPLETED:
+            readable_status = "Assessment Completed"
+
+        tracking_list.append({
+            "id": f"sess-{sess.id}",
+            "candidate_id": sess.candidate_id or (sess.student_profile.id if sess.student_profile else sess.id),
+            "name": student_name,
+            "email": student_email,
+            "target_role": sess.target_role or "Software Engineer",
+            "batch_id": None,
+            "batch_name": "Direct Student Assessment",
+            "invitation_status": "COMPLETED" if sess.current_state == RoleReadySessionState.COMPLETED else "IN_PROGRESS",
+            "readable_status": readable_status,
+            "assessment_state": sess.current_state,
+            "aptitude_score": sess.aptitude_score if sess.aptitude_score is not None and sess.current_state not in [RoleReadySessionState.NOT_STARTED, RoleReadySessionState.APTITUDE_IN_PROGRESS] else None,
+            "coding_score": sess.coding_score if sess.coding_score is not None and sess.current_state in [RoleReadySessionState.CODING_EVALUATED, RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS, RoleReadySessionState.INTERVIEW_SUBMITTED, RoleReadySessionState.INTERVIEW_EVALUATED, RoleReadySessionState.COMPLETED] else None,
+            "interview_score": sess.interview_score if sess.interview_score is not None and sess.current_state in [RoleReadySessionState.INTERVIEW_EVALUATED, RoleReadySessionState.COMPLETED] else None,
+            "overall_score": sess.overall_readiness_score if sess.current_state == RoleReadySessionState.COMPLETED else None,
+            "session_uuid": sess.session_uuid,
+            "invitation_token": None,
+            "created_at": sess.created_at.isoformat() if sess.created_at else None,
+            "completed_at": sess.completed_at.isoformat() if sess.completed_at else None
         })
 
     return tracking_list
