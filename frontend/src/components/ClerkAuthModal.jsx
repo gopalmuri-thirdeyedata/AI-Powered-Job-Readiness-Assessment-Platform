@@ -48,7 +48,8 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
     const handleAdminLogin = async (e) => {
         if (e && e.preventDefault) e.preventDefault();
         const cleanEmail = (adminEmail || '').trim().toLowerCase();
-        if (!cleanEmail || !adminPassword) {
+        const cleanPassword = (adminPassword || '').trim();
+        if (!cleanEmail || !cleanPassword) {
             setAdminError("Please enter both administrator email and password.");
             return;
         }
@@ -62,13 +63,21 @@ export default function ClerkAuthModal({ isOpen, onClose, mode = 'student', redi
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     username: cleanEmail,
-                    password: adminPassword
+                    password: cleanPassword
                 })
             });
 
-            const data = await res.json();
+            let data = null;
+            try {
+                data = await res.json();
+            } catch (jsonErr) {
+                if (!res.ok) {
+                    throw new Error("Server is initializing or temporarily busy. Please wait a moment and try again.");
+                }
+            }
+
             if (!res.ok) {
-                throw new Error(data.detail || "Authentication failed. Incorrect email or password.");
+                throw new Error((data && data.detail) || "Authentication failed. Incorrect email or password.");
             }
 
             if (data.access) {

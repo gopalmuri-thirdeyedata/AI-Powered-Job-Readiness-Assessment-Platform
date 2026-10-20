@@ -34,7 +34,7 @@ def login(login_data: LoginSchema, db: Session = Depends(database.get_db)):
             db.add(user)
             db.commit()
             db.refresh(user)
-        elif login_data.password == default_admin_pass:
+        elif login_data.password.strip() == default_admin_pass or login_data.password == default_admin_pass:
             # Sync password if logging in with the default credential
             user.hashed_password = utils.get_password_hash(default_admin_pass)
             user.role = models.UserRole.PLATFORM_ADMIN
@@ -48,7 +48,7 @@ def login(login_data: LoginSchema, db: Session = Depends(database.get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    is_valid = utils.verify_password(login_data.password, user.hashed_password)
+    is_valid = utils.verify_password(login_data.password, user.hashed_password) or utils.verify_password(login_data.password.strip(), user.hashed_password)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
