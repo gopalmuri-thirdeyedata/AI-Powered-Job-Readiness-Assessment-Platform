@@ -1381,7 +1381,6 @@ def bulk_update_candidates(
         raise HTTPException(status_code=404, detail="No candidates found with provided IDs")
     
     updated_count = 0
-    email_sent_count = 0
     
     # STAGE MAPPING
     STAGE_MAPPING = {
@@ -1458,21 +1457,11 @@ def bulk_update_candidates(
             candidate.status = payload.status
             has_changed = True
             
-        # Trigger Offer Email if the status is "Offer Released" or stage becomes "Offer Sent"
+        # Move to the offer stage if the status is "Offer Released" or stage becomes "Offer Sent"
         if payload.status == "Offer Released" or current_target == models.CandidateStage.Offer_Sent.value:
             candidate.stage = models.CandidateStage.Offer_Sent.value # Update stage so they leave the interview round
             candidate.status = "Offer Released"
             has_changed = True
-            try:
-                import utils
-                from services import email_templates
-                subject = "Congratulations! Your Offer is Ready"
-                html = email_templates.get_offer_email_template(candidate.name, candidate.role or "Software Engineer")
-                print(f"Attempting to send offer to: {candidate.email}")
-                if utils.send_email(candidate.email, subject, html):
-                    email_sent_count += 1
-            except Exception as e:
-                print(f"Failed to send offer email to {candidate.email}: {e}")
 
         if has_changed:
             updated_count += 1
@@ -1480,8 +1469,6 @@ def bulk_update_candidates(
     db.commit()
     
     msg = f"Successfully updated {updated_count} candidate(s)."
-    if email_sent_count > 0:
-        msg += f" {email_sent_count} offer email(s) sent."
     
     return {
         "message": msg,

@@ -23,7 +23,6 @@ import {
     AlertCircle,
     User,
     CheckCircle2,
-    RotateCcw,
     Copy,
 } from 'lucide-react';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -61,7 +60,6 @@ const Dashboard = () => {
     // Step 3: Send Invitations & Results
     const [isDispatching, setIsDispatching] = useState(false);
     const [dispatchResults, setDispatchResults] = useState(null);
-    const [retryingInvitationId, setRetryingInvitationId] = useState(null);
     const [copiedId, setCopiedId] = useState(null);
 
     const copyToClipboard = (text, id) => {
@@ -231,10 +229,10 @@ const Dashboard = () => {
 
         setConfirmation({
             isOpen: true,
-            title: 'Send Assessment Invitations',
-            message: `Are you sure you want to dispatch unique PrepWin assessment links to ${validCandidates.length} candidate(s)? This will generate single-use assessment tokens and deliver invitation emails.`,
+            title: 'Generate Assessment Links',
+            message: `Are you sure you want to dispatch unique PrepWin assessment links to ${validCandidates.length} candidate(s)? This will generate single-use assessment links that you can copy and share with each candidate.`,
             type: 'info',
-            confirmText: 'Send Invitations',
+            confirmText: 'Generate Links',
             cancelText: 'Cancel',
             isAlert: false,
             onConfirm: executeDispatch
@@ -277,34 +275,6 @@ const Dashboard = () => {
             });
         } finally {
             setIsDispatching(false);
-        }
-    };
-
-    const handleRetryInvitation = async (invitationId) => {
-        setRetryingInvitationId(invitationId);
-        try {
-            const res = await rolereadyApi.retryInvitation(invitationId);
-            setConfirmation({
-                isOpen: true,
-                title: 'Invitation Retried',
-                message: `Assessment invitation email was re-sent to ${res.email}.`,
-                type: 'success',
-                confirmText: 'OK',
-                isAlert: true
-            });
-            await fetchTrackingData();
-        } catch (err) {
-            console.error("Retry failed:", err);
-            setConfirmation({
-                isOpen: true,
-                title: 'Retry Failed',
-                message: err.response?.data?.detail || 'Could not resend email invitation.',
-                type: 'danger',
-                confirmText: 'OK',
-                isAlert: true
-            });
-        } finally {
-            setRetryingInvitationId(null);
         }
     };
 
@@ -825,26 +795,9 @@ const Dashboard = () => {
                                                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                                             {dispatchedInfo ? (
                                                                 <>
-                                                                    {dispatchedInfo.email_sent ? (
-                                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
-                                                                            <CheckCircle2 className="w-3 h-3" /> Email Sent
-                                                                        </span>
-                                                                    ) : (
-                                                                        <div className="inline-flex items-center gap-1.5">
-                                                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-                                                                                Link Created
-                                                                            </span>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleRetryInvitation(dispatchedInfo.invitation_id)}
-                                                                                disabled={retryingInvitationId === dispatchedInfo.invitation_id}
-                                                                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-                                                                                title="Retry Email Delivery"
-                                                                            >
-                                                                                <RotateCcw className={`w-3.5 h-3.5 ${retryingInvitationId === dispatchedInfo.invitation_id ? 'animate-spin' : ''}`} />
-                                                                            </button>
-                                                                        </div>
-                                                                    )}
+                                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                                                                        <CheckCircle2 className="w-3 h-3" /> Link Ready
+                                                                    </span>
 
                                                                     {dispatchedInfo.portal_url && (
                                                                         <button
@@ -1099,17 +1052,6 @@ const Dashboard = () => {
                                                             </button>
                                                         )}
 
-                                                        {cand.invitation_status === 'PENDING' && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRetryInvitation(cand.id)}
-                                                                disabled={retryingInvitationId === cand.id}
-                                                                className="p-1 rounded text-slate-400 hover:text-[#5d8c2c] hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                                                                title="Resend invitation email"
-                                                            >
-                                                                <RotateCcw className={`w-3 h-3 ${retryingInvitationId === cand.id ? 'animate-spin' : ''}`} />
-                                                            </button>
-                                                        )}
                                                     </div>
                                                 </td>
 

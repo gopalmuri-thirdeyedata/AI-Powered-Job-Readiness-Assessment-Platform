@@ -2,9 +2,6 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
 import re
 from dotenv import load_dotenv
@@ -94,11 +91,15 @@ def create_resume_preview_token(email: str, file_path: str, expires_seconds: int
     secret = get_secret_key()
     return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
-# Email Config
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USER = os.getenv("EMAIL_HOST_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+
+def send_email(*args, **kwargs) -> bool:
+    """
+    Email delivery has been removed from the platform, so this never sends anything and returns False.
+    It exists only because the frozen interview router (routers/interview.py must stay byte-identical)
+    still calls it inside a try/except for an HR alert.
+    """
+    return False
+
 
 def is_valid_candidate_email(email: Optional[str]) -> bool:
     """
@@ -172,39 +173,3 @@ def is_valid_candidate_email(email: Optional[str]) -> bool:
         
     return True
 
-def send_email(to_email: str, subject: str, html_content: str):
-    # Skip dummy or internal placeholder emails
-    if not to_email or not is_valid_candidate_email(to_email) or to_email.endswith(".internal"):
-        print(f"Skipping email delivery to unverified/dummy address: {to_email}")
-        return False
-
-    # Fetch latest credentials from environment
-    load_dotenv(override=True)
-    host = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-    port = int(os.getenv("EMAIL_PORT", 587))
-    user = os.getenv("EMAIL_HOST_USER")
-    password = os.getenv("EMAIL_HOST_PASSWORD")
-
-    if not user or not password:
-        print("Email credentials not set. Skipping email.")
-        return False
-
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = f"PrepWin Recruiting <{user}>"
-        msg['To'] = to_email
-        msg['Subject'] = subject
-
-        msg.attach(MIMEText(html_content, 'html'))
-
-        server = smtplib.SMTP(host, port)
-        server.starttls()
-        server.login(user, password)
-        text = msg.as_string()
-        server.sendmail(user, to_email, text)
-        server.quit()
-        print(f"Email sent to {to_email}")
-        return True
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-        return False

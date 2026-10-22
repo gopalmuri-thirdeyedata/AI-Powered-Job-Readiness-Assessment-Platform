@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from services.proctor_service import analyze_frame, get_model_status
 
@@ -15,7 +16,8 @@ async def get_proctoring_status():
     Returns YOLO model loading status, supported classes, and active confidence settings.
     Used for frontend hardware readiness checks and diagnostic validation.
     """
-    return get_model_status()
+    # never waits for the model: a worker that is still loading answers "loading" instead of freezing
+    return await run_in_threadpool(get_model_status, False)
 
 
 @router.post("/analyze-frame")
@@ -30,6 +32,7 @@ async def analyze_proctor_frame(payload: FrameRequest):
     if not payload.image:
         raise HTTPException(status_code=400, detail="No image provided")
 
-    result = analyze_frame(payload.image)
-    return result
+    # Detection is CPU-heavy. Run it on a worker thread so this server process keeps answering other
+    # requests (submitting a round, saving a profile) while a frame is being analysed.
+    return await run_in_threadpool(analyze_frame, payload.image)
 

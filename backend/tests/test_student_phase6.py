@@ -10,8 +10,42 @@ from main import app
 import models
 import database
 import utils
+from services import github_repo_service
 
 client = TestClient(app)
+
+VALID_DESCRIPTION = (
+    "An asynchronous in-memory caching engine built with FastAPI and Redis. It implements LRU eviction, "
+    "distributed locking through Redlock and exposes Prometheus metrics for high-throughput microservices."
+)
+FAKE_REPO = {
+    "full_name": "alice/project", "url": "https://github.com/alice/project", "description": "Cache engine",
+    "primary_language": "Python", "languages": {"Python": 92.0, "Dockerfile": 8.0}, "topics": ["cache"],
+    "stars": 3, "forks": 1, "open_issues": 0, "default_branch": "main", "created_at": "2026-01-01T00:00:00Z",
+    "pushed_at": "2026-10-01T00:00:00Z", "archived": False, "is_fork": False, "size_kb": 120,
+    "has_readme": True, "readme_words": 220, "readme_excerpt": "A cache engine",
+}
+
+
+def project_payload(**overrides):
+    """A project that satisfies every rule: real title, a proper description and a GitHub repository link."""
+    payload = {
+        "title": "CloudScale Distributed Cache",
+        "description": VALID_DESCRIPTION,
+        "tech_stack": ["Python", "FastAPI", "Redis"],
+        "github_url": "https://github.com/alice/cloudscale-cache",
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.fixture(autouse=True)
+def stub_github(monkeypatch):
+    """These tests never call the real GitHub; every repository 'exists'."""
+    monkeypatch.setattr(
+        github_repo_service, "fetch_repo_summary",
+        lambda owner, repo: {**FAKE_REPO, "full_name": f"{owner}/{repo}", "url": f"https://github.com/{owner}/{repo}"},
+    )
 
 
 @pytest.fixture(scope="module")
@@ -154,11 +188,11 @@ def test_update_student_project(setup_phase6_data):
     # Create initial project
     create_res = client.post(
         "/api/student/projects",
-        json={
-            "title": "Basic Note App",
-            "description": "Simple notes with React.",
-            "tech_stack": ["React"]
-        },
+        json=project_payload(
+            title="Basic Note App",
+            description="A simple notes application where a signed in user can create, edit and delete short text notes and see them in a list.",
+            tech_stack=["React"],
+        ),
         headers={"Authorization": f"Bearer {data['token_a']}"}
     )
     proj_id = create_res.json()["id"]
@@ -169,7 +203,7 @@ def test_update_student_project(setup_phase6_data):
         f"/api/student/projects/{proj_id}",
         json={
             "title": "Enterprise Collaboration & Notes Suite",
-            "description": "Scalable full-stack collaborative real-time document editing platform using React, FastAPI, PostgreSQL and WebSockets with optimistic UI updates.",
+            "description": "Scalable full-stack collaborative real-time document editing platform using React, FastAPI, PostgreSQL and WebSockets with optimistic UI updates, presence indicators and version history.",
             "tech_stack": ["React", "FastAPI", "PostgreSQL", "WebSockets", "Docker"],
             "github_url": "https://github.com/alice/collab-notes",
             "live_url": "https://notes-collab.io"
@@ -187,11 +221,11 @@ def test_analyze_student_project_endpoint(setup_phase6_data):
     data = setup_phase6_data
     create_res = client.post(
         "/api/student/projects",
-        json={
-            "title": "FinTech Payment Gateway Simulator",
-            "description": "Idempotent payment processing engine simulating Stripe webhook retries, transaction reconciliation, and ledger recording.",
-            "tech_stack": ["Node.js", "Express", "MySQL", "Redis"]
-        },
+        json=project_payload(
+            title="FinTech Payment Gateway Simulator",
+            description="Idempotent payment processing engine that simulates Stripe webhook retries, transaction reconciliation and double-entry ledger recording for a small online store, with a test suite.",
+            tech_stack=["Node.js", "Express", "MySQL", "Redis"],
+        ),
         headers={"Authorization": f"Bearer {data['token_a']}"}
     )
     proj_id = create_res.json()["id"]
@@ -214,10 +248,7 @@ def test_delete_student_project(setup_phase6_data):
     data = setup_phase6_data
     create_res = client.post(
         "/api/student/projects",
-        json={
-            "title": "Temporary Project",
-            "description": "To be deleted soon."
-        },
+        json=project_payload(title="Temporary Project"),
         headers={"Authorization": f"Bearer {data['token_a']}"}
     )
     proj_id = create_res.json()["id"]
@@ -241,10 +272,7 @@ def test_project_idor_and_tenant_isolation(setup_phase6_data):
     data = setup_phase6_data
     create_res = client.post(
         "/api/student/projects",
-        json={
-            "title": "Alice's Secret Project",
-            "description": "Confidential portfolio project."
-        },
+        json=project_payload(title="Alice's Secret Project"),
         headers={"Authorization": f"Bearer {data['token_a']}"}
     )
     proj_id = create_res.json()["id"]

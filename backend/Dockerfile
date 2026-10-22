@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure media storage directories exist and create non-root user
-RUN mkdir -p media/resumes && \
+RUN mkdir -p media/resumes data && \
     useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 

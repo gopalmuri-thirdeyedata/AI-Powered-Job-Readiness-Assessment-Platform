@@ -3,19 +3,23 @@ Student Career & Placement Platform API Router (Phase 1).
 Provides endpoints for Student Profile, Resume Upload & Analysis, Target Role/Company, Placement Readiness Score, and Dashboard.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from typing import List, Optional
 import os
 import re
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
 import schemas, models, database, utils
 from routers.auth import get_current_user
-from services.student_resume_analyzer import extract_resume_text, analyze_student_resume
+from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, refresh_placeholder_entries
+from services.student_resume_tools import (
+    MIN_JD_CHARS, MIN_RESUME_CHARS, analyze_resume_against_jd, extract_structured_resume
+)
 from services.readiness_service import calculate_placement_readiness, refresh_profile_readiness
 from services.skill_gap_service import TARGET_ROLES_CATALOG, analyze_skill_gap
 from services.roadmap_service import generate_or_update_roadmap, get_roadmap_details
@@ -26,6 +30,7 @@ from services.student_interview_service import (
     finalize_mock_interview
 )
 from services.project_analyzer_service import analyze_student_project
+from services import project_rules, github_repo_service
 from services.placement_simulation_service import (
     start_placement_simulation,
     submit_simulation_round,
@@ -409,25 +414,45 @@ def update_student_profile(
     profile: models.StudentProfile = Depends(get_current_student_profile),
     db: Session = Depends(database.get_db)
 ):
-    """Updates target role, target company, skills, or education attributes."""
-    if update_data.full_name is not None:
+    """Updates target role, company, skills and education. Only the fields sent are changed; null clears one."""
+    sent = getattr(update_data, "model_fields_set", set())
+
+    def text_or_none(value):
+        value = (value or "").strip()
+        return value or None
+
+    # Required text fields: a blank value is ignored instead of wiping the field
+    if "full_name" in sent and (update_data.full_name or "").strip():
         profile.full_name = update_data.full_name.strip()
-    if update_data.phone is not None:
-        profile.phone = update_data.phone.strip()
-    if update_data.college_name is not None:
-        profile.college_name = update_data.college_name.strip()
-    if update_data.branch is not None:
-        profile.branch = update_data.branch.strip()
-    if update_data.graduation_year is not None:
-        profile.graduation_year = update_data.graduation_year
-    if update_data.cgpa is not None:
-        profile.cgpa = update_data.cgpa
-    if update_data.target_role is not None:
+    if "target_role" in sent and (update_data.target_role or "").strip():
         profile.target_role = update_data.target_role.strip()
-    if update_data.target_company is not None:
-        profile.target_company = update_data.target_company.strip()
+
+    # Optional fields: a value saves it, null or blank clears it
+    if "phone" in sent:
+        profile.phone = text_or_none(update_data.phone)
+    if "college_name" in sent:
+        profile.college_name = text_or_none(update_data.college_name)
+    if "target_company" in sent:
+        profile.target_company = text_or_none(update_data.target_company)
+    if "graduation_year" in sent:
+        profile.graduation_year = update_data.graduation_year
+    if "cgpa" in sent:
+        profile.cgpa = update_data.cgpa
+
+    # "Degree & Branch": `education` wins over the legacy `branch` key
+    if "education" in sent:
+        profile.branch = text_or_none(update_data.education)
+    elif "branch" in sent:
+        profile.branch = text_or_none(update_data.branch)
+
     if update_data.current_skills is not None:
-        profile.current_skills = list(dict.fromkeys(update_data.current_skills))
+        seen, skills = set(), []
+        for raw in update_data.current_skills:
+            skill = (raw or "").strip()[:60]
+            if skill and skill.lower() not in seen:
+                seen.add(skill.lower())
+                skills.append(skill)
+        profile.current_skills = skills
 
     # Recalculate readiness with updated profile attributes
     latest_resume = db.query(models.StudentResume).filter(
@@ -596,6 +621,99 @@ async def upload_student_resume(
     )
 
 
+async def _resolve_resume_text(
+    file: Optional[UploadFile],
+    resume_id: Optional[int],
+    profile: models.StudentProfile,
+    db: Session
+) -> str:
+    """
+    Returns resume text from exactly one source: a fresh upload (not persisted) or one of the
+    caller's own saved resume versions.
+    """
+    if (file is None) == (resume_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either a resume file or a saved resume_id."
+        )
+
+    if resume_id is not None:
+        saved = db.query(models.StudentResume).filter(
+            models.StudentResume.id == resume_id,
+            models.StudentResume.student_profile_id == profile.id
+        ).first()
+        if not saved:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved resume not found.")
+        text = saved.full_text or ""
+        if not text.strip() and saved.file_path and os.path.exists(saved.file_path):
+            text = extract_resume_text(saved.file_path)
+    else:
+        if not file.filename or "\x00" in file.filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename supplied.")
+        ext = Path(os.path.basename(file.filename)).suffix.lower()
+        if ext not in {".pdf", ".docx", ".doc", ".txt"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file format '{ext}'. Please upload a PDF, DOCX, or TXT resume."
+            )
+        content = await file.read()
+        if len(content) == 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded resume file cannot be empty.")
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File size exceeds maximum allowed limit of 10 MB."
+            )
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            text = extract_resume_text(tmp_path)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    if len((text or "").strip()) < MIN_RESUME_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not read enough text from this resume. If it is a scanned image, upload a text-based PDF or DOCX."
+        )
+    return text
+
+
+@router.post("/resume/analyze-jd")
+async def analyze_resume_with_job_description(
+    job_description: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    resume_id: Optional[int] = Form(None),
+    profile: models.StudentProfile = Depends(get_current_student_profile),
+    db: Session = Depends(database.get_db)
+):
+    """Analyzes a resume against a job description. Nothing is stored."""
+    jd_text = (job_description or "").strip()
+    if len(jd_text) < MIN_JD_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Please paste a fuller job description (at least {MIN_JD_CHARS} characters)."
+        )
+    resume_text = await _resolve_resume_text(file, resume_id, profile, db)
+    return analyze_resume_against_jd(resume_text, jd_text)
+
+
+@router.post("/resume/format")
+async def format_resume_structure(
+    file: Optional[UploadFile] = File(None),
+    resume_id: Optional[int] = Form(None),
+    profile: models.StudentProfile = Depends(get_current_student_profile),
+    db: Session = Depends(database.get_db)
+):
+    """Extracts a resume into structured data for the three ATS templates. Nothing is stored."""
+    resume_text = await _resolve_resume_text(file, resume_id, profile, db)
+    return extract_structured_resume(resume_text)
+
+
 @router.get("/resume", response_model=Optional[schemas.StudentResumeAnalysisResponse])
 def get_student_resume(
     resume_id: Optional[int] = None,
@@ -636,7 +754,7 @@ def get_student_resume(
     if not resume_to_return:
         return None
 
-    analysis = resume_to_return.analysis_data or {}
+    analysis = refresh_placeholder_entries(resume_to_return.analysis_data or {}, resume_to_return.full_text or "")
     return schemas.StudentResumeAnalysisResponse(
         id=resume_to_return.id,
         version=resume_to_return.version,
@@ -1365,6 +1483,20 @@ def get_mock_interview_detail_endpoint(
 # PHASE 6: STUDENT PROJECTS & ARCHITECTURAL ANALYZER API
 # ==============================================================================
 
+def _best_effort_repo_summary(github_url: Optional[str]):
+    """
+    Repository facts for a project that is already saved. Never raises: an older project may have no (or an odd)
+    link, and a repository that has since disappeared or a GitHub outage simply means no repository evidence.
+    """
+    if not github_url:
+        return None
+    try:
+        owner, repo, _ = github_repo_service.parse_github_repo_url(github_url)
+        return github_repo_service.fetch_repo_summary(owner, repo)
+    except (ValueError, github_repo_service.RepoNotFound, github_repo_service.RepoUnavailable):
+        return None
+
+
 @router.get("/projects", response_model=List[schemas.StudentProjectResponse])
 def get_student_projects_endpoint(
     profile: models.StudentProfile = Depends(get_current_student_profile),
@@ -1387,24 +1519,35 @@ def create_student_project_endpoint(
     db: Session = Depends(database.get_db)
 ):
     """
-    Creates a new student portfolio project and automatically computes baseline analysis.
+    Creates a new student portfolio project and automatically computes the analysis.
+
+    The title and a proper description are mandatory. The GitHub repository link is optional; when given it
+    is checked on GitHub and its real contents (languages, README, activity) feed the review.
     """
+    title = project_rules.clean_title(payload.title)
+    description = project_rules.clean_description(payload.description)
+    repo = project_rules.clean_github_url(payload.github_url) if (payload.github_url or "").strip() else None
+    live_url = project_rules.clean_live_url(payload.live_url)
+    repo_summary = project_rules.load_repo(repo) if repo else None  # 422 when a given repository does not exist
+    tech_stack = project_rules.clean_tech_stack(payload.tech_stack) or project_rules.stack_from_repo(repo_summary)
+
     analysis = analyze_student_project(
-        title=payload.title,
-        description=payload.description,
-        tech_stack=payload.tech_stack or [],
-        github_url=payload.github_url,
-        live_url=payload.live_url
+        title=title,
+        description=description,
+        tech_stack=tech_stack,
+        github_url=repo["url"] if repo else None,
+        live_url=live_url,
+        repo_summary=repo_summary
     )
 
     project = models.StudentProject(
         student_profile_id=profile.id,
         organization_id=profile.organization_id,
-        title=payload.title,
-        description=payload.description,
-        tech_stack=payload.tech_stack or [],
-        github_url=payload.github_url,
-        live_url=payload.live_url,
+        title=title,
+        description=description,
+        tech_stack=tech_stack,
+        github_url=repo["url"] if repo else None,
+        live_url=live_url,
         architecture_review=analysis["architecture_review"],
         completeness_score=analysis["completeness_score"],
         suggested_interview_questions=analysis["suggested_interview_questions"],
@@ -1460,23 +1603,33 @@ def update_student_project_endpoint(
             detail="Student project not found or unauthorized access."
         )
 
+    # Validate every change before anything is applied; a rejected edit leaves the project untouched
     if payload.title is not None:
-        project.title = payload.title
+        project.title = project_rules.clean_title(payload.title)
     if payload.description is not None:
-        project.description = payload.description
+        project.description = project_rules.clean_description(payload.description)
     if payload.tech_stack is not None:
-        project.tech_stack = payload.tech_stack
+        project.tech_stack = project_rules.clean_tech_stack(payload.tech_stack)
     if payload.github_url is not None:
-        project.github_url = payload.github_url
+        project.github_url = project_rules.clean_github_url(payload.github_url)["url"] if payload.github_url.strip() else None
     if payload.live_url is not None:
-        project.live_url = payload.live_url
+        project.live_url = project_rules.clean_live_url(payload.live_url)
+
+    repo_summary = None
+    if payload.github_url is not None and project.github_url:
+        repo_summary = project_rules.load_repo(project_rules.clean_github_url(project.github_url))  # 422 if not found
+    else:
+        repo_summary = _best_effort_repo_summary(project.github_url)
+    if not project.tech_stack:
+        project.tech_stack = project_rules.stack_from_repo(repo_summary)
 
     analysis = analyze_student_project(
         title=project.title,
         description=project.description,
         tech_stack=project.tech_stack or [],
         github_url=project.github_url,
-        live_url=project.live_url
+        live_url=project.live_url,
+        repo_summary=repo_summary
     )
     project.architecture_review = analysis["architecture_review"]
     project.completeness_score = analysis["completeness_score"]
@@ -1539,7 +1692,8 @@ def analyze_student_project_endpoint(
         description=project.description,
         tech_stack=project.tech_stack or [],
         github_url=project.github_url,
-        live_url=project.live_url
+        live_url=project.live_url,
+        repo_summary=_best_effort_repo_summary(project.github_url)
     )
     project.architecture_review = analysis["architecture_review"]
     project.completeness_score = analysis["completeness_score"]

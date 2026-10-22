@@ -282,6 +282,14 @@ def _gather_raw_student_assessments(
         score_val = round(float(a.score or 0.0), 1) if is_completed else None
         completed_date = a.updated_at if is_completed else None
 
+        # Real elapsed time; unknown (None) when the assessment never recorded a start
+        assigned_duration = None
+        if is_completed and a.started_at and completed_date:
+            try:
+                assigned_duration = max(1, int((completed_date.replace(tzinfo=None) - a.started_at.replace(tzinfo=None)).total_seconds() // 60))
+            except Exception:
+                assigned_duration = None
+
         records.append({
             "id": f"assigned_{a.id}",
             "raw_id": a.id,
@@ -293,7 +301,7 @@ def _gather_raw_student_assessments(
             "score": score_val,
             "max_score": 100.0,
             "percentage": score_val,
-            "duration_minutes": 45 if is_completed else None,
+            "duration_minutes": assigned_duration,
             "started_at": a.started_at or a.created_at,
             "completed_at": completed_date,
             "created_at": a.created_at or datetime.utcnow(),

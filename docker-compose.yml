@@ -55,8 +55,11 @@ services:
       - DB_HOST=db
       - DB_PORT=3306
       - REDIS_URL=redis://redis:6379/0
+      # SQLite file on a persistent volume: saved profiles survive logout, restarts and rebuilds
+      - DATABASE_URL=sqlite:////app/data/hiringai.db
     volumes:
       - backend_media:/app/media
+      - backend_data:/app/data
     networks:
       - hiringai_internal
     depends_on:
@@ -114,5 +117,6 @@ volumes:
   mysql_prod_data:
   redis_prod_data:
   backend_media:
+  backend_data:
   certbot_certs:
   certbot_www:

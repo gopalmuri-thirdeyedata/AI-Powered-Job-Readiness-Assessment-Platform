@@ -271,7 +271,6 @@ The 26 services in [backend/services/](file:///e:/HiringAi/backend/services) han
 23. **`onboarding_service.py`**: Handles student multi-step profile onboarding.
 24. **`rag_service.py`**: Extracts text from PDF and DOCX files.
 25. **`clerk_service.py`**: Verifies Clerk JWTs and synchronizes organization memberships.
-26. **`email_templates.py`**: Pre-built HTML/text email templates for candidate assessment invitations and notifications.
 
 ---
 
@@ -408,7 +407,7 @@ Run via `npm test` (`node --test *.test.mjs`):
 - **`reverse_proxy`**: Nginx edge proxy listening on host port `8212` (or `80`/`443`), directing traffic to frontend and `/api` to backend.
 
 ### 10.2 Environment Configuration (`backend/.env.example`)
-Configures MySQL connection parameters, `JWT_SECRET_KEY` (minimum 32 characters in production), Clerk keys, Google Gemini credentials (`GEMINI_API_KEY`, `GEMINI_MODEL_NAME=gemini-2.5-flash`), `GEMINI_MOCK_MODE` toggle, Vapi keys, Piston/Judge0 execution URLs, and SMTP notification credentials.
+Configures MySQL connection parameters, `JWT_SECRET_KEY` (minimum 32 characters in production), Clerk keys, Google Gemini credentials (`GEMINI_API_KEY`, `GEMINI_MODEL_NAME=gemini-2.5-flash`), `GEMINI_MOCK_MODE` toggle, Vapi keys, Piston/Judge0 execution URLs.
 
 ---
 

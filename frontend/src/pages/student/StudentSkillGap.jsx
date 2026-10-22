@@ -48,14 +48,23 @@ const CHIP_ICON = {
 };
 
 /** Skill chip: present / missing / growth tones, staggered via the parent Stagger. */
-const SkillChip = ({ tone = 'present', icon: Icon, children }) => (
-    <StaggerItem>
-        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-medium border transition-transform hover:-translate-y-0.5 ${CHIP_TONES[tone]}`}>
-            {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 ${CHIP_ICON[tone]}`} />}
-            {children}
-        </span>
-    </StaggerItem>
-);
+// Each chip animates on its own. Chips are re-created whenever the target role changes, long after the parent's
+// one-time stagger has played, so relying on the parent's variants would leave the new chips invisible.
+const SkillChip = ({ tone = 'present', icon: Icon, index = 0, children }) => {
+    const reduce = useReducedMotion();
+    return (
+        <motion.div
+            initial={reduce ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: reduce ? 0 : Math.min(index * 0.04, 0.4) }}
+        >
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-medium border transition-transform hover:-translate-y-0.5 ${CHIP_TONES[tone]}`}>
+                {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 ${CHIP_ICON[tone]}`} />}
+                {children}
+            </span>
+        </motion.div>
+    );
+};
 
 /** Circular match gauge that sweeps in. Purely derived from the match percentage. */
 const MatchRing = ({ value = 0, tone = 'emerald' }) => {
@@ -348,8 +357,8 @@ const StudentSkillGap = () => {
                                 Matched Skills ({activeGap?.matched_skills?.filter(s => !activeGap?.missing_required?.includes(s)).length || 0})
                             </h4>
                             <Stagger className="flex flex-wrap gap-2" gap={0.05}>
-                                {matchedReq.map((skill) => (
-                                    <SkillChip key={skill} tone="present" icon={CheckCircle2}>{skill}</SkillChip>
+                                {matchedReq.map((skill, i) => (
+                                    <SkillChip key={skill} index={i} tone="present" icon={CheckCircle2}>{skill}</SkillChip>
                                 ))}
                                 {(!activeGap?.matched_skills || activeGap?.matched_skills.length === 0) && (
                                     <span className="text-xs text-slate-400 italic">No required skills matched yet.</span>
@@ -363,8 +372,8 @@ const StudentSkillGap = () => {
                                 Missing Required Skills ({activeGap?.missing_required?.length || 0})
                             </h4>
                             <Stagger className="flex flex-wrap gap-2" gap={0.05}>
-                                {activeGap?.missing_required?.map((skill) => (
-                                    <SkillChip key={skill} tone="missing" icon={XCircle}>{skill}</SkillChip>
+                                {activeGap?.missing_required?.map((skill, i) => (
+                                    <SkillChip key={skill} index={i} tone="missing" icon={XCircle}>{skill}</SkillChip>
                                 ))}
                                 {(!activeGap?.missing_required || activeGap?.missing_required.length === 0) && (
                                     <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">None! You satisfy all core technical requirements.</span>
@@ -398,8 +407,8 @@ const StudentSkillGap = () => {
                                 Acquired Advantages ({activeGap?.matched_preferred_count || 0})
                             </h4>
                             <Stagger className="flex flex-wrap gap-2" gap={0.05}>
-                                {matchedPref.map((skill) => (
-                                    <SkillChip key={skill} tone="present" icon={Sparkles}>{skill}</SkillChip>
+                                {matchedPref.map((skill, i) => (
+                                    <SkillChip key={skill} index={i} tone="present" icon={Sparkles}>{skill}</SkillChip>
                                 ))}
                                 {activeGap?.matched_preferred_count === 0 && (
                                     <span className="text-xs text-slate-400 italic">No preferred skills acquired yet.</span>
@@ -413,8 +422,8 @@ const StudentSkillGap = () => {
                                 Growth Opportunities ({activeGap?.missing_preferred?.length || 0})
                             </h4>
                             <Stagger className="flex flex-wrap gap-2" gap={0.05}>
-                                {activeGap?.missing_preferred?.map((skill) => (
-                                    <SkillChip key={skill} tone="growth">{skill}</SkillChip>
+                                {activeGap?.missing_preferred?.map((skill, i) => (
+                                    <SkillChip key={skill} index={i} tone="growth">{skill}</SkillChip>
                                 ))}
                                 {(!activeGap?.missing_preferred || activeGap?.missing_preferred.length === 0) && (
                                     <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">All preferred skills mastered!</span>

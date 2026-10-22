@@ -117,6 +117,9 @@ export default function useStudentTaskStatus(user = null) {
     const userEmail = user?.primaryEmailAddress?.emailAddress?.trim()?.toLowerCase() || null;
     const [hasCompletedTask, setHasCompletedTask] = useState(() => isStudentTaskCompletedSync(userEmail));
     const [isLoading, setIsLoading] = useState(true);
+    // True only when the server confirmed this student has no assessments (or nobody is signed in).
+    // A failed or unfinished check must never count as "new student", or the dashboard bounces back to setup.
+    const [isConfirmedNew, setIsConfirmedNew] = useState(false);
 
     const refreshStatus = useCallback(async () => {
         let token = localStorage.getItem('studentToken') || localStorage.getItem('token');
@@ -129,6 +132,7 @@ export default function useStudentTaskStatus(user = null) {
         }
 
         if (!token && !user) {
+            setIsConfirmedNew(true);
             setIsLoading(false);
             return;
         }
@@ -136,9 +140,12 @@ export default function useStudentTaskStatus(user = null) {
         try {
             const data = await studentApi.getAssessmentHistory();
             const completedCount = Number(data?.total_completed || 0);
-            const isCompleted = completedCount > 0 || (Array.isArray(data?.assessments) && data.assessments.some(a => a.is_completed));
+            const attemptedCount = Number(data?.total_attempted || 0);
+            // Any attempt (even unfinished) unlocks the dashboard so past tests stay reachable
+            const isCompleted = completedCount > 0 || attemptedCount > 0 || (Array.isArray(data?.assessments) && data.assessments.some(a => a.is_completed));
 
             const key = getStorageKey(userEmail || storedEmail);
+            setIsConfirmedNew(!isCompleted);
             if (isCompleted) {
                 localStorage.setItem(key, 'true');
                 localStorage.setItem(BASE_STORAGE_KEY, 'true');
@@ -149,7 +156,7 @@ export default function useStudentTaskStatus(user = null) {
                 setHasCompletedTask(false);
             }
         } catch (err) {
-            console.debug('useStudentTaskStatus: API check skipped or unavailable:', err?.message);
+            console.warn('useStudentTaskStatus: assessment history check failed:', err?.response?.status, err?.message);
         } finally {
             setIsLoading(false);
         }
@@ -184,6 +191,7 @@ export default function useStudentTaskStatus(user = null) {
     return {
         hasCompletedTask,
         isLoading,
+        isConfirmedNew,
         refreshStatus
     };
 }

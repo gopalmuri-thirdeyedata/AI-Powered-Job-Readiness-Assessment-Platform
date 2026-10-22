@@ -171,7 +171,29 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 # Database Init
-models.Base.metadata.create_all(bind=database.engine)
+def create_tables_with_retry(attempts: int = 8) -> None:
+    """
+    Several server workers start at the same moment. On a brand-new database each one tries to create the same
+    tables, and the loser used to crash with "table already exists" / "schema has changed" (the container then
+    restarted). The tables exist by the next try, so the loser simply tries again.
+    """
+    import random
+    import time
+    from sqlalchemy.exc import OperationalError
+
+    for attempt in range(attempts):
+        try:
+            models.Base.metadata.create_all(bind=database.engine)
+            return
+        except OperationalError as exc:
+            message = str(exc).lower()
+            transient = any(text in message for text in ("already exists", "schema has changed", "database is locked"))
+            if not transient or attempt == attempts - 1:
+                raise
+            time.sleep(0.2 + random.random() * 0.6)
+
+
+create_tables_with_retry()
 
 # CORS Configuration — Production Environment Driven
 cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
@@ -202,6 +224,16 @@ app.add_middleware(
 )
 
 # Auto-seed default Platform Admin & primary organization for direct authentication
+@app.on_event("startup")
+def warm_up_proctoring_model():
+    """Load the person-detection model in the background so no candidate frame has to wait for it."""
+    try:
+        from services import proctor_service
+        proctor_service.start_warm_up_in_background()
+    except Exception as e:  # never stop the server from starting
+        print(f"[Startup] Proctoring warm-up skipped: {e}")
+
+
 @app.on_event("startup")
 def ensure_default_platform_admin():
     try:

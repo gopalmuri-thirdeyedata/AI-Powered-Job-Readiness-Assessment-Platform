@@ -16,6 +16,8 @@ import {
     Briefcase,
     PenTool,
     Sparkles,
+    Copy,
+    X,
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -669,6 +671,23 @@ const RecruitmentRoundsManager = () => {
     // E.g. To send Aptitude Test, candidate must be in 'Aptitude Round' stage.
     const [sourceStage, setSourceStage] = useState('aptitude');
 
+    // Login details returned by the server after assigning a test. Shown once so the recruiter can share them.
+    const [issuedCredentials, setIssuedCredentials] = useState([]);
+    const [copiedKey, setCopiedKey] = useState(null);
+
+    const copyText = async (key, text) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopiedKey(key);
+            setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1800);
+        } catch (e) {
+            console.error('Copy failed:', e);
+        }
+    };
+
+    const credentialsAsText = (c) =>
+        `Hello ${c.name || 'Candidate'},\nYour ${c.round} assessment for ${c.role} is ready.\nLogin: ${c.login_url}\nEmail: ${c.email}\nPassword: ${c.password}`;
+
     const [confirmation, setConfirmation] = useState({
         isOpen: false,
         title: '',
@@ -717,14 +736,7 @@ const RecruitmentRoundsManager = () => {
 
             if (response.ok) {
                 const data = await response.json();
-                setConfirmation({
-                    isOpen: true,
-                    title: 'Assessment Dispatched',
-                    message: data.message || `Assessment invitations sent successfully.`,
-                    type: 'success',
-                    confirmText: 'Great',
-                    isAlert: true
-                });
+                setIssuedCredentials(Array.isArray(data.credentials) ? data.credentials : []);
 
                 if (entryMode === 'manual') setCandidateEmail('');
                 else setSelectedCandidates([]);
@@ -734,8 +746,8 @@ const RecruitmentRoundsManager = () => {
             console.error(err);
             setConfirmation({
                 isOpen: true,
-                title: 'Dispatch Failed',
-                message: 'Error sending assessment links. Please try again.',
+                title: 'Could Not Assign Assessment',
+                message: 'Error creating assessment logins. Please try again.',
                 type: 'danger',
                 confirmText: 'OK',
                 isAlert: true
@@ -788,9 +800,9 @@ const RecruitmentRoundsManager = () => {
         setConfirmation({
             isOpen: true,
             title: 'Dispatch Assessments',
-            message: `Send ${activeTab.toUpperCase()} assessment invitation to ${count} candidate(s)${roleText}?\nAn email with their unique test link will be sent immediately.`,
+            message: `Send ${activeTab.toUpperCase()} assessment invitation to ${count} candidate(s)${roleText}?\nTheir login details will be shown next so you can share them.`,
             type: 'info',
-            confirmText: 'Dispatch Links',
+            confirmText: 'Generate Logins',
             cancelText: 'Cancel',
             isAlert: false,
             onConfirm: () => executeSendLink()
@@ -945,6 +957,71 @@ const RecruitmentRoundsManager = () => {
                         </div>
                     </div>
                 </div>
+
+            {issuedCredentials.length > 0 && (
+                <div
+                    className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="issued-credentials-title"
+                >
+                    <div className="w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 id="issued-credentials-title" className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <CheckCircle size={18} className="text-green-600" /> Assessment ready
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    Share each candidate's login details with them. These passwords are shown only now and are not stored in readable form.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIssuedCredentials([])}
+                                className="p-2 min-h-[40px] min-w-[40px] rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                aria-label="Close"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <ul className="space-y-3">
+                            {issuedCredentials.map((c) => (
+                                <li key={c.email} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3.5 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{c.name || c.email}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => copyText(`all-${c.email}`, credentialsAsText(c))}
+                                            className="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white cursor-pointer"
+                                        >
+                                            <Copy size={13} /> {copiedKey === `all-${c.email}` ? 'Copied' : 'Copy message'}
+                                        </button>
+                                    </div>
+                                    <dl className="grid grid-cols-1 sm:grid-cols-[88px_1fr] gap-x-3 gap-y-1 text-xs">
+                                        <dt className="text-slate-400">Login page</dt>
+                                        <dd className="font-mono text-slate-700 dark:text-slate-200 break-all">{c.login_url}</dd>
+                                        <dt className="text-slate-400">Email</dt>
+                                        <dd className="font-mono text-slate-700 dark:text-slate-200 break-all">{c.email}</dd>
+                                        <dt className="text-slate-400">Password</dt>
+                                        <dd className="font-mono font-bold text-slate-900 dark:text-white break-all">{c.password}</dd>
+                                    </dl>
+                                </li>
+                            ))}
+                        </ul>
+
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setIssuedCredentials([])}
+                                className="min-h-[44px] w-full sm:w-auto px-6 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 text-white cursor-pointer"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <ConfirmationModal
                 isOpen={confirmation.isOpen}

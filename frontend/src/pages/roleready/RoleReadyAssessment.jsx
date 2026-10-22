@@ -31,6 +31,11 @@ import {
     CheckCircle,
     User,
     PhoneOff,
+    Brain,
+    BarChart3,
+    Binary,
+    FileText,
+    Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Counter } from '../../components/home/primitives';
@@ -38,12 +43,51 @@ import { StepHighlight, PopIn, Stagger, StaggerItem, SlideSwap, ProgressBar, Ent
 import { Editor } from '@monaco-editor/react';
 import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
+import useMicrophone from '../../hooks/useMicrophone';
+import MicrophonePicker from '../../components/student-ui/MicrophonePicker';
+import { shouldWarnSilence } from '../../utils/micLevel';
+import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
 import FullscreenGateModal from '../../components/FullscreenGateModal';
 import rolereadyApi from '../../services/rolereadyApi';
 import API_URL from '../../apiConfig';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 
 const VAPI_PUBLIC_KEY = import.meta.env.VITE_VAPI_PUBLIC_KEY;
+
+// The "evaluating" animation stays up for at least this long, even when the server answers instantly, so
+// finishing a round feels deliberate. The next round's clock only starts after it, never behind it.
+const MIN_SUBMIT_ANIMATION_MS = 5000;
+const holdAnimation = async (startedAt) => {
+    const remaining = MIN_SUBMIT_ANIMATION_MS - (Date.now() - startedAt);
+    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+};
+const DONE_FLASH_MS = 450; // how long the full bar stays visible before the next screen
+
+const APTITUDE_SUBMIT_STAGES = [
+    { icon: ShieldCheck, label: 'Submitting your answers securely' },
+    { icon: Brain, label: 'Checking against the answer key' },
+    { icon: BarChart3, label: 'Scoring the aptitude round' },
+    { icon: Code2, label: 'Unlocking the coding round' },
+];
+const CODING_SUBMIT_STAGES = [
+    { icon: ShieldCheck, label: 'Submitting your solutions securely' },
+    { icon: Code2, label: 'Running your code in the sandbox' },
+    { icon: Binary, label: 'Comparing outputs with the hidden tests' },
+    { icon: BarChart3, label: 'Scoring each problem' },
+    { icon: Mic, label: 'Unlocking the interview round' },
+];
+const INTERVIEW_SUBMIT_STAGES = [
+    { icon: Mic, label: 'Saving your interview transcript' },
+    { icon: Brain, label: 'Analysing your answers' },
+    { icon: BarChart3, label: 'Scoring communication and depth' },
+    { icon: FileText, label: 'Preparing your readiness report' },
+];
+const SUBMIT_TIPS = [
+    'Your answers are saved on the server, so nothing is lost if this takes a moment.',
+    'Please keep this page open until the evaluation finishes.',
+    'Each round unlocks only after the previous one is evaluated.',
+    'Busy sandbox? Running every hidden test can take up to a minute.',
+];
 
 const ROUND_DURATIONS = {
     aptitude: 15 * 60, // 15 mins
@@ -83,12 +127,12 @@ const ProctorCameraFeed = ({
 
     // Format bounding boxes for mirrored display
     const renderedBoxes = [];
-    if (showDiagnostics && !compact) {
-        // Face boxes
+    if (showDiagnostics) {
+        // Person boxes (drawn in the compact coding-round preview as well)
         (faceBoxes || []).forEach((fb, idx) => {
             renderedBoxes.push({
                 key: `face-${idx}`,
-                label: 'Candidate Verified',
+                label: compact ? 'Person' : 'Candidate Verified',
                 left: `${(1 - fb[2]) * 100}%`,
                 top: `${fb[1] * 100}%`,
                 width: `${(fb[2] - fb[0]) * 100}%`,
@@ -102,7 +146,9 @@ const ProctorCameraFeed = ({
         (detections || []).filter(d => d.class !== 'person' && d.bbox).forEach((d, idx) => {
             renderedBoxes.push({
                 key: `det-${idx}`,
-                label: `${d.class === 'cell phone' ? '📱 Mobile Phone' : d.class} (${Math.round(d.confidence * 100)}%)`,
+                label: compact
+                    ? (d.class === 'cell phone' ? '📱 Phone' : d.class)
+                    : `${d.class === 'cell phone' ? '📱 Mobile Phone' : d.class} (${Math.round(d.confidence * 100)}%)`,
                 left: `${(1 - d.bbox[2]) * 100}%`,
                 top: `${d.bbox[1] * 100}%`,
                 width: `${(d.bbox[2] - d.bbox[0]) * 100}%`,
@@ -174,14 +220,14 @@ const ProctorCameraFeed = ({
                         <span
                             style={{
                                 position: 'absolute',
-                                top: '-18px',
+                                top: compact ? '0' : '-18px',
                                 left: '0',
                                 backgroundColor: box.color,
                                 color: '#FFFFFF',
-                                fontSize: '9px',
+                                fontSize: compact ? '8px' : '9px',
                                 fontWeight: 'bold',
-                                padding: '1px 4px',
-                                borderRadius: '3px',
+                                padding: compact ? '0 3px' : '1px 4px',
+                                borderRadius: compact ? '0 0 3px 0' : '3px',
                                 whiteSpace: 'nowrap',
                                 boxShadow: '0 1px 2px rgba(0,0,0,0.4)'
                             }}
@@ -231,6 +277,7 @@ const RoleReadyAssessment = () => {
 
     // Stream Refs
     const streamRef = useRef(null);
+    const modelCheckRef = useRef(0); // identifies the current model-status polling run
     const previewVideoRef = useRef(null);
 
     // ── 3-Warning Malpractice Policy & Proctoring ────────────────────
@@ -400,6 +447,9 @@ const RoleReadyAssessment = () => {
     const [codeOutput, setCodeOutput] = useState(null);
     const [isRunningCode, setIsRunningCode] = useState(false);
     const [isSubmittingCoding, setIsSubmittingCoding] = useState(false);
+    const [codingSubmitError, setCodingSubmitError] = useState(null);
+    const [submitDone, setSubmitDone] = useState(false); // the evaluation finished: the overlay shows 100% before closing
+    const [codingSubmitResult, setCodingSubmitResult] = useState(null);
 
     // ── Round 3: Interview State ─────────────────────────────────────
     const [interviewQuestions, setInterviewQuestions] = useState([]);
@@ -422,23 +472,65 @@ const RoleReadyAssessment = () => {
     const vapiRef = useRef(null);
     const vapiTranscriptScrollRef = useRef(null);
 
+    // ── Microphone: chosen device, live level, and "we can hear you" ──────
+    const mic = useMicrophone({ enabled: currentStage === 'device_check' || currentStage === 'interview' });
+    const [showMicPanel, setShowMicPanel] = useState(false);
+    const [micSilent, setMicSilent] = useState(false);
+    const listeningSinceRef = useRef(0); // when the interviewer last finished speaking
+    const micDeviceRef = useRef('');
+    micDeviceRef.current = mic.deviceId;
+
+    // Route the live call to the microphone the candidate picked (the browser default is often the wrong one)
+    const applyMicToCall = useCallback((id) => {
+        const target = id || micDeviceRef.current;
+        if (!target || !vapiRef.current) return;
+        try {
+            const result = vapiRef.current.setInputDevicesAsync({ audioDeviceId: target });
+            if (result && typeof result.catch === 'function') result.catch((e) => console.warn('Could not switch the call microphone:', e));
+        } catch (e) {
+            console.warn('Could not switch the call microphone:', e);
+        }
+    }, []);
+
+    // Warn when nothing has been heard for a while after the interviewer finished speaking
+    useEffect(() => {
+        if (vapiCallStatus !== 'active') { setMicSilent(false); return undefined; }
+        const timer = setInterval(() => {
+            setMicSilent(
+                vapiSpeakingState === 'listening' && !vapiIsMuted
+                && shouldWarnSilence({ now: Date.now(), lastSoundAt: mic.lastSoundAtRef.current, listeningSince: listeningSinceRef.current }),
+            );
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [vapiCallStatus, vapiSpeakingState, vapiIsMuted, mic.lastSoundAtRef]);
+
     // ── Camera, Mic & AI Model Initializer ──────────────────────────
     const initHardware = useCallback(async () => {
         setCameraStatus('checking');
         setMicStatus('checking');
         setModelStatus('checking');
 
-        // Check backend YOLO vision model status
-        fetch(`${API_URL}/api/proctor/status`)
-            .then(res => res.json())
-            .then(data => {
+        // Check backend YOLO vision model status. The server loads the model in the background after it starts,
+        // so "loading" is normal for the first minute: keep asking instead of calling it an error.
+        const checkRun = ++modelCheckRef.current;
+        const checkModel = async (attempt = 0) => {
+            try {
+                const res = await fetch(`${API_URL}/api/proctor/status`);
+                const data = await res.json();
+                if (checkRun !== modelCheckRef.current) return; // a newer check replaced this one
                 if (data.status === 'ready') {
                     setModelStatus('ready');
+                } else if (data.status === 'loading' && attempt < 45) {
+                    setModelStatus('checking');
+                    setTimeout(() => checkModel(attempt + 1), 2000);
                 } else {
                     setModelStatus('error');
                 }
-            })
-            .catch(() => setModelStatus('error'));
+            } catch {
+                if (checkRun === modelCheckRef.current) setModelStatus('error');
+            }
+        };
+        checkModel();
 
         try {
             // Clean up any stale streams before requesting a fresh device lock
@@ -604,8 +696,13 @@ const RoleReadyAssessment = () => {
         setIsSubmittingApt(true);
         const timeSpent = Math.max(1, Math.round((Date.now() - roundStartTime) / 1000));
 
+        const submitStartedAt = Date.now();
+
         try {
             await rolereadyApi.submitAptitude(sessionUuid, aptitudeAnswers, timeSpent, violations);
+            await holdAnimation(submitStartedAt);
+            setSubmitDone(true);
+            await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
 
             // Unlock and navigate to Coding. The session refresh and the coding problems are
             // independent, so fetch them together instead of one after another.
@@ -621,6 +718,7 @@ const RoleReadyAssessment = () => {
             alert(err.response?.data?.detail || "Aptitude submission failed. Please retry.");
         } finally {
             setIsSubmittingApt(false);
+            setSubmitDone(false);
         }
     };
 
@@ -722,26 +820,43 @@ const RoleReadyAssessment = () => {
     };
 
     const handleSubmitCoding = async () => {
-        if (isSubmittingCoding) return;
+        if (isSubmittingCoding || codingSubmitResult) return;
         setIsSubmittingCoding(true);
+        setCodingSubmitError(null);
         const timeSpent = Math.max(1, Math.round((Date.now() - roundStartTime) / 1000));
 
-        try {
-            await rolereadyApi.submitCoding(sessionUuid, codeSolutions, timeSpent, violations);
+        const submitStartedAt = Date.now();
 
-            // Move to the Interview round straight away. Provisioning it (question generation and the
-            // voice assistant) can take several seconds, and the interview screen already shows a
-            // "connecting" state, so it must not keep the student waiting on the coding submit button.
-            setCurrentStage('interview');
-            setTimeLeft(ROUND_DURATIONS.interview);
-            loadInterview();
-            setSessionData(await rolereadyApi.getSessionStatus(sessionUuid));
+        try {
+            const res = await rolereadyApi.submitCoding(sessionUuid, codeSolutions, timeSpent, violations);
+            await holdAnimation(submitStartedAt);
+            setSubmitDone(true);
+            await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
+            // Show a clear "submitted" confirmation with the per-problem results; the student then
+            // continues to the interview (which is provisioned only when they do).
+            setCodingSubmitResult(res || { results: [] });
+            try { setSessionData(await rolereadyApi.getSessionStatus(sessionUuid)); } catch (e) { /* status refresh is best effort */ }
         } catch (err) {
             console.error("Coding submission error:", err);
-            alert(err.response?.data?.detail || "Coding evaluation failed. Please retry.");
+            const status = err.response?.status;
+            const detail = err.response?.data?.detail;
+            setCodingSubmitError(
+                status === 503
+                    ? "The code-running service is busy right now, so your tests could not be evaluated. Your code is saved. Please try again in a moment."
+                    : !err.response
+                        ? "Could not reach the server. Check your connection, then try again. Your code is saved."
+                        : (typeof detail === 'string' ? detail : "Coding evaluation failed. Your code is saved. Please try again.")
+            );
         } finally {
             setIsSubmittingCoding(false);
+            setSubmitDone(false);
         }
+    };
+
+    const continueToInterview = () => {
+        setCurrentStage('interview');
+        setTimeLeft(ROUND_DURATIONS.interview);
+        loadInterview();
     };
 
     // ── Auto-scroll Vapi transcript ──────────────────────────────────
@@ -780,17 +895,20 @@ const RoleReadyAssessment = () => {
             setVapiConnectionError(null);
 
             vapi.on('call-start', () => {
+                applyMicToCall();
                 setVapiCallStatus('active');
                 setVapiSpeakingState('ai_speaking');
                 setCurrentSpeaker('ai');
             });
 
             vapi.on('speech-start', () => {
+                listeningSinceRef.current = 0;
                 setVapiSpeakingState('ai_speaking');
                 setCurrentSpeaker('ai');
             });
 
             vapi.on('speech-end', () => {
+                listeningSinceRef.current = Date.now();
                 setVapiSpeakingState('listening');
                 setCurrentSpeaker(null);
             });
@@ -851,7 +969,7 @@ const RoleReadyAssessment = () => {
             setVapiConnectionError(err.message || "Failed to initialize WebRTC voice call.");
             setCurrentSpeaker(null);
         }
-    }, []);
+    }, [applyMicToCall]);
 
     const toggleVapiMute = () => {
         if (!vapiRef.current) return;
@@ -1003,6 +1121,7 @@ const RoleReadyAssessment = () => {
         if (isSubmittingInterview) return;
         setIsSubmittingInterview(true);
         const timeSpent = Math.max(1, Math.round((Date.now() - roundStartTime) / 1000));
+        const submitStartedAt = Date.now();
 
         if (vapiRef.current) {
             try { vapiRef.current.stop(); } catch (e) {}
@@ -1016,14 +1135,19 @@ const RoleReadyAssessment = () => {
             );
 
             await rolereadyApi.submitInterview(sessionUuid, formattedAnswers, timeSpent, violations, vapiTranscript);
+            await holdAnimation(submitStartedAt);
+            setSubmitDone(true);
+            await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
             markStudentTaskCompleted();
             navigate(`/assessment/${sessionUuid}/report`);
         } catch (err) {
             console.error("Interview submission error:", err);
+            await holdAnimation(submitStartedAt);
             markStudentTaskCompleted();
             navigate(`/assessment/${sessionUuid}/report`);
         } finally {
             setIsSubmittingInterview(false);
+            setSubmitDone(false);
             setShowEndInterviewModal(false);
         }
     };
@@ -1124,6 +1248,36 @@ const RoleReadyAssessment = () => {
     return (
         <MotionConfig reducedMotion="user">
         <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans selection:bg-emerald-100 selection:text-emerald-900 select-none">
+            <AssessmentLoadingOverlay
+                open={isSubmittingApt}
+                title="Evaluating your aptitude round"
+                subtitle="We are scoring your answers and unlocking the coding round."
+                stages={APTITUDE_SUBMIT_STAGES}
+                tips={SUBMIT_TIPS}
+                expectedMs={MIN_SUBMIT_ANIMATION_MS}
+                done={submitDone}
+                footnote="Please keep this page open. This usually takes a few seconds."
+            />
+            <AssessmentLoadingOverlay
+                open={isSubmittingCoding}
+                title="Evaluating your code"
+                subtitle="Your solutions are running against the hidden tests."
+                stages={CODING_SUBMIT_STAGES}
+                tips={SUBMIT_TIPS}
+                expectedMs={15000}
+                done={submitDone}
+                footnote="Please keep this page open. This takes about 15 seconds."
+            />
+            <AssessmentLoadingOverlay
+                open={isSubmittingInterview}
+                title="Analysing your interview"
+                subtitle="We are scoring your answers and preparing your report."
+                stages={INTERVIEW_SUBMIT_STAGES}
+                tips={SUBMIT_TIPS}
+                expectedMs={8000}
+                done={submitDone}
+                footnote="Please keep this page open. This usually takes a few seconds."
+            />
             {/* Fullscreen Gate & Exit Recovery Modal */}
             <FullscreenGateModal
                 isOpen={isRecoveryOpen || (isGateOpen && currentStage !== 'instructions' && currentStage !== 'device_check')}
@@ -1568,8 +1722,14 @@ const RoleReadyAssessment = () => {
                                             <Mic className="w-4 h-4 text-slate-500" /> Microphone
                                         </span>
                                         <motion.span key={micStatus} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 22 }} className={`font-bold ${micStatus === 'allowed' ? 'text-emerald-700' : micStatus === 'denied' ? 'text-red-700' : 'text-slate-500'}`}>
-                                            {micStatus === 'allowed' ? 'Ready for Interview ✅' : micStatus === 'denied' ? 'Permission Denied' : 'Optional / Text Fallback'}
+                                            {micStatus === 'allowed'
+                                                ? (mic.heardSound ? 'Voice detected ✅' : 'Allowed. Say something to test')
+                                                : micStatus === 'denied' ? 'Permission Denied' : 'Optional / Text Fallback'}
                                         </motion.span>
+                                    </StaggerItem>
+
+                                    <StaggerItem y={10}>
+                                        <MicrophonePicker mic={mic} idPrefix="devicecheck-mic" />
                                     </StaggerItem>
 
                                     <StaggerItem y={10} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
@@ -1939,7 +2099,64 @@ const RoleReadyAssessment = () => {
                 {/* ───────────────────────────────────────────────────────── */}
                 {currentStage === 'coding' && (
                     <div className="space-y-4 flex flex-col min-h-0">
-                        {!sessionData?.coding_unlocked ? (
+                        {codingSubmitResult ? (
+                            <div id="coding-submitted-card" className="bg-white rounded-2xl border border-emerald-200 shadow-sm max-w-2xl w-full mx-auto my-4 p-6 sm:p-8 space-y-5">
+                                <div className="flex items-start gap-3">
+                                    <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
+                                        <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h3 className="text-lg font-bold text-slate-900">Coding round submitted</h3>
+                                        <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
+                                            {codingSubmitResult.evaluation_pending
+                                                ? 'Your solutions are saved and are being evaluated in the background. The interview round is now unlocked.'
+                                                : 'Your solutions were evaluated against the hidden tests and saved. The interview round is now unlocked.'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {codingSubmitResult.evaluation_pending && (
+                                    <div id="coding-eval-pending" role="status" className="flex items-start gap-2.5 rounded-xl bg-cyan-50 border border-cyan-200 px-3.5 py-3 text-xs sm:text-sm text-cyan-900">
+                                        <RefreshCw className="w-4 h-4 shrink-0 mt-0.5 animate-spin motion-reduce:animate-none" />
+                                        <span>Your coding result is on its way. You do not need to wait: continue to the interview and the result will be in your final report.</span>
+                                    </div>
+                                )}
+
+                                {typeof codingSubmitResult.score === 'number' && (
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-4xl font-extrabold text-slate-900 tabular-nums">{Math.round(codingSubmitResult.score)}</span>
+                                        <span className="text-sm text-slate-500">/ 100 coding score</span>
+                                    </div>
+                                )}
+
+                                {(codingSubmitResult.results || []).length > 0 && (
+                                    <ul className="space-y-2">
+                                        {codingSubmitResult.results.map((r, i) => {
+                                            const title = codingProblems.find((p) => String(p.id) === String(r.problem_id))?.title || `Problem ${i + 1}`;
+                                            const allPassed = r.total_tests > 0 && r.passed_tests === r.total_tests;
+                                            return (
+                                                <li key={r.problem_id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5">
+                                                    <span className="text-xs sm:text-sm font-semibold text-slate-800 truncate">{title}</span>
+                                                    <span className={`text-xs font-bold shrink-0 ${allPassed ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                                        {r.passed_tests} / {r.total_tests} tests passed
+                                                    </span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+
+                                <button
+                                    type="button"
+                                    id="continue-to-interview-btn"
+                                    onClick={continueToInterview}
+                                    className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2 active:scale-[0.97]"
+                                >
+                                    <span>Continue to Interview</span>
+                                    <ArrowRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ) : !sessionData?.coding_unlocked ? (
                             <div className="p-6 sm:p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto my-auto space-y-3">
                                 <Lock className="w-12 h-12 text-slate-400 mx-auto" />
                                 <h3 className="text-lg font-bold text-slate-900">Coding Round is Locked</h3>
@@ -1964,9 +2181,16 @@ const RoleReadyAssessment = () => {
                                             onClick={handleSubmitCoding}
                                             className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
-                                            {isSubmittingCoding ? "Evaluating Tests..." : "Submit All & Unlock Interview"}
+                                            {isSubmittingCoding ? "Evaluating Tests..." : (codingSubmitError ? "Retry Submission" : "Submit All & Unlock Interview")}
                                         </button>
                                     </div>
+
+                                    {codingSubmitError && !isSubmittingCoding && (
+                                        <div role="alert" className="flex items-start gap-2.5 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-800">
+                                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                            <span>{codingSubmitError}</span>
+                                        </div>
+                                    )}
 
                                     <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
                                         {/* Problem Switcher Tabs */}
@@ -2402,6 +2626,25 @@ const RoleReadyAssessment = () => {
                                     </div>
                                 </div>
 
+                                {(micSilent || showMicPanel) && (
+                                    <div className="bg-black/70 border-t border-gray-800 px-4 py-3 shrink-0 space-y-3">
+                                        {micSilent && (
+                                            <div id="interview-mic-silent" role="alert" className="flex items-start gap-2 text-xs text-amber-300">
+                                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                                <span>We cannot hear you. Check that the right microphone is selected, and that it is not muted or covered.</span>
+                                                {!showMicPanel && (
+                                                    <button type="button" onClick={() => setShowMicPanel(true)} className="ml-auto font-semibold underline shrink-0 cursor-pointer">Choose microphone</button>
+                                                )}
+                                            </div>
+                                        )}
+                                        {showMicPanel && (
+                                            <div className="max-w-md mx-auto w-full">
+                                                <MicrophonePicker mic={mic} dark compact idPrefix="interview-mic" onDeviceChange={applyMicToCall} />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Bottom Control Bar (Image 2) */}
                                 <div className="bg-black/50 backdrop-blur-sm border-t border-gray-800 py-4 flex items-center justify-center gap-4 shrink-0">
                                     <button
@@ -2418,6 +2661,16 @@ const RoleReadyAssessment = () => {
                                         title={vapiIsMuted ? "Unmute Mic" : "Mute Mic"}
                                     >
                                         {vapiIsMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        id="interview-mic-settings-btn"
+                                        onClick={() => setShowMicPanel((v) => !v)}
+                                        aria-pressed={showMicPanel}
+                                        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer text-white ${showMicPanel ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                        title="Microphone settings"
+                                    >
+                                        <Settings className="w-5 h-5" />
                                     </button>
                                     <button
                                         type="button"

@@ -32,6 +32,7 @@ const useFaceProctoring = ({
     const intervalRef = useRef(null);
     const noPersonCountRef = useRef(0);
     const isRunningRef = useRef(false);
+    const frameInFlightRef = useRef(false); // a frame is being analysed: do not send another on top of it
     const lastViolationTimeRef = useRef({});
     const [cameraStream, setCameraStream] = useState(null);
 
@@ -54,6 +55,7 @@ const useFaceProctoring = ({
     useEffect(() => { onViolationRef.current = onViolation; }, [onViolation]);
 
     const CHECK_INTERVAL_MS = 3000;
+    const FRAME_TIMEOUT_MS = 30000; // gives up on a stuck request so detection can carry on
     const NO_PERSON_THRESHOLD = 3; // 3 consecutive checks (~9s)
     const VIOLATION_COOLDOWN_MS = 8000; // 8s cooldown per specific violation reason
 
@@ -176,6 +178,12 @@ const useFaceProctoring = ({
         const video = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) return;
+        // Analysis can be slow (the first frame after a server start loads the model). Sending a new frame
+        // every 3 seconds regardless would stack requests up and make everything else wait behind them.
+        if (frameInFlightRef.current) return;
+        frameInFlightRef.current = true;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FRAME_TIMEOUT_MS);
 
         try {
             const ctx = canvas.getContext('2d');
@@ -187,7 +195,8 @@ const useFaceProctoring = ({
             const response = await fetch(`${API_URL}/api/proctor/analyze-frame`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: base64Image })
+                body: JSON.stringify({ image: base64Image }),
+                signal: controller.signal
             });
 
             if (!response.ok) {
@@ -264,6 +273,9 @@ const useFaceProctoring = ({
         } catch (err) {
             // Suppress network jitter errors from interrupting test
             setIsModelActive(false);
+        } finally {
+            clearTimeout(timeout);
+            frameInFlightRef.current = false;
         }
     };
 

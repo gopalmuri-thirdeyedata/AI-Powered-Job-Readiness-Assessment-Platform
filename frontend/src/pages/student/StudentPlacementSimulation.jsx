@@ -21,6 +21,9 @@ import studentApi from '../../services/studentApi';
 import { PageHero, AnimatedBar, EmptyState } from '../../components/student-ui/StudentMotion';
 import { Counter, EASE } from '../../components/home/primitives';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
+import { VoiceInputButton, VoiceStatus } from '../../components/student-ui/VoiceInput';
+import useSpeechToText from '../../hooks/useSpeechToText';
+import { appendTranscript } from '../../utils/speechText';
 
 const RING_COLORS = { emerald: '#10b981', teal: '#14b8a6', blue: '#3b82f6', amber: '#f59e0b', rose: '#f43f5e' };
 
@@ -117,6 +120,9 @@ const StudentPlacementSimulation = () => {
     const [codeSubmission, setCodeSubmission] = useState('def two_sum(nums, target):\n    # Write your solution\n    lookup = {}\n    for i, n in enumerate(nums):\n        if target - n in lookup:\n            return [lookup[target - n], i]\n        lookup[n] = i\n    return []\n');
     const [techResponse, setTechResponse] = useState('');
     const [hrResponse, setHrResponse] = useState('');
+    // voice typing for the two written rounds; each box has its own so a stopped one never writes into the other
+    const techDictation = useSpeechToText({ onFinalText: (text) => setTechResponse((prev) => appendTranscript(prev, text)) });
+    const hrDictation = useSpeechToText({ onFinalText: (text) => setHrResponse((prev) => appendTranscript(prev, text)) });
 
     // UI & History states
     const [historyList, setHistoryList] = useState([]);
@@ -174,6 +180,8 @@ const StudentPlacementSimulation = () => {
 
     const handleSubmitRound = async (e) => {
         e.preventDefault();
+        techDictation.stop();
+        hrDictation.stop();
         setIsSubmitting(true);
         setError(null);
 
@@ -569,9 +577,12 @@ const StudentPlacementSimulation = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                                    Your Architectural Solution & Justification
-                                </label>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                                        Your Architectural Solution & Justification
+                                    </label>
+                                    <VoiceInputButton dictation={techDictation} />
+                                </div>
                                 <textarea
                                     value={techResponse}
                                     onChange={(e) => setTechResponse(e.target.value)}
@@ -580,6 +591,7 @@ const StudentPlacementSimulation = () => {
                                     className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none font-sans leading-relaxed"
                                     required
                                 />
+                                <VoiceStatus dictation={techDictation} />
                             </div>
 
                             <div className="flex justify-end pt-2">
@@ -611,9 +623,12 @@ const StudentPlacementSimulation = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                                    Your STAR-Method Response
-                                </label>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                                        Your STAR-Method Response
+                                    </label>
+                                    <VoiceInputButton dictation={hrDictation} />
+                                </div>
                                 <textarea
                                     value={hrResponse}
                                     onChange={(e) => setHrResponse(e.target.value)}
@@ -622,6 +637,7 @@ const StudentPlacementSimulation = () => {
                                     className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none font-sans leading-relaxed"
                                     required
                                 />
+                                <VoiceStatus dictation={hrDictation} />
                             </div>
 
                             <div className="flex justify-end pt-2">

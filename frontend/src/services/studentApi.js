@@ -21,6 +21,47 @@ const getAuthHeaders = (isMultipart = false) => {
     return headers;
 };
 
+// A stored student JWT can be stale (expired, or signed before a backend restart) while the Clerk
+// session is still valid. Re-issue it from the Clerk session once and replay the request.
+let refreshInFlight = null;
+const refreshStudentToken = () => {
+    if (!refreshInFlight) {
+        const clerkUser = window.Clerk?.user;
+        const email = clerkUser?.primaryEmailAddress?.emailAddress?.trim()?.toLowerCase();
+        if (!clerkUser || !email) return Promise.resolve(null);
+        refreshInFlight = fetch(`${API_URL}/api/auth/clerk-sync/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, clerk_user_id: clerkUser.id, role_intent: 'student' })
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (!data?.access) return null;
+                localStorage.setItem('token', data.access);
+                localStorage.setItem('studentToken', data.access);
+                localStorage.setItem('student_user_email', email);
+                return data.access;
+            })
+            .catch(() => null)
+            .finally(() => { refreshInFlight = null; });
+    }
+    return refreshInFlight;
+};
+
+axios.interceptors.response.use(undefined, async (error) => {
+    const config = error.config;
+    const url = config?.url || '';
+    const isStudentCall = (url.includes('/api/student') || url.includes('/api/roleready/student')) && !url.includes('/auth/');
+    if (error.response?.status !== 401 || !isStudentCall || config._studentRetried) {
+        return Promise.reject(error);
+    }
+    config._studentRetried = true;
+    const token = await refreshStudentToken();
+    if (!token) return Promise.reject(error);
+    config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
+    return axios(config);
+});
+
 export const studentApi = {
     // Auth
     async login(email, password) {
@@ -75,6 +116,28 @@ export const studentApi = {
     async updateProfile(profileData) {
         const response = await axios.put(`${API_URL}/api/student/profile`, profileData, {
             headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    // Resume Analyzer (with job description) and Resume Formatter. Source is a file or a saved resume id.
+    async analyzeResumeWithJd({ file = null, resumeId = null, jobDescription }) {
+        const formData = new FormData();
+        if (file) formData.append('file', file);
+        if (resumeId) formData.append('resume_id', String(resumeId));
+        formData.append('job_description', jobDescription);
+        const response = await axios.post(`${API_URL}/api/student/resume/analyze-jd`, formData, {
+            headers: getAuthHeaders(true)
+        });
+        return response.data;
+    },
+
+    async formatResume({ file = null, resumeId = null }) {
+        const formData = new FormData();
+        if (file) formData.append('file', file);
+        if (resumeId) formData.append('resume_id', String(resumeId));
+        const response = await axios.post(`${API_URL}/api/student/resume/format`, formData, {
+            headers: getAuthHeaders(true)
         });
         return response.data;
     },
@@ -368,30 +431,6 @@ export const studentApi = {
 
     async getUnifiedDashboard() {
         const response = await axios.get(`${API_URL}/api/student/dashboard/unified`, {
-            headers: getAuthHeaders()
-        });
-        return response.data;
-    },
-
-    // Phase 9: Campus Placement Drives
-    async getAvailableDrives() {
-        const response = await axios.get(`${API_URL}/api/student/drives`, {
-            headers: getAuthHeaders()
-        });
-        return response.data;
-    },
-
-    async applyToDrive(driveId, notes = null) {
-        const response = await axios.post(`${API_URL}/api/student/drives/${driveId}/apply`, {
-            notes: notes
-        }, {
-            headers: getAuthHeaders()
-        });
-        return response.data;
-    },
-
-    async getDriveApplications() {
-        const response = await axios.get(`${API_URL}/api/student/drives/applications`, {
             headers: getAuthHeaders()
         });
         return response.data;

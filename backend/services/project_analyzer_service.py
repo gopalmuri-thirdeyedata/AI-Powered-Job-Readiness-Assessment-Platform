@@ -5,7 +5,77 @@ likely technical interview questions, actionable recommendations, and STAR-forma
 Strictly isolated from frozen recruiter services.
 """
 
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
+
+# Languages a student may list in their stack, mapped to the language names GitHub reports for a repository.
+# Frameworks (React, Django...) are deliberately not checked: they do not map to one GitHub language.
+_LANGUAGE_ALIASES = {
+    "python": {"python"}, "java": {"java"}, "javascript": {"javascript", "typescript"},
+    "typescript": {"typescript", "javascript"}, "c++": {"c++"}, "c#": {"c#"}, "go": {"go"}, "golang": {"go"},
+    "rust": {"rust"}, "php": {"php"}, "ruby": {"ruby"}, "kotlin": {"kotlin"}, "swift": {"swift"},
+}
+
+
+def _days_since(iso_timestamp: Optional[str]) -> Optional[int]:
+    if not iso_timestamp:
+        return None
+    try:
+        then = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0, (datetime.now(timezone.utc) - then).days)
+
+
+def _repo_insights(repo: Dict[str, Any], stack: List[str]):
+    """
+    Turns the facts read from the student's real repository into a review paragraph, recommendations and a
+    score bonus. Returns (paragraph, recommendations, bonus).
+    """
+    name = repo.get("full_name") or "the repository"
+    languages = repo.get("languages") or {}
+    lang_text = ", ".join(f"{lang} {pct:g}%" for lang, pct in languages.items()) or (repo.get("primary_language") or "not reported")
+    days = _days_since(repo.get("pushed_at"))
+    activity = "no recent activity recorded" if days is None else ("updated today" if days == 0 else f"last updated {days} day(s) ago")
+    readme_words = repo.get("readme_words") or 0
+    readme_text = f"present (about {readme_words} words)" if repo.get("has_readme") else "missing"
+
+    paragraph = (
+        f"**Repository Evidence (GitHub)**: {name} is a public repository. Languages: {lang_text}. "
+        f"{activity.capitalize()}, {repo.get('stars', 0)} star(s), {repo.get('forks', 0)} fork(s). README: {readme_text}."
+    )
+
+    recommendations: List[str] = []
+    bonus = 0.0
+    if not repo.get("has_readme"):
+        recommendations.append("Your repository has no README. Add one that explains what the project does, how to run it, and its architecture.")
+    elif readme_words < 80:
+        recommendations.append("Your README is very short. Add setup steps, a screenshot or architecture diagram, and what you would improve next.")
+    else:
+        bonus += 3.0
+    if days is not None and days > 365:
+        recommendations.append(f"The repository was last updated {days} days ago. Recent commits show the project is alive; push a small improvement.")
+    elif days is not None:
+        bonus += 2.0
+    if repo.get("archived"):
+        recommendations.append("The repository is archived on GitHub. Unarchive it, or explain why in the README.")
+    if repo.get("is_fork"):
+        recommendations.append("This repository is a fork. State clearly in the README which parts you built yourself.")
+    if not repo.get("description") and not repo.get("topics"):
+        recommendations.append("Add a short description and topics to the repository so recruiters understand it at a glance.")
+
+    # Does the declared stack match the code that is really there?
+    present = {name_.lower() for name_ in languages}
+    if present:
+        claimed = [t for t in stack if t.lower() in _LANGUAGE_ALIASES]
+        missing = [t for t in claimed if not (_LANGUAGE_ALIASES[t.lower()] & present)]
+        if missing:
+            paragraph += (
+                f"\n\n**Stack Check**: You listed {', '.join(missing)}, but the repository's code is written in "
+                f"{', '.join(languages)}. Make sure this is the right repository, or correct the tech stack."
+            )
+            recommendations.insert(0, f"Your stack lists {', '.join(missing)} but the repository contains no such code. Check the link or the stack.")
+    return paragraph, recommendations, bonus
 
 
 def analyze_student_project(
@@ -13,7 +83,8 @@ def analyze_student_project(
     description: str,
     tech_stack: Optional[List[str]] = None,
     github_url: Optional[str] = None,
-    live_url: Optional[str] = None
+    live_url: Optional[str] = None,
+    repo_summary: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Performs comprehensive technical analysis of a student project.
@@ -23,6 +94,9 @@ def analyze_student_project(
         - suggested_interview_questions (List[str])
         - recommendations (List[str])
         - bullet_point_improvements (List[str])
+
+    repo_summary holds facts read from the student's real GitHub repository (see github_repo_service). When it is
+    given the review quotes them and the link earns full credit; a link that could not be checked earns half.
     """
     stack = [s.strip() for s in (tech_stack or []) if s.strip()]
     desc = (description or "").strip()
@@ -49,8 +123,13 @@ def analyze_student_project(
         score += 5.0
 
     # Artifact completeness (links)
-    if github_url and github_url.strip():
+    repo_paragraph, repo_recommendations, repo_bonus = (None, [], 0.0)
+    if repo_summary:
         score += 10.0
+        repo_paragraph, repo_recommendations, repo_bonus = _repo_insights(repo_summary, stack)
+        score += repo_bonus
+    elif github_url and github_url.strip():
+        score += 5.0  # a link was given but GitHub could not be reached to check it
     if live_url and live_url.strip():
         score += 10.0
 
@@ -111,6 +190,12 @@ def analyze_student_project(
             "will turn this academic project into an enterprise-ready portfolio asset."
         )
 
+    if repo_paragraph:
+        arch_paragraphs.insert(1, repo_paragraph)
+    elif github_url and github_url.strip():
+        arch_paragraphs.insert(1, "**Repository**: Link recorded. GitHub could not be reached just now, so the code itself was not "
+                               "checked. Use Refresh Review later to add repository evidence.")
+
     architecture_review = "\n\n".join(arch_paragraphs)
 
     # 3. Suggested Interview Questions
@@ -136,12 +221,17 @@ def analyze_student_project(
             "If you were to add multi-user authentication and authorization today, what architectural approach would you take?"
         )
 
+    if repo_summary:
+        interview_questions.insert(
+            2,  # near the top: only the first five questions are shown
+            f"I looked at your repository {repo_summary.get('full_name')}. Which file would you show me first, and what would you refactor if you had a week?"
+        )
     interview_questions.append(
         f"What was the most challenging technical bug or bottleneck you encountered while developing {title}, and how did you debug it?"
     )
 
     # 4. Actionable Recommendations
-    recommendations = []
+    recommendations = list(repo_recommendations)
     if not github_url:
         recommendations.append("Link a public GitHub repository with a clean README, architecture diagrams, and setup instructions.")
     if not live_url:
@@ -157,10 +247,10 @@ def analyze_student_project(
     secondary_tech = stack[1] if len(stack) > 1 else "REST APIs"
 
     bullets = [
-        f"Architected and deployed {title} utilizing {primary_tech} and {secondary_tech}, implementing clean modular design patterns.",
-        f"Engineered responsive RESTful endpoints and optimized data retrieval pipelines, maintaining sub-200ms response latencies.",
-        f"Structured robust error handling, automated input validation schemas, and end-to-end integration tests to guarantee 99%+ service uptime.",
-        f"Integrated secure state management and modular UI components, streamlining user interaction flows and overall software usability."
+        f"Architected and deployed {title} using {primary_tech} and {secondary_tech}, applying a clean, modular design.",
+        "Built RESTful endpoints and optimised data retrieval, reducing response time to [your measured latency].",
+        "Added error handling, input validation and automated tests covering [your real test coverage]% of the code.",
+        "Built reusable UI components and state management, serving [your real number of users or sessions]."
     ]
 
     return {

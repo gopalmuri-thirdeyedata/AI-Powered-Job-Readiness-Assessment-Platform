@@ -431,7 +431,7 @@ def test_invitation_token_scoped_to_assigned_session(db_session, setup_test_data
 
 def test_admin_dispatch_and_tracking(db_session, setup_test_data):
     """
-    Verifies Admin 3-Step dispatch, tracking API, retry invitation, and individual candidate reports.
+    Verifies Admin 3-Step dispatch (shareable links, no email), tracking API, and individual candidate reports.
     """
     org = setup_test_data["org"]
     admin_user = db_session.query(models.User).filter_by(email="admin.test@roleready.com").first()
@@ -485,10 +485,16 @@ def test_admin_dispatch_and_tracking(db_session, setup_test_data):
     assert len(tracking_items) >= 2
     assert any(item["email"] == "candidate.alpha@gmail.com" for item in tracking_items)
 
-    # 3. Retry invitation
-    retry_res = client.post(f"/api/roleready/admin/invitations/{invitation_id}/retry", headers=admin_headers)
-    assert retry_res.status_code == 200
-    assert retry_res.json()["invitation_id"] == invitation_id
+    # 3. No email is sent: each invitation comes back as a shareable single-use link instead
+    for row in res_data["results"]:
+        assert row["portal_url"].startswith("http") and "/portal/roleready?token=" in row["portal_url"]
+        assert row["token"] and row["token"] in row["portal_url"]
+        assert row["status"] == "PENDING"
+        assert "email_sent" not in row
+    assert "invitation link" in res_data["message"].lower()
+    # The email retry endpoint no longer exists
+    gone = client.post(f"/api/roleready/admin/invitations/{invitation_id}/retry", headers=admin_headers)
+    assert gone.status_code in (404, 405)
 
     # 4. Candidate report endpoint
     rep_res = client.get(f"/api/roleready/admin/candidates/{cand_id}/report", headers=admin_headers)

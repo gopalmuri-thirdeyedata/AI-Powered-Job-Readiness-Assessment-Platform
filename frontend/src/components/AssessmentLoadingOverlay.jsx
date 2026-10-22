@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { timedProgress, stageForProgress } from '../utils/progressTiming';
 import { Brain, Check, Code2, FileSearch, Loader2, Mic, ScanText, ShieldCheck, Sparkles } from 'lucide-react';
 
 const STAGES = [
@@ -31,20 +32,40 @@ const AssessmentLoadingOverlay = ({
     stages: customStages,
     tips = TIPS,
     footnote = 'Please keep this page open. This usually takes a few seconds.',
+    stageIntervalMs = 2300,
+    expectedMs, // when set, the bar and the steps follow this duration (reaching ~96% at the end) instead of the open-ended default
+    done = false, // the work has finished: the bar fills to 100% and every step is checked
 }) => {
     const reduce = useReducedMotion();
     const stages = customStages || STAGES.filter((s) => !s.needsResume || hasResume);
     const [active, setActive] = useState(0);
     const [progress, setProgress] = useState(4);
     const [tip, setTip] = useState(0);
+    const openedAtRef = useRef(0);
 
     useEffect(() => {
         if (!open) { setActive(0); setProgress(4); setTip(0); return undefined; }
-        const stageTimer = setInterval(() => setActive((a) => Math.min(a + 1, stages.length - 1)), 2300);
-        const progTimer = setInterval(() => setProgress((p) => p + (93 - p) * 0.05), 250);
+        openedAtRef.current = Date.now();
         const tipTimer = setInterval(() => setTip((t) => (t + 1) % tips.length), 3600);
+        if (expectedMs) {
+            // Timed mode: a steady bar that reaches ~96% when the expected time is up, then creeps slowly
+            // (never claiming 100% until the work is really done) so a slow server still looks alive.
+            const timer = setInterval(() => {
+                const target = timedProgress(Date.now() - openedAtRef.current, expectedMs);
+                setProgress((p) => Math.max(p, target));
+                setActive(stageForProgress(target, stages.length));
+            }, 100);
+            return () => { clearInterval(timer); clearInterval(tipTimer); };
+        }
+        const stageTimer = setInterval(() => setActive((a) => Math.min(a + 1, stages.length - 1)), stageIntervalMs);
+        const progTimer = setInterval(() => setProgress((p) => p + (93 - p) * 0.05), 250);
         return () => { clearInterval(stageTimer); clearInterval(progTimer); clearInterval(tipTimer); };
-    }, [open, stages.length, tips.length]);
+    }, [open, stages.length, tips.length, stageIntervalMs, expectedMs]);
+
+    // Finished: complete the bar and tick every step before the overlay closes
+    useEffect(() => {
+        if (open && done) { setProgress(100); setActive(stages.length); }
+    }, [open, done, stages.length]);
 
     // Lock page scroll while the overlay is up
     useEffect(() => {

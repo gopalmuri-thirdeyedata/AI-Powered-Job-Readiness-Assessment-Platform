@@ -4,7 +4,6 @@ import {
     Building2,
     Shield,
     Bell,
-    Mail,
     Settings,
     CheckCircle,
     Sparkles,
@@ -313,7 +312,6 @@ const GlobalSettings = () => {
         { id: 'team', label: 'Team & Organization', icon: Building2 },
         { id: 'system', label: 'System Summary', icon: Sparkles },
         { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'email', label: 'Email Templates', icon: Mail },
         { id: 'security', label: 'Security & Proctoring', icon: Shield }
     ];
 
@@ -452,88 +450,15 @@ const GlobalSettings = () => {
                         <Section title="Notification Preferences" description="Configure when and how you want to be notified.">
                             <div className="space-y-4">
                                 <Toggle 
-                                    label="Email Alerts" 
-                                    description="Receive immediate email alerts when a candidate submits a test or finishes an interview." 
-                                    checked={formData.notifications.emailAlerts} 
-                                    onChange={(val) => updateNotificationField('emailAlerts', val)}
-                                />
-                                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700">HR Notification Recipient Email</label>
-                                        <p className="text-xs text-gray-500 mt-0.5 font-medium leading-relaxed">
-                                            Candidate alert, completion, and warning notifications will be dispatched here.
-                                        </p>
-                                    </div>
-                                    <input
-                                        type="email"
-                                        placeholder="hr@hiringai.com"
-                                        value={formData.notifications.recipientEmail || ''}
-                                        onChange={(e) => updateNotificationField('recipientEmail', e.target.value)}
-                                        className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-950 font-medium focus:ring-2 focus:ring-green-500 outline-none"
-                                    />
-                                </div>
-                                <Toggle 
                                     label="Slack Integration" 
                                     description="Push real-time candidate progression notifications directly to your company Slack channel." 
                                     checked={formData.notifications.slackIntegration} 
                                     onChange={(val) => updateNotificationField('slackIntegration', val)}
                                 />
-                                <Toggle 
-                                    label="Weekly Digest" 
-                                    description="Receive a summarized weekly email containing stats, hires, and pending evaluations." 
-                                    checked={formData.notifications.weeklyDigest} 
-                                    onChange={(val) => updateNotificationField('weeklyDigest', val)}
-                                />
                             </div>
                         </Section>
                     )}
 
-                    {/* EMAIL TEMPLATES */}
-                    {activeTab === 'email' && (
-                        <Section title="Assessment Email Templates" description="Modify invitation and reminder emails automatically dispatched to candidates.">
-                            <div className="space-y-6">
-                                <div className="space-y-3">
-                                    <h4 className="font-bold text-gray-800 text-sm">Test Invitation Email</h4>
-                                    <Input 
-                                        label="Subject Line" 
-                                        value={formData.emails.invitationSubject} 
-                                        onChange={(val) => updateEmailField('invitationSubject', val)}
-                                    />
-                                    <div className="space-y-1.5">
-                                        <label className="block text-sm font-semibold text-gray-700">Body Text</label>
-                                        <textarea
-                                            value={formData.emails.invitationBody}
-                                            onChange={(e) => updateEmailField('invitationBody', e.target.value)}
-                                            rows={4}
-                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none text-gray-950 font-medium"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="h-px bg-gray-200"></div>
-
-                                <div className="space-y-3">
-                                    <h4 className="font-bold text-gray-800 text-sm">Test Reminder Email</h4>
-                                    <Input 
-                                        label="Subject Line" 
-                                        value={formData.emails.reminderSubject} 
-                                        onChange={(val) => updateEmailField('reminderSubject', val)}
-                                    />
-                                    <div className="space-y-1.5">
-                                        <label className="block text-sm font-semibold text-gray-700">Body Text</label>
-                                        <textarea
-                                            value={formData.emails.reminderBody}
-                                            onChange={(e) => updateEmailField('reminderBody', e.target.value)}
-                                            rows={4}
-                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none text-gray-950 font-medium"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </Section>
-                    )}
-
-                    {/* SECURITY & PROCTORING */}
                     {activeTab === 'security' && (
                         <Section title="Integrity & Proctoring Controls" description="Configure online testing security standards.">
                             <div className="space-y-4">

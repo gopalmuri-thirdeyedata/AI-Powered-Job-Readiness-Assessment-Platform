@@ -122,7 +122,7 @@ const CandidateInvitationPortal = () => {
                         </div>
                         <div>
                             <span className="text-xs font-bold text-[var(--rr-text)] block">Round 1: Role Aptitude & Logic</span>
-                            <span className="text-[11px] text-[var(--rr-muted)]">20 minutes • Quantitative & reasoning MCQs</span>
+                            <span className="text-[11px] text-[var(--rr-muted)]">15 minutes • Quantitative & reasoning MCQs</span>
                         </div>
                     </div>
 
@@ -132,7 +132,7 @@ const CandidateInvitationPortal = () => {
                         </div>
                         <div>
                             <span className="text-xs font-bold text-[var(--rr-text)] block">Round 2: Practical Coding</span>
-                            <span className="text-[11px] text-[var(--rr-muted)]">45 minutes • Sandboxed code tests</span>
+                            <span className="text-[11px] text-[var(--rr-muted)]">30 minutes • Sandboxed code tests</span>
                         </div>
                     </div>
 
@@ -142,7 +142,7 @@ const CandidateInvitationPortal = () => {
                         </div>
                         <div>
                             <span className="text-xs font-bold text-[var(--rr-text)] block">Round 3: Technical Interview</span>
-                            <span className="text-[11px] text-[var(--rr-muted)]">20 minutes • Conceptual & behavioral audio session</span>
+                            <span className="text-[11px] text-[var(--rr-muted)]">15 minutes • Conceptual & behavioral audio session</span>
                         </div>
                     </div>
                 </div>

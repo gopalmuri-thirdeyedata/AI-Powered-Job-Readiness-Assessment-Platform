@@ -219,13 +219,6 @@ export const rolereadyApi = {
         return response.data;
     },
 
-    async retryInvitation(invitationId) {
-        const response = await axios.post(`${API_URL}/api/roleready/admin/invitations/${invitationId}/retry`, {}, {
-            headers: getAuthHeaders()
-        });
-        return response.data;
-    },
-
     async getCandidateReport(candidateId) {
         const response = await axios.get(`${API_URL}/api/roleready/admin/candidates/${candidateId}/report`, {
             headers: getAuthHeaders()

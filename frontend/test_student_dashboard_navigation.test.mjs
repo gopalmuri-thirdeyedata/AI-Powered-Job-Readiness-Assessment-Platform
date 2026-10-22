@@ -69,10 +69,10 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(!fileContent.includes("label: 'Role Assessment'"), 'Sidebar navItems must not include Role Assessment');
         assert.ok(!fileContent.includes('label: "Role Assessment"'), 'Sidebar navItems must not include Role Assessment');
         
-        // Confirm all 10 remaining items exist in exact order
+        // Confirm all remaining items exist (Resume became Resume Analyzer, Resume Formatter was added)
         const expectedItems = [
             'Dashboard', 'Skill Gap', 'Roadmap', 'Practice', 'Mock Interview',
-            'Placement Simulation', 'Campus Drives', 'Projects', 'Resume', 'Profile'
+            'Placement Simulation', 'Projects', 'Resume Analyzer', 'Resume Formatter', 'Profile'
         ];
         for (const item of expectedItems) {
             assert.ok(fileContent.includes(`label: '${item}'`), `Sidebar must retain ${item}`);

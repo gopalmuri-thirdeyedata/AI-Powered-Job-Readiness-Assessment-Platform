@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from typing import List, Optional, Union, Dict, Any
@@ -9,7 +9,7 @@ import copy
 from datetime import datetime
 import schemas, models, utils, database
 from .auth import get_current_user
-from services import ai_generator, email_templates, piston_service, aptitude_evaluation, coding_evaluation
+from services import ai_generator, piston_service, aptitude_evaluation, coding_evaluation
 
 router = APIRouter(
     prefix="/api/assessments",
@@ -236,7 +236,7 @@ def assign_assessment(
         raise HTTPException(status_code=500, detail=f"Generation Error: {str(e)}")
     # ---------------------------------------------
     
-    email_errors = []
+    credentials = []
     assigned_count = 0
 
     for candidate_entry in candidate_list:
@@ -348,7 +348,7 @@ def assign_assessment(
         # CRITICAL: Commit DB changes BEFORE sending email so login works immediately
         db.commit()
         
-        # 3. Send Email with Magic Link (Dynamic Domain Resolution)
+        # 3. Resolve the login URL (dynamic domain) that the recruiter shares with the candidate
         frontend_url = None
         if http_request:
             origin = http_request.headers.get("origin")
@@ -379,42 +379,27 @@ def assign_assessment(
         # FIX: Use Candidate's specific role if available, fallback to Config role, then 'Candidate'
         target_role = candidate_record.role if candidate_record and candidate_record.role else config.get('role', 'Candidate')
         
-        subject = f"Action Required: {target_role} - {round_type.title()} Invitation"
-        
-        deadline_text = f"Deadline: {deadline}" if deadline else "Deadline: ASAP"
-        
-        # Generate Login Link (Manual Only)
         login_link = f"{frontend_url}/portal/login"
-        
-
-
-        html_body = email_templates.get_invitation_email_template(
-            candidate_name=candidate_entry.get('name', 'Candidate'),
-            role_title=target_role,
-            round_type=round_type,
-            login_url=login_link, # MANUAL LOGIN LINK
-            deadline_text=deadline_text,
-            instructions=config.get('description', None),
-            password=password_display,
-            email=email
-        )
-        sent = utils.send_email(email, subject, html_body)
-        if not sent:
-            email_errors.append(f"{email}: Failed to send email")
+        credentials.append({
+            "name": candidate_entry.get('name') or (candidate_record.name if candidate_record else 'Candidate'),
+            "email": email,
+            "password": password_display,
+            "login_url": login_link,
+            "role": target_role,
+            "round": round_type,
+        })
         
         assigned_count += 1
     
     # db.commit() - Moved inside loop
 
 
-    msg = f"Successfully assigned {round_type} to {assigned_count} candidates."
-    if email_errors:
-        msg += f" WARNING: Email failed for {len(email_errors)} candidates."
+    msg = f"Successfully assigned {round_type} to {assigned_count} candidates. Share each candidate's login details with them."
 
     return schemas.AssignResponse(
         message=msg,
-        status="success" if not email_errors else "warning",
-        email_errors=email_errors
+        status="success",
+        credentials=credentials
     )
 
 @router.get("/my-pending/", response_model=List[schemas.AssessmentResponse])
@@ -627,67 +612,9 @@ def execute_code(
         "feedback": analysis
     }
 
-def send_completion_emails(candidate_email: str, candidate_name: str, target_role: str, assessment_type: str, friendly_type: str, score_detail: str, created_by_id: Optional[int]):
-    from database import SessionLocal
-    db = SessionLocal()
-    try:
-        completion_subject = "Assessment Completed - Thank You for Your Time"
-        completion_body = email_templates.get_completion_email_template(
-            candidate_name=candidate_name,
-            role_title=target_role,
-            round_type=assessment_type
-        )
-        utils.send_email(candidate_email, completion_subject, completion_body)
-        print(f"Completion email sent to {candidate_email}")
-        
-        # Send HR Notification if alerts enabled
-        settings_record = None
-        if created_by_id:
-            settings_record = db.query(models.GlobalSettings).filter(
-                models.GlobalSettings.created_by == created_by_id
-            ).first()
-        if not settings_record:
-            settings_record = db.query(models.GlobalSettings).filter(
-                models.GlobalSettings.key == "default"
-            ).first()
-            
-        if settings_record and settings_record.config:
-            notifications_conf = settings_record.config.get("notifications", {})
-            if notifications_conf.get("emailAlerts", True):
-                creator_user = None
-                if created_by_id:
-                    creator_user = db.query(models.User).filter(models.User.id == created_by_id).first()
-                
-                # Check if the creator email is a dummy/generic one, otherwise use it
-                hr_email = creator_user.email if (creator_user and not creator_user.email.endswith('.internal')) else notifications_conf.get("recipientEmail")
-                
-                # If recipient email is a dummy (e.g. hr@company.com), fallback to the synced admin email (admin@thirdeyedata.ai)
-                if hr_email == "hr@company.com" or not hr_email:
-                    hr_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
-
-                if hr_email:
-                    hr_subject = f"Candidate Assessment Submitted: {candidate_name}"
-                    hr_body = f"""
-                    <h3>Candidate Assessment Submission Alert</h3>
-                    <p><strong>Candidate Name:</strong> {candidate_name}</p>
-                    <p><strong>Email:</strong> {candidate_email}</p>
-                    <p><strong>Role:</strong> {target_role}</p>
-                    <p><strong>Assessment Type:</strong> {friendly_type}</p>
-                    <p><strong>Status/Score:</strong> {score_detail}</p>
-                    <br/>
-                    <p>You can view the full evaluation details in the Admin Dashboard.</p>
-                    """
-                    utils.send_email(hr_email, hr_subject, hr_body)
-                    print(f"HR notification email sent to {hr_email}")
-    except Exception as e:
-        print(f"Failed to send email notifications in background: {e}")
-    finally:
-        db.close()
-
 @router.post("/submit/", response_model=schemas.AssessmentResponse)
 def submit_assessment(
     payload: schemas.SubmissionPayload,
-    background_tasks: BackgroundTasks,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(database.get_db)
 ):
@@ -869,19 +796,6 @@ def submit_assessment(
         )
         db.add(log)
         
-        # --- SEND COMPLETION EMAIL (New) ---
-        target_role = candidate.role if candidate.role else "Candidate"
-        background_tasks.add_task(
-            send_completion_emails,
-            candidate.email,
-            candidate.name,
-            target_role,
-            assessment.type,
-            friendly_type,
-            score_detail,
-            candidate.created_by
-        )
-        # -----------------------------------
 
     db.commit()
     db.refresh(assessment)

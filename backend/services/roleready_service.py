@@ -1186,7 +1186,7 @@ def create_student_session(
         round_type="APTITUDE",
         round_order=1,
         status="PENDING",
-        time_limit_minutes=20,
+        time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["APTITUDE"],
         questions_payload=apt_client,
         server_keys_payload=apt_keys
     )
@@ -1196,7 +1196,7 @@ def create_student_session(
         round_type="CODING",
         round_order=2,
         status="PENDING",
-        time_limit_minutes=45,
+        time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["CODING"],
         questions_payload=coding_client,
         server_keys_payload=coding_keys
     )
@@ -1206,7 +1206,7 @@ def create_student_session(
         round_type="INTERVIEW",
         round_order=3,
         status="PENDING",
-        time_limit_minutes=20,
+        time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["INTERVIEW"],
         questions_payload=interview_questions,
         server_keys_payload={"questions": interview_questions}
     )
@@ -1229,7 +1229,7 @@ def get_session_by_uuid(db: Session, session_uuid: str) -> RoleReadySession:
 
 PYTHON_ONLY_DETAIL = "Only Python and Java are supported for coding assessments."
 # Max parallel sandbox calls per coding submission (kept modest to stay under the sandbox's rate limit)
-CODING_TEST_CONCURRENCY = 4
+CODING_TEST_CONCURRENCY = 8
 SUPPORTED_CODING_LANGUAGES = {"python", "python3", "java"}
 UNSUPPORTED_LANGUAGE_DETAIL = "Only Python and Java are supported for coding assessments."
 RUN_CODE_RATE_LIMIT = 5            # run-code requests per window, per student
@@ -1303,6 +1303,10 @@ def _reject_resubmission(session: RoleReadySession, rnd: RoleReadyRoundAttempt, 
         detail="Assessment closed: this assessment is already completed." if closed
         else "Round completed: a result has already been recorded for this round."
     )
+
+
+# Single source of truth for round time limits (minutes). Setup page, invitation email and portal show these same values.
+ROUND_TIME_LIMITS_MINUTES = {"APTITUDE": 15, "CODING": 30, "INTERVIEW": 15}
 
 
 def _round_timing(rnd: RoleReadyRoundAttempt) -> Dict[str, Any]:
@@ -1824,56 +1828,37 @@ def run_coding_test(
     }
 
 
-def submit_coding_round(
-    db: Session,
-    session: RoleReadySession,
-    solutions: Dict[str, Dict[str, str]], # { "1": {"code": "...", "language": "python"|"java"} }
-    time_spent_seconds: int = 0,
-    proctoring_violations: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, Any]:
+# ─── CODING: grading runs in the background ──────────────────────────────────
+#
+# Running every hidden test through the sandbox can take a minute or more (the public sandbox queues each job
+# for ~30s). Doing that inside the request froze the student on a loading screen and, past the server's 180s
+# limit, got the whole worker killed. So a submission is saved and the interview unlocked immediately, the
+# grading runs on its own thread, and the request waits only a few seconds for the grade before answering.
+
+CODING_EVAL_WAIT_SECONDS = 15      # how long a submit waits for the grade before saying "evaluating"
+CODING_EVAL_STALE_SECONDS = 240    # an EVALUATING round this old has lost its worker (restart) and is graded again
+CODING_FINAL_WAIT_SECONDS = 150    # the final report waits at most this long for a still-running grade
+_coding_eval_events: Dict[int, threading.Event] = {}
+_coding_eval_guard = threading.Lock()
+
+
+def _grade_coding_submission(coding_round: RoleReadyRoundAttempt, solutions: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
     """
-    Server evaluates code against hidden test cases (Python or Java), records score,
-    transitions session to INTERVIEW_UNLOCKED regardless of score (zero-rejection).
-    Sandbox outage -> HTTP 503 with nothing committed so the student can retry.
+    Runs every hidden test for the submitted code and returns the evaluation payload.
+    Raises HTTP 503 (via _sandbox_unavailable) when the sandbox itself is down.
     """
-    solutions = solutions or {}
-    for sol in solutions.values():  # validate before any state change
-        _require_supported_language((sol or {}).get("language"))
-        if len(((sol or {}).get("code") or "").encode("utf-8")) > MAX_CODE_BYTES:
-            raise HTTPException(status_code=400, detail="Code exceeds the 64 KB submission limit.")
-
-    coding_round = _get_round(db, session, "CODING", "Coding")
-
-    if coding_round.status == "EVALUATED":
-        _reject_resubmission(session, coding_round, solutions)
-        stored = coding_round.evaluation_payload or {}
-        return {
-            "session_uuid": session.session_uuid,
-            "status": "EVALUATED",
-            "round_type": "CODING",
-            "score": coding_round.score,
-            "current_state": session.current_state,
-            "next_stage": session.current_state,
-            "next_round_unlocked": True,
-            "problem_evaluations": stored.get("problems", []),
-            "idempotent_replay": True
-        }
-
-    if session.current_state not in (RoleReadySessionState.CODING_UNLOCKED, RoleReadySessionState.CODING_IN_PROGRESS):
-        raise HTTPException(status_code=403, detail="Coding round is locked. Complete the previous round first.")
-
     hidden_keys = coding_round.server_keys_payload or {}
     total_hidden_tests = 0
     passed_hidden_tests = 0
     problem_evaluations = []
 
-    # Every hidden test is an independent sandbox round-trip (~1.5s each), so run them concurrently
-    # instead of one after another. Results are matched back to their test by index.
+    # Every hidden test is an independent sandbox round-trip, so run them concurrently instead of one after
+    # another. Results are matched back to their test by index.
     jobs = []  # (problem_index, expected_output, language, code, stdin)
     plans = []
     for prob in coding_round.questions_payload or []:
         pid = str(prob.get("id"))
-        sol_data = solutions.get(pid, {})
+        sol_data = (solutions or {}).get(pid, {}) or {}
         code = sol_data.get("code", "")
         sol_lang = _require_supported_language(sol_data.get("language"))
         prob_hidden = hidden_keys.get(pid, {}).get("hidden_test_cases", [])
@@ -1886,7 +1871,8 @@ def submit_coding_round(
     def _run_hidden_test(job):
         _, _, lang, code_, stdin_ = job
         res = piston_service.execute_code(lang, code_, stdin=stdin_)
-        if res.get("status") == "service_error":  # one quick retry for a transient sandbox hiccup
+        # One retry for a transient sandbox hiccup, but never after a job already waited out the full deadline
+        if res.get("status") == "service_error" and not (res.get("raw") or {}).get("deadline_exceeded"):
             res = piston_service.execute_code(lang, code_, stdin=stdin_)
         return res
 
@@ -1915,44 +1901,264 @@ def submit_coding_round(
         })
 
     overall_coding_score = round((passed_hidden_tests / total_hidden_tests * 100), 1) if total_hidden_tests > 0 else 0.0
-
-    _claim_round(db, coding_round)
-    coding_round.score = overall_coding_score
-    coding_round.status = "EVALUATED"
-    coding_round.time_spent_seconds = time_spent_seconds
-    coding_round.submission_payload = solutions
-    coding_round.proctoring_violations = proctoring_violations or []
-    coding_round.started_at = coding_round.started_at or datetime.utcnow()
-    coding_round.submitted_at = datetime.utcnow()
-    coding_round.evaluated_at = datetime.utcnow()
-    coding_round.evaluation_payload = {
+    return {
         "score": overall_coding_score,
         "problems": problem_evaluations,
         "total_hidden_tests": total_hidden_tests,
-        "passed_hidden_tests": passed_hidden_tests
+        "passed_hidden_tests": passed_hidden_tests,
     }
 
-    # State transition: any score (including 0%) unlocks the Interview round
-    session.coding_score = overall_coding_score
-    session.current_state = RoleReadySessionState.INTERVIEW_UNLOCKED
-    _commit_or_500(db)
 
-    return {
+def _store_coding_grade(db: Session, session: RoleReadySession, coding_round: RoleReadyRoundAttempt, payload: Dict[str, Any]) -> bool:
+    """
+    Saves a finished grade. The status change is atomic and only one writer can make it, so a second (re-)grade
+    can never overwrite the first result.
+    """
+    claimed = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.id == coding_round.id,
+        RoleReadyRoundAttempt.status.in_(("EVALUATING", "EVAL_FAILED"))
+    ).update({"status": "EVALUATED"}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        return False
+    coding_round.score = payload["score"]
+    coding_round.evaluated_at = datetime.utcnow()
+    coding_round.evaluation_payload = payload
+    session.coding_score = payload["score"]
+    db.commit()
+    return True
+
+
+def _mark_coding_eval_failed(db: Session, coding_round: RoleReadyRoundAttempt) -> None:
+    db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.id == coding_round.id,
+        RoleReadyRoundAttempt.status == "EVALUATING"
+    ).update({"status": "EVAL_FAILED"}, synchronize_session=False)
+    db.commit()
+
+
+def _run_coding_evaluation(round_id: int, session_id: int) -> None:
+    """Thread body: grades the stored submission with its own database session."""
+    import database
+    db = database.SessionLocal()
+    try:
+        coding_round = db.query(RoleReadyRoundAttempt).filter(RoleReadyRoundAttempt.id == round_id).first()
+        session = db.query(RoleReadySession).filter(RoleReadySession.id == session_id).first()
+        if not coding_round or not session or coding_round.status != "EVALUATING":
+            return
+        try:
+            payload = _grade_coding_submission(coding_round, coding_round.submission_payload or {})
+        except HTTPException:  # the sandbox is down: keep the submission, grade it again later
+            print(f"[RoleReady] Coding grading deferred for round {round_id}: sandbox unavailable")
+            _mark_coding_eval_failed(db, coding_round)
+            return
+        _store_coding_grade(db, session, coding_round, payload)
+    except Exception as exc:  # never let a background failure vanish silently
+        print(f"[RoleReady] Coding grading crashed for round {round_id}: {exc}")
+        try:
+            db.rollback()
+            coding_round = db.query(RoleReadyRoundAttempt).filter(RoleReadyRoundAttempt.id == round_id).first()
+            if coding_round:
+                _mark_coding_eval_failed(db, coding_round)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+    finally:
+        db.close()
+
+
+def _start_coding_evaluation(round_id: int, session_id: int) -> threading.Event:
+    """Starts grading on a background thread (once per round in this process); returns an event set when it ends."""
+    with _coding_eval_guard:
+        running = _coding_eval_events.get(round_id)
+        if running is not None and not running.is_set():
+            return running
+        done = threading.Event()
+        _coding_eval_events[round_id] = done
+
+    def target():
+        try:
+            _run_coding_evaluation(round_id, session_id)
+        finally:
+            done.set()
+
+    threading.Thread(target=target, name=f"coding-eval-{round_id}", daemon=True).start()
+    return done
+
+
+def _coding_eval_is_stale(coding_round: RoleReadyRoundAttempt) -> bool:
+    """EVALUATING for too long with no live grading thread here: the worker that owned it was restarted."""
+    if coding_round.status != "EVALUATING":
+        return False
+    running = _coding_eval_events.get(coding_round.id)
+    if running is not None and not running.is_set():
+        return False
+    submitted = coding_round.submitted_at
+    if not submitted:
+        return True
+    return (datetime.utcnow() - submitted.replace(tzinfo=None)).total_seconds() > CODING_EVAL_STALE_SECONDS
+
+
+def _wait_for_coding_grade(db: Session, session: RoleReadySession, coding_round: RoleReadyRoundAttempt,
+                           done: Optional[threading.Event], seconds: float) -> None:
+    """Waits (bounded) until the round is graded or has failed, then reloads the rows."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if done is not None:
+            done.wait(timeout=min(1.0, max(0.0, deadline - time.monotonic())))
+        else:
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+        db.commit()  # ends the read snapshot, otherwise MySQL keeps showing the state from before the grade finished
+        db.refresh(coding_round)
+        if coding_round.status in ("EVALUATED", "EVAL_FAILED"):
+            break
+    db.commit()
+    db.refresh(coding_round)
+    db.refresh(session)
+
+
+def _coding_submission_response(session: RoleReadySession, coding_round: RoleReadyRoundAttempt, replay: bool = False) -> Dict[str, Any]:
+    """The same payload as before once graded; a clear 'evaluating' answer while the grade is still running."""
+    base = {
         "session_uuid": session.session_uuid,
-        "status": "success",
         "round_type": "CODING",
-        "score": overall_coding_score,
-        "problems_evaluated": len(problem_evaluations),
-        "results": [
-            {"problem_id": e["problem_id"], "passed_tests": e["passed_tests"], "total_tests": e["total_tests"]}
-            for e in problem_evaluations
-        ],
         "current_state": session.current_state,
         "next_stage": session.current_state,
         "next_round_unlocked": True,
-        "message": "Coding assessment submitted. Round 3 (Interview) is now unlocked.",
-        "problem_evaluations": problem_evaluations
     }
+    if replay:
+        base["idempotent_replay"] = True
+    if coding_round.status == "EVALUATED":
+        stored = coding_round.evaluation_payload or {}
+        problems = stored.get("problems", [])
+        return {
+            **base,
+            "status": "success",
+            "score": coding_round.score,
+            "problems_evaluated": len(problems),
+            "results": [
+                {"problem_id": e["problem_id"], "passed_tests": e["passed_tests"], "total_tests": e["total_tests"]}
+                for e in problems
+            ],
+            "message": "Coding assessment submitted. Round 3 (Interview) is now unlocked.",
+            "problem_evaluations": problems,
+        }
+    return {
+        **base,
+        "status": "evaluating",
+        "evaluation_pending": True,
+        "score": None,
+        "problems_evaluated": 0,
+        "results": [],
+        "problem_evaluations": [],
+        "message": ("Coding assessment submitted. Round 3 (Interview) is now unlocked. Your code is being evaluated "
+                    "in the background and the result will be in your final report."),
+    }
+
+
+def ensure_coding_evaluated(db: Session, session: RoleReadySession, wait_seconds: float = CODING_FINAL_WAIT_SECONDS) -> None:
+    """
+    Called before the final report is built: makes sure the coding grade exists, waiting (bounded) for a running
+    grade, or grading again when the first attempt failed or its worker disappeared. If the sandbox stays down the
+    round is recorded as unavailable instead of silently counting as a real zero.
+    """
+    coding_round = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.session_id == session.id, RoleReadyRoundAttempt.round_type == "CODING").first()
+    if not coding_round or coding_round.status not in ("EVALUATING", "EVAL_FAILED"):
+        return
+
+    done = None
+    if coding_round.status == "EVAL_FAILED" or _coding_eval_is_stale(coding_round):
+        db.query(RoleReadyRoundAttempt).filter(
+            RoleReadyRoundAttempt.id == coding_round.id,
+            RoleReadyRoundAttempt.status.in_(("EVAL_FAILED", "EVALUATING"))
+        ).update({"status": "EVALUATING"}, synchronize_session=False)
+        db.commit()
+        db.refresh(coding_round)
+        done = _start_coding_evaluation(coding_round.id, session.id)
+    else:
+        done = _coding_eval_events.get(coding_round.id)
+
+    _wait_for_coding_grade(db, session, coding_round, done, wait_seconds)
+
+    if coding_round.status != "EVALUATED":
+        coding_round.evaluation_payload = {
+            "score": None,
+            "problems": [],
+            "evaluation_status": "UNAVAILABLE",
+            "message": "The code sandbox was unavailable, so the hidden tests could not be run for this round.",
+        }
+        if session.coding_score is None:
+            session.coding_score = 0.0
+        db.commit()
+
+
+def submit_coding_round(
+    db: Session,
+    session: RoleReadySession,
+    solutions: Dict[str, Dict[str, str]], # { "1": {"code": "...", "language": "python"|"java"} }
+    time_spent_seconds: int = 0,
+    proctoring_violations: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Saves the submission and unlocks the Interview round straight away (any score unlocks it, zero-rejection).
+    The hidden tests are graded on a background thread; this call waits at most CODING_EVAL_WAIT_SECONDS for
+    the grade and otherwise answers status "evaluating", with the result attached to the final report later.
+    """
+    solutions = solutions or {}
+    for sol in solutions.values():  # validate before any state change
+        _require_supported_language((sol or {}).get("language"))
+        if len(((sol or {}).get("code") or "").encode("utf-8")) > MAX_CODE_BYTES:
+            raise HTTPException(status_code=400, detail="Code exceeds the 64 KB submission limit.")
+
+    coding_round = _get_round(db, session, "CODING", "Coding")
+
+    if coding_round.status == "EVALUATED":
+        _reject_resubmission(session, coding_round, solutions)
+        return _coding_submission_response(session, coding_round, replay=True)
+
+    if coding_round.status in ("EVALUATING", "EVAL_FAILED"):
+        # The same code sent again (a double click, a retry): never regrade different code, resume this grade
+        _reject_resubmission(session, coding_round, solutions)
+        done = None
+        if coding_round.status == "EVAL_FAILED" or _coding_eval_is_stale(coding_round):
+            db.query(RoleReadyRoundAttempt).filter(
+                RoleReadyRoundAttempt.id == coding_round.id,
+                RoleReadyRoundAttempt.status.in_(("EVAL_FAILED", "EVALUATING"))
+            ).update({"status": "EVALUATING"}, synchronize_session=False)
+            _commit_or_500(db)
+            db.refresh(coding_round)
+            done = _start_coding_evaluation(coding_round.id, session.id)
+        else:
+            done = _coding_eval_events.get(coding_round.id)
+        _wait_for_coding_grade(db, session, coding_round, done, CODING_EVAL_WAIT_SECONDS)
+        return _coding_submission_response(session, coding_round, replay=True)
+
+    if session.current_state not in (RoleReadySessionState.CODING_UNLOCKED, RoleReadySessionState.CODING_IN_PROGRESS):
+        raise HTTPException(status_code=403, detail="Coding round is locked. Complete the previous round first.")
+
+    # Atomic claim: only one concurrent submission can move the round into grading
+    claimed = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.id == coding_round.id,
+        RoleReadyRoundAttempt.status.notin_(("EVALUATED", "EVALUATING", "EVAL_FAILED"))
+    ).update({"status": "EVALUATING"}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Another submission for this round was already committed.")
+
+    now = datetime.utcnow()
+    coding_round.time_spent_seconds = time_spent_seconds
+    coding_round.submission_payload = solutions
+    coding_round.proctoring_violations = proctoring_violations or []
+    coding_round.started_at = coding_round.started_at or now
+    coding_round.submitted_at = now
+    # Any outcome unlocks the Interview round, so the student never waits on the grader
+    session.current_state = RoleReadySessionState.INTERVIEW_UNLOCKED
+    _commit_or_500(db)
+    db.refresh(coding_round)
+
+    done = _start_coding_evaluation(coding_round.id, session.id)
+    _wait_for_coding_grade(db, session, coding_round, done, CODING_EVAL_WAIT_SECONDS)
+    return _coding_submission_response(session, coding_round)
 
 
 # ─── ROUND 3: INTERVIEW ───────────────────────────────────────────────────────
@@ -1979,7 +2185,7 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
             session_id=session.id,
             round_type="INTERVIEW",
             status="NOT_STARTED",
-            time_limit_minutes=15
+            time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["INTERVIEW"]
         )
         db.add(int_round)
         _commit_or_500(db)
@@ -2046,7 +2252,7 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
             session_id=session.id,
             round_type="INTERVIEW",
             status="NOT_STARTED",
-            time_limit_minutes=15
+            time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["INTERVIEW"]
         )
         db.add(int_round)
         _commit_or_500(db)
@@ -2212,7 +2418,7 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
         "role": role,
         "company": company,
         "candidateName": candidate_name,
-        "duration": int_round.time_limit_minutes or 20,
+        "duration": int_round.time_limit_minutes or ROUND_TIME_LIMITS_MINUTES["INTERVIEW"],
         **_round_timing(int_round)
     }
 
@@ -2311,6 +2517,11 @@ def submit_interview_round(
     }
 
     session.interview_score = interview_score
+
+    # The coding grade runs in the background; make sure it is in before the final score is computed
+    ensure_coding_evaluated(db, session)
+    if session.coding_score is None:
+        session.coding_score = 0.0
 
     # Final Consolidated Job Readiness Index (Weighted: Aptitude 25%, Coding 40%, Interview 35%)
     overall_readiness = round(

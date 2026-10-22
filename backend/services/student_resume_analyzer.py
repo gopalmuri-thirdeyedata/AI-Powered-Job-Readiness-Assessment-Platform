@@ -10,6 +10,34 @@ from pathlib import Path
 from services.rag_service import RAGService
 from services import gemini_client
 
+TECH_KEYWORDS = [
+    "python", "javascript", "typescript", "java", "c++", "c", "c#", "go", "rust", "php", "ruby", "kotlin", "swift",
+    "react", "react.js", "next.js", "vue", "angular", "node.js", "express", "django", "fastapi", "flask", "spring boot",
+    "sql", "mysql", "postgresql", "mongodb", "redis", "firebase", "sqlite",
+    "html", "css", "tailwind", "bootstrap",
+    "git", "github", "docker", "kubernetes", "aws", "azure", "gcp", "linux",
+    "machine learning", "data science", "pandas", "numpy", "tensorflow", "pytorch"
+]
+
+_SKILL_DISPLAY = {
+    "node.js": "Node.js", "react.js": "React.js", "next.js": "Next.js", "ci/cd": "CI/CD", "c++": "C++", "c#": "C#",
+    "mysql": "MySQL", "postgresql": "PostgreSQL", "mongodb": "MongoDB", "sqlite": "SQLite", "github": "GitHub",
+    "fastapi": "FastAPI", "typescript": "TypeScript", "javascript": "JavaScript", "tensorflow": "TensorFlow",
+    "pytorch": "PyTorch", "numpy": "NumPy", "graphql": "GraphQL", "oauth": "OAuth", "devops": "DevOps",
+    "rest api": "REST API", "nosql": "NoSQL", "orm": "ORM", "websockets": "WebSockets", "junit": "JUnit", "restful apis": "RESTful APIs", "power bi": "Power BI", "scikit-learn": "scikit-learn",
+}
+_SKILL_ACRONYMS = {"sql", "html", "css", "aws", "gcp", "api", "apis", "jwt", "oop", "nlp", "llm", "ml", "ai", "etl", "ui", "ux", "qa"}
+
+
+def format_skill_name(skill: str) -> str:
+    """Display form for a lowercase skill keyword (Node.js, AWS, SQL, MySQL, Spring Boot)."""
+    key = skill.strip().lower()
+    if key in _SKILL_DISPLAY:
+        return _SKILL_DISPLAY[key]
+    if key in _SKILL_ACRONYMS:
+        return key.upper()
+    return " ".join(w.upper() if w in _SKILL_ACRONYMS else w.capitalize() for w in key.split())
+
 def extract_resume_text(file_path: str) -> str:
     """Extracts raw text from PDF or DOCX resume using existing RAG infrastructure."""
     path = Path(file_path)
@@ -61,14 +89,7 @@ def _fallback_heuristic_analysis(raw_text: str) -> Dict[str, Any]:
 
     
     # Common tech skills dictionary
-    tech_keywords = [
-        "python", "javascript", "typescript", "java", "c++", "c", "c#", "go", "rust", "php", "ruby", "kotlin", "swift",
-        "react", "react.js", "next.js", "vue", "angular", "node.js", "express", "django", "fastapi", "flask", "spring boot",
-        "sql", "mysql", "postgresql", "mongodb", "redis", "firebase", "sqlite",
-        "html", "css", "tailwind", "bootstrap",
-        "git", "github", "docker", "kubernetes", "aws", "azure", "gcp", "linux",
-        "machine learning", "data science", "pandas", "numpy", "tensorflow", "pytorch"
-    ]
+    tech_keywords = TECH_KEYWORDS
     extracted_tech = [k for k in tech_keywords if re.search(r'\b' + re.escape(k) + r'\b', lower_text)]
     
     # Soft skills dictionary
@@ -139,11 +160,11 @@ def _fallback_heuristic_analysis(raw_text: str) -> Dict[str, Any]:
 
     overall_score = round((ats_score * 0.5) + (min(100.0, len(extracted_tech) * 7.0) * 0.3) + (dsa_score * 0.2), 1)
 
-    return {
+    analysis = {
         "candidate_name": extracted_candidate_name,
         "overall_score": overall_score,
         "ats_score": ats_score,
-        "technical_skills": [s.title() for s in extracted_tech],
+        "technical_skills": [format_skill_name(s) for s in extracted_tech],
         "soft_skills": [s.title() for s in extracted_soft],
         "projects": [{"title": "Projects Section", "description": "Hands-on projects detected in resume"}] if has_projects else [],
         "education": [{"degree": "Academic Degree", "status": "Detected"}] if has_education else [],
@@ -168,6 +189,92 @@ def _fallback_heuristic_analysis(raw_text: str) -> Dict[str, Any]:
         "missing_information": missing_info,
         "recommendations": recommendations
     }
+    return _enrich_with_real_entries(analysis, raw_text, tech_keywords)
+
+
+def refresh_placeholder_entries(analysis: Dict[str, Any], raw_text: str) -> Dict[str, Any]:
+    """
+    Older saved analyses hold generic placeholders ("Academic Degree", "Project 1", "Certifications present").
+    When one is detected, re-reads those four sections from the stored resume text so the page shows the
+    student's real entries without a re-upload. Read-only: nothing is written back to the database.
+    """
+    if not analysis or not raw_text:
+        return analysis
+
+    def _is_placeholder(items) -> bool:
+        return any(
+            (isinstance(i, dict) and (i.get("status") == "Detected" or i.get("title") == "Projects Section"))
+            or i == "Certifications present"
+            for i in (items or [])
+        )
+
+    keys = ("projects", "education", "experience", "certifications")
+    if not any(_is_placeholder(analysis.get(k)) for k in keys):
+        return analysis
+    fresh = _fallback_heuristic_analysis(raw_text)
+    refreshed = dict(analysis)
+    for k in keys:
+        refreshed[k] = fresh[k]
+    return refreshed
+
+
+def _enrich_with_real_entries(analysis: Dict[str, Any], raw_text: str, tech_keywords: list) -> Dict[str, Any]:
+    """
+    Replaces the generic "detected" placeholders with the student's actual projects, education,
+    experience and certifications, read from the resume's own sections. Nothing is invented: when a
+    section can't be parsed the list stays empty and the page says so.
+    """
+    # Imported lazily because student_resume_tools imports this module
+    from services.student_resume_tools import _heuristic_structured
+
+    try:
+        parsed = _heuristic_structured(raw_text)
+    except Exception as e:
+        print(f"Structured resume parsing failed: {e}")
+        parsed = {}
+
+    def _tech_in(text: str) -> list:
+        lower = text.lower()
+        return [k.title() for k in tech_keywords if re.search(r'\b' + re.escape(k) + r'\b', lower)]
+
+    projects = []
+    for p in parsed.get("projects", []):
+        blob = " ".join([p.get("name", ""), p.get("description", ""), *p.get("bullets", [])])
+        projects.append({
+            "title": p.get("name", ""),
+            "name": p.get("name", ""),
+            "description": (p.get("description") or " ".join(p.get("bullets", [])[:2])).strip(),
+            "technologies": p.get("tech") or _tech_in(blob),
+            "has_metrics": bool(re.search(r'\d+\s*(%|\+|users|ms|x\b)', blob.lower())),
+        })
+    analysis["projects"] = projects
+
+    year_re = re.compile(r'(?:19|20)\d{2}')
+    cgpa_re = re.compile(r'(?:cgpa|gpa|percentage|score)\s*[:\-]?\s*([\d.]+\s*%?(?:\s*/\s*\d+)?)', re.IGNORECASE)
+    education = []
+    for e in parsed.get("education", []):
+        blob = " ".join([e.get("degree", ""), e.get("institution", ""), e.get("dates", ""), e.get("details", "")])
+        years = year_re.findall(blob)
+        cgpa = cgpa_re.search(blob)
+        education.append({
+            "degree": e.get("degree", ""),
+            "institution": e.get("institution", ""),
+            "graduation_year": (years[-1] if years else None),
+            "cgpa": (cgpa.group(1).strip() if cgpa else None),
+        })
+    analysis["education"] = education
+
+    analysis["experience"] = [
+        {
+            "role": x.get("title", ""),
+            "company": x.get("company", ""),
+            "duration": x.get("dates", ""),
+            "summary": " ".join(x.get("bullets", [])[:2]),
+        }
+        for x in parsed.get("experience", [])
+    ]
+    analysis["certifications"] = parsed.get("certifications", [])
+    return analysis
 
 def analyze_student_resume(raw_text: str, target_role: str = "Software Engineer") -> Dict[str, Any]:
     """

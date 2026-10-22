@@ -26,6 +26,9 @@ import studentApi from '../../services/studentApi';
 import { PageHero, EmptyState } from '../../components/student-ui/StudentMotion';
 import { Counter, EASE } from '../../components/home/primitives';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
+import { VoiceInputButton, VoiceStatus } from '../../components/student-ui/VoiceInput';
+import useSpeechToText from '../../hooks/useSpeechToText';
+import { appendTranscript } from '../../utils/speechText';
 
 const RING_COLORS = { emerald: '#10b981', teal: '#14b8a6', blue: '#3b82f6', amber: '#f59e0b' };
 
@@ -89,6 +92,8 @@ const StudentMockInterview = () => {
     const [currentInterview, setCurrentInterview] = useState(null);
     const [activeTurn, setActiveTurn] = useState(null);
     const [studentResponse, setStudentResponse] = useState('');
+    // voice typing: spoken words are added to the answer box as they are recognised
+    const dictation = useSpeechToText({ onFinalText: (text) => setStudentResponse((prev) => appendTranscript(prev, text)) });
     const [turnFeedback, setTurnFeedback] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
@@ -149,6 +154,7 @@ const StudentMockInterview = () => {
 
     const handleSubmitAnswer = async (e) => {
         e.preventDefault();
+        dictation.stop();
         if (!studentResponse.trim()) return;
 
         setIsSubmitting(true);
@@ -467,6 +473,7 @@ const StudentMockInterview = () => {
                                     <span className="text-xs text-slate-500 dark:text-slate-400">
                                         {wordCount} words {wordCount < 40 && '(Aim for 40-100 words for complete STAR scoring)'}
                                     </span>
+                                    <VoiceInputButton dictation={dictation} />
                                 </div>
                                 <textarea
                                     value={studentResponse}
@@ -476,6 +483,7 @@ const StudentMockInterview = () => {
                                     className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none font-sans leading-relaxed"
                                     required
                                 />
+                                <VoiceStatus dictation={dictation} />
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
                                     <p className="text-xs text-slate-500">
                                         💡 Tip: Use action verbs like "built", "designed", "optimized", and state the outcome.

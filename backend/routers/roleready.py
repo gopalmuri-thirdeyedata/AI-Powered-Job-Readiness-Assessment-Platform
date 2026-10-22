@@ -350,11 +350,22 @@ def get_student_assessment_history(
     ).order_by(models.RoleReadySession.created_at.desc()).all()
 
     total_attempted = len(sessions)
-    completed_sessions = [s for s in sessions if s.current_state == models.RoleReadySessionState.COMPLETED]
+    # Same definition the performance service uses: a session that was scored and is neither
+    # untouched nor abandoned counts as written, even if it never reached the COMPLETED state
+    # (e.g. ended or disqualified after the interview was evaluated).
+    def _is_finished(s):
+        return s.current_state == models.RoleReadySessionState.COMPLETED or (
+            float(s.overall_readiness_score or 0.0) > 0 and s.current_state not in (
+                models.RoleReadySessionState.NOT_STARTED,
+                models.RoleReadySessionState.ABANDONED
+            )
+        )
+
+    completed_sessions = [s for s in sessions if _is_finished(s)]
     total_completed = len(completed_sessions)
 
     # In-progress / unfinished session (most recent if any)
-    in_progress = next((s for s in sessions if s.current_state != models.RoleReadySessionState.COMPLETED), None)
+    in_progress = next((s for s in sessions if not _is_finished(s)), None)
 
     # Format session list
     records = []
@@ -365,7 +376,7 @@ def get_student_assessment_history(
             "target_role": s.target_role,
             "target_company": s.target_company,
             "current_state": s.current_state,
-            "is_completed": s.current_state == models.RoleReadySessionState.COMPLETED,
+            "is_completed": _is_finished(s),
             "is_disqualified": bool((s.final_report_data or {}).get("is_disqualified")),
             "termination_reason": (s.final_report_data or {}).get("termination_reason"),
             "aptitude_score": round(float(s.aptitude_score or 0.0), 1),
@@ -375,8 +386,8 @@ def get_student_assessment_history(
             "started_at": s.started_at.isoformat() if s.started_at else None,
             "completed_at": s.completed_at.isoformat() if s.completed_at else None,
             "created_at": s.created_at.isoformat() if s.created_at else None,
-            "report_url": f"/assessment/{s.session_uuid}/report" if s.current_state == models.RoleReadySessionState.COMPLETED else None,
-            "continue_url": f"/assessment/{s.session_uuid}" if s.current_state != models.RoleReadySessionState.COMPLETED else None,
+            "report_url": f"/assessment/{s.session_uuid}/report" if _is_finished(s) else None,
+            "continue_url": f"/assessment/{s.session_uuid}" if not _is_finished(s) else None,
         })
 
     # Latest assessment summary
@@ -914,46 +925,9 @@ def dispatch_batch_assessments(
         db.add(invitation)
         db.flush()
 
-        # Send invitation email with dynamic domain resolution
+        # Build the single-use portal link (dynamic domain) that the recruiter shares with the candidate
         portal_base = _resolve_portal_base_url(request)
         portal_url = f"{portal_base}/portal/roleready?token={token}"
-        email_subject = f"RoleReady Assessment Invitation: {target_role} at {target_company}"
-        email_html = f"""
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
-            <div style="text-align: center; margin-bottom: 24px;">
-                <h2 style="color: #2e7d32; margin: 0; font-size: 24px;">RoleReady Assessment Invitation</h2>
-                <p style="color: #64748b; font-size: 13px; margin-top: 4px;">AI-Powered Job Readiness Platform</p>
-            </div>
-            <p style="font-size: 15px;">Dear <strong>{cand.name}</strong>,</p>
-            <p style="font-size: 14px; line-height: 1.6;">You have been invited by <strong>{target_company}</strong> to take an AI-powered job readiness assessment for the <strong>{target_role}</strong> position.</p>
-            
-            <div style="background-color: #f8fafc; border-left: 4px solid #5d8c2c; padding: 14px 16px; margin: 20px 0; border-radius: 4px;">
-                <p style="margin: 0 0 8px 0; font-weight: bold; font-size: 14px; color: #0f172a;">Assessment Stages:</p>
-                <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #334155; line-height: 1.7;">
-                    <li><strong>Aptitude Assessment</strong> (15 mins)</li>
-                    <li><strong>Coding Sandbox</strong> (30 mins)</li>
-                    <li><strong>Technical AI Voice Interview</strong> (15 mins)</li>
-                </ol>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="{portal_url}" style="background-color: #5d8c2c; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 2px 8px rgba(93, 140, 44, 0.3);">
-                    Start Assessment Now
-                </a>
-            </div>
-
-            <div style="background-color: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; margin: 20px 0; word-break: break-all;">
-                <span style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Direct Assessment URL:</span><br/>
-                <a href="{portal_url}" style="font-size: 13px; color: #166534; font-family: monospace; font-weight: 600; text-decoration: underline;">{portal_url}</a>
-            </div>
-
-            <p style="font-size: 12px; color: #64748b; line-height: 1.5;">This single-use access link expires in 7 days. Please ensure you are in a quiet environment with a microphone and webcam enabled before beginning.</p>
-            <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; text-align: center; font-size: 11px; color: #94a3b8;">
-                &copy; 2026 PrepWin Assessment Platform. All rights reserved.
-            </div>
-        </div>
-        """
-        email_sent = utils.send_email(cand_email, email_subject, email_html)
 
         results.append({
             "invitation_id": invitation.id,
@@ -962,78 +936,18 @@ def dispatch_batch_assessments(
             "email": cand.email,
             "token": token,
             "portal_url": portal_url,
-            "email_sent": email_sent,
-            "status": "SENT" if email_sent else "PENDING"
+            "status": "PENDING"
         })
 
-    batch.total_candidates = len([r for r in results if r.get("status") in ["SENT", "PENDING"]])
+    batch.total_candidates = len(results)
     db.commit()
 
     return {
-        "message": f"Successfully created batch and dispatched {len(results)} invitations.",
+        "message": f"Successfully created batch with {len(results)} invitation link(s). Share each link with its candidate.",
         "batch_id": batch.id,
         "batch_name": batch.batch_name,
         "total_dispatched": len(results),
         "results": results
-    }
-
-
-@router.post("/admin/invitations/{invitation_id}/retry")
-def retry_candidate_invitation_email(
-    invitation_id: int,
-    request: Request,
-    current_user: models.User = Depends(require_hr_or_admin),
-    current_tenant: Optional[models.Organization] = Depends(get_current_tenant),
-    db: Session = Depends(database.get_db)
-):
-    """
-    Safely retries sending email invitation for an existing candidate without duplicating
-    invitation tokens or creating multiple active sessions.
-    """
-    org_id = current_tenant.id if current_tenant else current_user.organization_id
-    invitation = db.query(models.CandidateInvitation).filter(
-        models.CandidateInvitation.id == invitation_id,
-        models.CandidateInvitation.organization_id == org_id
-    ).first()
-
-    if not invitation:
-        raise HTTPException(status_code=404, detail="Invitation not found.")
-
-    cand = invitation.candidate
-    if not cand or not cand.email:
-        raise HTTPException(status_code=400, detail="Candidate email is missing.")
-
-    portal_base = _resolve_portal_base_url(request)
-    portal_url = f"{portal_base}/portal/roleready?token={invitation.invitation_token}"
-    role_name = cand.role or "Software Engineer"
-    email_subject = f"RoleReady Assessment Invitation: {role_name}"
-    email_html = f"""
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
-        <h2 style="color: #2e7d32; margin-top: 0;">RoleReady Assessment Invitation</h2>
-        <p>Dear <strong>{cand.name}</strong>,</p>
-        <p>This is a reminder to complete your RoleReady job assessment for the <strong>{role_name}</strong> position.</p>
-        
-        <div style="text-align: center; margin: 28px 0;">
-            <a href="{portal_url}" style="background-color: #5d8c2c; color: #ffffff; padding: 13px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block;">
-                Start Assessment
-            </a>
-        </div>
-        
-        <div style="background-color: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin: 18px 0; word-break: break-all;">
-            <span style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Direct Link:</span><br/>
-            <a href="{portal_url}" style="font-size: 13px; color: #166534; font-family: monospace; font-weight: 600; text-decoration: underline;">{portal_url}</a>
-        </div>
-        
-        <p style="font-size: 12px; color: #64748b;">Single-use secure assessment invitation link.</p>
-    </div>
-    """
-    sent = utils.send_email(cand.email, email_subject, email_html)
-    return {
-        "message": "Invitation email retry dispatched successfully.",
-        "invitation_id": invitation.id,
-        "email": cand.email,
-        "sent": sent,
-        "token": invitation.invitation_token
     }
 
 

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -43,12 +43,28 @@ if not SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
         "max_overflow": 20     # Allow temporary burst connections
     })
 else:
-    engine_kwargs.update({"connect_args": {"check_same_thread": False}})
+    # timeout = how long a writer waits for the file lock instead of failing with "database is locked"
+    engine_kwargs.update({"connect_args": {"check_same_thread": False, "timeout": 30}})
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     **engine_kwargs
 )
+
+
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite") and ":memory:" not in SQLALCHEMY_DATABASE_URL:
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite(dbapi_connection, _record):
+        """WAL lets readers and one writer work at the same time; busy_timeout makes writers queue, not crash."""
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+        finally:
+            cursor.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

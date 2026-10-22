@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     FolderGit2,
     Plus,
@@ -26,6 +26,11 @@ import studentApi from '../../services/studentApi';
 import { PageHero, Stagger, StaggerItem, EmptyState, AnimatedBar } from '../../components/student-ui/StudentMotion';
 import { Counter, EASE } from '../../components/home/primitives';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
+import {
+    EMPTY_PROJECT_FORM, MAX_TITLE_CHARS, MIN_DESCRIPTION_WORDS, buildProjectPayload, descriptionProgress,
+    formFromProject, formatReview, validateProjectForm,
+} from '../../utils/projectForm';
+import { apiErrorMessage } from '../../utils/profileForm';
 
 const RING_COLORS = { emerald: '#10b981', amber: '#f59e0b', rose: '#f43f5e' };
 const ringTone = (v) => ((Number(v) || 0) >= 70 ? 'emerald' : (Number(v) || 0) >= 45 ? 'amber' : 'rose');
@@ -60,7 +65,7 @@ const ScoreRing = ({ value, size = 84 }) => {
 };
 
 const ANALYZE_STAGES = [
-    { icon: ScanText, label: 'Reading your repo description' },
+    { icon: ScanText, label: 'Checking your GitHub repository' },
     { icon: Layers, label: 'Reviewing architecture' },
     { icon: ShieldCheck, label: 'Checking code quality' },
     { icon: HelpCircle, label: 'Writing interview questions' },
@@ -72,6 +77,32 @@ const ANALYZE_TIPS = [
     'Copy the STAR bullets straight into your resume once the review is ready.',
 ];
 
+const FIELD = 'w-full px-4 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-900 border rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40';
+const FIELD_OK = 'border-slate-200 dark:border-slate-700';
+const FIELD_BAD = 'border-rose-400 dark:border-rose-500';
+const LABEL = 'text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1';
+
+const FieldError = ({ id, message }) => (message ? (
+    <p id={id} role="alert" className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">{message}</p>
+) : null);
+
+/** The review text with real bold headings (the server marks them with ** **) instead of literal asterisks. */
+const ReviewText = ({ text }) => {
+    const paragraphs = formatReview(text);
+    if (!paragraphs.length) return <p>Architectural critique processing...</p>;
+    return (
+        <div className="space-y-3">
+            {paragraphs.map((runs, i) => (
+                <p key={i}>
+                    {runs.map((run, j) => (run.bold
+                        ? <strong key={j} className="font-semibold text-slate-900 dark:text-white">{run.text}</strong>
+                        : <React.Fragment key={j}>{run.text}</React.Fragment>))}
+                </p>
+            ))}
+        </div>
+    );
+};
+
 const StudentProjects = () => {
     const [projects, setProjects] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -81,14 +112,17 @@ const StudentProjects = () => {
     // Modal state for Create / Edit
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingProjectId, setEditingProjectId] = useState(null);
-    const [formData, setFormData] = useState({
-        title: '',
-        description: '',
-        tech_stack_input: '',
-        github_url: '',
-        live_url: ''
-    });
+    const [form, setForm] = useState(EMPTY_PROJECT_FORM);
+    const [formErrors, setFormErrors] = useState({});
+    const [formServerError, setFormServerError] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const detailRef = useRef(null);
+    const [scrollToDetail, setScrollToDetail] = useState(0);
+
+    const setField = (key, value) => {
+        setForm((prev) => ({ ...prev, [key]: value }));
+        setFormErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+    };
 
     // Detailed Review View state
     const [activeDetailProject, setActiveDetailProject] = useState(null);
@@ -98,6 +132,14 @@ const StudentProjects = () => {
     useEffect(() => {
         loadProjects();
     }, []);
+
+    useEffect(() => {
+        if (!scrollToDetail) return undefined;
+        const timer = setTimeout(() => {
+            if (window.innerWidth < 1024 && detailRef.current) detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [scrollToDetail]);
 
     const loadProjects = async () => {
         setIsLoading(true);
@@ -109,72 +151,70 @@ const StudentProjects = () => {
                 setActiveDetailProject(data[0]);
             }
         } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to load projects.');
+            setError(apiErrorMessage(err, 'Failed to load projects.'));
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleOpenCreate = () => {
-        setEditingProjectId(null);
-        setFormData({
-            title: '',
-            description: '',
-            tech_stack_input: '',
-            github_url: '',
-            live_url: ''
-        });
+    const openForm = (projectId, values) => {
+        setEditingProjectId(projectId);
+        setForm(values);
+        setFormErrors({});
+        setFormServerError(null);
         setIsFormOpen(true);
     };
 
-    const handleOpenEdit = (proj) => {
-        setEditingProjectId(proj.id);
-        setFormData({
-            title: proj.title,
-            description: proj.description,
-            tech_stack_input: (proj.tech_stack || []).join(', '),
-            github_url: proj.github_url || '',
-            live_url: proj.live_url || ''
-        });
-        setIsFormOpen(true);
+    const handleOpenCreate = () => openForm(null, EMPTY_PROJECT_FORM);
+
+    const handleOpenEdit = (proj) => openForm(proj.id, formFromProject(proj));
+
+    const closeForm = () => {
+        if (isSubmitting) return;
+        setIsFormOpen(false);
+        setFormErrors({});
+        setFormServerError(null);
     };
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
+
+        // Problems are shown next to the field, inside the form, before anything is sent
+        const found = validateProjectForm(form);
+        if (Object.keys(found).length) {
+            setFormErrors(found);
+            setFormServerError(null);
+            const first = ['title', 'description', 'githubUrl', 'liveUrl'].find((key) => found[key]);
+            const ids = { title: 'project-title', description: 'project-description', githubUrl: 'project-github', liveUrl: 'project-live' };
+            document.getElementById(ids[first])?.focus();
+            return;
+        }
+
         setIsSubmitting(true);
+        setFormServerError(null);
         setError(null);
-
-        const techArray = formData.tech_stack_input
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean);
-
-        const payload = {
-            title: formData.title.trim(),
-            description: formData.description.trim(),
-            tech_stack: techArray,
-            github_url: formData.github_url.trim() || null,
-            live_url: formData.live_url.trim() || null
-        };
+        const payload = buildProjectPayload(form);
 
         try {
             if (editingProjectId) {
                 const updated = await studentApi.updateProject(editingProjectId, payload);
                 setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
-                if (activeDetailProject?.id === updated.id) {
-                    setActiveDetailProject(updated);
-                }
+                setActiveDetailProject(updated);
                 setSuccessMessage('Project updated and re-analyzed successfully.');
             } else {
                 const created = await studentApi.createProject(payload);
                 setProjects(prev => [created, ...prev]);
                 setActiveDetailProject(created);
-                setSuccessMessage('Project added and analyzed with AI review!');
+                setSuccessMessage('Project added and analyzed successfully.');
             }
             setIsFormOpen(false);
-            setTimeout(() => setSuccessMessage(null), 4000);
+            setFormErrors({});
+            setScrollToDetail((n) => n + 1);
+            setTimeout(() => setSuccessMessage(null), 5000);
         } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to save project.');
+            // stays open with the reason (for example "repository not found"), so nothing the student typed is lost
+            setFormServerError(apiErrorMessage(err, 'Failed to save the project. Please try again.'));
         } finally {
             setIsSubmitting(false);
         }
@@ -192,7 +232,7 @@ const StudentProjects = () => {
             setSuccessMessage('Project removed.');
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err) {
-            setError('Failed to delete project.');
+            setError(apiErrorMessage(err, 'Failed to delete project.'));
         }
     };
 
@@ -219,7 +259,7 @@ const StudentProjects = () => {
             setSuccessMessage('AI Architecture Review refreshed!');
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err) {
-            setError('Failed to refresh project analysis.');
+            setError(apiErrorMessage(err, 'Failed to refresh project analysis.'));
         } finally {
             setIsAnalyzing(false);
         }
@@ -422,6 +462,8 @@ const StudentProjects = () => {
                         {activeDetailProject ? (
                             <motion.div
                                 key={activeDetailProject.id}
+                                ref={detailRef}
+                                id="project-detail"
                                 initial={{ opacity: 0, y: 18 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.5, ease: EASE }}
@@ -443,6 +485,20 @@ const StudentProjects = () => {
                                         <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mt-1 break-words">
                                             {activeDetailProject.title}
                                         </h2>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs">
+                                            {activeDetailProject.github_url && (
+                                                <a href={activeDetailProject.github_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 break-all">
+                                                    <Github className="w-3.5 h-3.5 shrink-0" />
+                                                    {activeDetailProject.github_url.replace('https://github.com/', '')}
+                                                </a>
+                                            )}
+                                            {activeDetailProject.live_url && (
+                                                <a href={activeDetailProject.live_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline">
+                                                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                                    Live demo
+                                                </a>
+                                            )}
+                                        </div>
                                         </div>
                                     </div>
 
@@ -462,8 +518,8 @@ const StudentProjects = () => {
                                         <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                         System Design & Architecture Critique
                                     </h3>
-                                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-                                        {activeDetailProject.architecture_review || 'Architectural critique processing...'}
+                                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                                        <ReviewText text={activeDetailProject.architecture_review} />
                                     </div>
                                 </motion.div>
 
@@ -576,7 +632,7 @@ const StudentProjects = () => {
                                 {editingProjectId ? 'Edit Project' : 'Add New Portfolio Project'}
                             </h3>
                             <button
-                                onClick={() => setIsFormOpen(false)}
+                                onClick={closeForm}
                                 aria-label="Close"
                                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                             >
@@ -584,90 +640,124 @@ const StudentProjects = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleFormSubmit} className="space-y-4">
+                        <form onSubmit={handleFormSubmit} noValidate className="space-y-4">
+                            {formServerError && (
+                                <div id="project-form-error" role="alert" className="p-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                    <span>{formServerError}</span>
+                                </div>
+                            )}
+
                             <div>
-                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                                    Project Title *
-                                </label>
+                                <label htmlFor="project-title" className={LABEL}>Project Title *</label>
                                 <input
+                                    id="project-title"
                                     type="text"
-                                    value={formData.title}
-                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                    required
+                                    value={form.title}
+                                    maxLength={MAX_TITLE_CHARS}
+                                    onChange={(e) => setField('title', e.target.value)}
                                     placeholder="e.g. Distributed Task Queue & Telemetry Engine"
-                                    className="w-full px-4 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                    aria-invalid={Boolean(formErrors.title)}
+                                    aria-describedby={formErrors.title ? 'project-title-err' : undefined}
+                                    className={`${FIELD} ${formErrors.title ? FIELD_BAD : FIELD_OK}`}
                                 />
+                                <FieldError id="project-title-err" message={formErrors.title} />
                             </div>
 
                             <div>
-                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                                    Technical Architecture & Description *
-                                </label>
+                                <label htmlFor="project-description" className={LABEL}>Technical Architecture & Description *</label>
                                 <textarea
-                                    value={formData.description}
-                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    required
-                                    rows={4}
-                                    placeholder="Describe the system architecture, caching strategy, concurrency model, database schema, and throughput..."
-                                    className="w-full p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none font-sans leading-relaxed"
+                                    id="project-description"
+                                    value={form.description}
+                                    onChange={(e) => setField('description', e.target.value)}
+                                    rows={6}
+                                    placeholder="What does it do? How is it built (architecture, database, caching, concurrency)? What was the result (users, speed, tests)?"
+                                    aria-invalid={Boolean(formErrors.description)}
+                                    aria-describedby="project-description-hint"
+                                    className={`w-full p-3.5 bg-slate-50 dark:bg-slate-900 border rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none font-sans leading-relaxed ${formErrors.description ? FIELD_BAD : FIELD_OK}`}
                                 />
+                                {(() => {
+                                    const progress = descriptionProgress(form.description);
+                                    return (
+                                        <div className="flex items-start justify-between gap-3 mt-1">
+                                            <p id="project-description-hint" className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                Say what it does, how it is built and the result. This is what the review reads.
+                                            </p>
+                                            <span id="project-word-count" className={`text-[11px] font-semibold tabular-nums shrink-0 ${progress.enough ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                {progress.words} / {MIN_DESCRIPTION_WORDS} words
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
+                                <FieldError id="project-description-err" message={formErrors.description} />
                             </div>
 
                             <div>
-                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                                    Tech Stack (Comma-separated)
-                                </label>
+                                <label htmlFor="project-github" className={LABEL}>GitHub Repository URL (optional)</label>
                                 <input
+                                    id="project-github"
                                     type="text"
-                                    value={formData.tech_stack_input}
-                                    onChange={(e) => setFormData({ ...formData, tech_stack_input: e.target.value })}
-                                    placeholder="e.g. Python, FastAPI, Redis, PostgreSQL, Docker"
-                                    className="w-full px-4 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                    inputMode="url"
+                                    autoComplete="off"
+                                    value={form.githubUrl}
+                                    onChange={(e) => setField('githubUrl', e.target.value)}
+                                    placeholder="https://github.com/your-name/your-project"
+                                    aria-invalid={Boolean(formErrors.githubUrl)}
+                                    aria-describedby="project-github-hint"
+                                    className={`${FIELD} ${formErrors.githubUrl ? FIELD_BAD : FIELD_OK}`}
                                 />
+                                <p id="project-github-hint" className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                    Optional. If you add it, the repository must be public: we read its languages and README to review your real code.
+                                </p>
+                                <FieldError id="project-github-err" message={formErrors.githubUrl} />
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                                        GitHub Repository URL
-                                    </label>
-                                    <input
-                                        type="url"
-                                        value={formData.github_url}
-                                        onChange={(e) => setFormData({ ...formData, github_url: e.target.value })}
-                                        placeholder="https://github.com/..."
-                                        className="w-full px-4 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                                        Live Demo URL
-                                    </label>
-                                    <input
-                                        type="url"
-                                        value={formData.live_url}
-                                        onChange={(e) => setFormData({ ...formData, live_url: e.target.value })}
-                                        placeholder="https://..."
-                                        className="w-full px-4 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                                    />
-                                </div>
+                            <div>
+                                <label htmlFor="project-tech" className={LABEL}>Tech Stack (Comma-separated)</label>
+                                <input
+                                    id="project-tech"
+                                    type="text"
+                                    value={form.techStack}
+                                    onChange={(e) => setField('techStack', e.target.value)}
+                                    placeholder="e.g. Python, FastAPI, Redis, PostgreSQL, Docker"
+                                    className={`${FIELD} ${FIELD_OK}`}
+                                />
+                                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Optional. Left empty, we use the languages found in your repository.</p>
                             </div>
 
-                            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            <div>
+                                <label htmlFor="project-live" className={LABEL}>Live Demo URL (optional)</label>
+                                <input
+                                    id="project-live"
+                                    type="text"
+                                    inputMode="url"
+                                    autoComplete="off"
+                                    value={form.liveUrl}
+                                    onChange={(e) => setField('liveUrl', e.target.value)}
+                                    placeholder="https://my-project.vercel.app"
+                                    aria-invalid={Boolean(formErrors.liveUrl)}
+                                    className={`${FIELD} ${formErrors.liveUrl ? FIELD_BAD : FIELD_OK}`}
+                                />
+                                <FieldError id="project-live-err" message={formErrors.liveUrl} />
+                            </div>
+
+                            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                                 <button
                                     type="button"
-                                    onClick={() => setIsFormOpen(false)}
-                                    className="px-4 min-h-[44px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-medium transition-colors"
+                                    onClick={closeForm}
+                                    disabled={isSubmitting}
+                                    className="px-4 min-h-[44px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
+                                    id="project-save-btn"
                                     disabled={isSubmitting}
-                                    className="px-5 h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition-all shadow-xs active:scale-95 flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                                    className="px-5 h-11 justify-center bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition-all shadow-xs active:scale-95 flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <Sparkles className="w-4 h-4" />
-                                    {isSubmitting ? 'Analyzing & Saving...' : (editingProjectId ? 'Update Project' : 'Save & Analyze Project')}
+                                    {isSubmitting ? 'Analyzing project...' : (editingProjectId ? 'Update Project' : 'Save & Analyze Project')}
                                 </button>
                             </div>
                         </form>

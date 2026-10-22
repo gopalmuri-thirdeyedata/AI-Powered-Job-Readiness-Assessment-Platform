@@ -208,7 +208,7 @@ const PipelineRoundRow = ({ stepNumber, title, description, duration, isGated = 
    ═════════════════════════════════════════════════════════════ */
 const RoleReadySetup = () => {
     const navigate = useNavigate();
-    const { user } = useUser();
+    const { user, isLoaded: isUserLoaded } = useUser();
     const { hasCompletedTask } = useStudentTaskStatus(user);
 
     const [targetRole, setTargetRole] = useState("Full Stack Engineer");
@@ -224,18 +224,22 @@ const RoleReadySetup = () => {
     const reduce = useReducedMotion();
     const [tourOpen, setTourOpen] = useState(false);
 
-    // Offer the tour automatically the first time a student lands here
+    // Offer the tour automatically the first time each student lands here. The "seen" flag is stored per
+    // account, so a new signup in a browser that another account already used still gets the tour.
+    const tourStorageKey = user?.id ? `${TOUR_KEY}:${user.id}` : null;
     useEffect(() => {
+        if (!isUserLoaded || !tourStorageKey) return undefined;
         let seen = false;
-        try { seen = localStorage.getItem(TOUR_KEY) === '1'; } catch { /* storage unavailable */ }
+        try { seen = localStorage.getItem(tourStorageKey) === '1'; } catch { /* storage unavailable */ }
         if (seen) return undefined;
         const t = setTimeout(() => setTourOpen(true), 900);
         return () => clearTimeout(t);
-    }, []);
+    }, [isUserLoaded, tourStorageKey]);
 
     const closeTour = () => {
         setTourOpen(false);
-        try { localStorage.setItem(TOUR_KEY, '1'); } catch { /* storage unavailable */ }
+        if (!tourStorageKey) return;
+        try { localStorage.setItem(tourStorageKey, '1'); } catch { /* storage unavailable */ }
     };
     const firstName = user?.firstName || '';
     const jdWords = customJdText.trim() ? customJdText.trim().split(/\s+/).length : 0;

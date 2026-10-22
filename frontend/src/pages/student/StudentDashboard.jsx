@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
     LayoutDashboard,
@@ -29,6 +29,7 @@ import { useUser } from '@clerk/clerk-react';
 import studentApi from '../../services/studentApi';
 import StudentOnboardingWizard from '../../components/student/StudentOnboardingWizard';
 import StudentPerformanceView from '../../components/student/StudentPerformanceView';
+import AssessmentRequiredGate from '../../components/student-ui/AssessmentRequiredGate';
 import { PageHero, Stagger, StaggerItem, EmptyState } from '../../components/student-ui/StudentMotion';
 import { Counter, EASE } from '../../components/home/primitives';
 import useStudentTaskStatus, { markStudentTaskCompleted, clearStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
@@ -119,15 +120,8 @@ const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "R
 };
 
 const StudentDashboard = () => {
-    const navigate = useNavigate();
     const { user } = useUser();
-    const { hasCompletedTask, isLoading: isTaskStatusLoading } = useStudentTaskStatus(user);
-
-    useEffect(() => {
-        if (!isTaskStatusLoading && !hasCompletedTask) {
-            navigate('/assessment/setup', { replace: true });
-        }
-    }, [isTaskStatusLoading, hasCompletedTask, navigate]);
+    const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus(user);
 
     const [searchParams, setSearchParams] = useSearchParams();
     const urlTab = searchParams.get('tab');
@@ -201,12 +195,12 @@ const StudentDashboard = () => {
             if (histRes.status === 'fulfilled') {
                 setAssessmentHistory(histRes.value);
                 const completedCount = Number(histRes.value?.total_completed || 0);
-                if (completedCount > 0) {
+                const attemptedCount = Number(histRes.value?.total_attempted || 0);
+                // Any attempt keeps past tests reachable; a student with zero attempts sees the take-assessment screen
+                if (completedCount > 0 || attemptedCount > 0) {
                     markStudentTaskCompleted();
                 } else {
                     clearStudentTaskCompleted();
-                    navigate('/assessment/setup', { replace: true });
-                    return;
                 }
             }
         } catch (err) {
@@ -229,26 +223,19 @@ const StudentDashboard = () => {
         return 'Good Evening';
     };
 
-    // Strict Gating: uncompleted students must never see dashboard statistics or data
-    if (!hasCompletedTask) {
+    // Still verifying whether this student has any assessments: avoid flashing the empty state
+    if (!hasCompletedTask && isTaskStatusLoading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-4">
-                    <Sparkles className="w-7 h-7 text-emerald-600 dark:text-emerald-400 animate-pulse" />
-                </div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Initial Assessment Required</h2>
-                <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm max-w-md mb-6 leading-relaxed">
-                    Welcome to PrepWin! To unlock your performance dashboard and career readiness metrics, please complete your first 3-round assessment (Aptitude, Coding, and AI Technical Interview).
-                </p>
-                <Link
-                    to="/assessment/setup"
-                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all inline-flex items-center gap-2 cursor-pointer"
-                >
-                    <span>Start Your Assessment Now</span>
-                    <ArrowRight className="w-4 h-4" />
-                </Link>
+            <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+                <RefreshCw className="w-6 h-6 text-emerald-600 animate-spin" />
+                <p className="text-slate-500 text-xs">Checking your assessments...</p>
             </div>
         );
+    }
+
+    // Strict Gating: students the server confirmed have no assessments never see dashboard statistics or data
+    if (!hasCompletedTask && isConfirmedNew) {
+        return <AssessmentRequiredGate />;
     }
 
     if (isLoading) {

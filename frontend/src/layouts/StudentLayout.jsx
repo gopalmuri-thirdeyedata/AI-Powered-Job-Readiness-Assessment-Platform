@@ -15,17 +15,19 @@ import {
     X,
     MessageSquare,
     FolderGit2,
-    Building2,
     ChevronLeft,
     ChevronRight,
     Sun,
     Moon,
+    LayoutTemplate,
 } from 'lucide-react';
 import { useUser, useClerk } from '@clerk/clerk-react';
 import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
+import AssessmentRequiredGate from '../components/student-ui/AssessmentRequiredGate';
 import { useTheme } from '../context/ThemeContext';
 import useStudentTaskStatus, { clearStudentTaskCompleted, syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
+import { PROFILE_UPDATED_EVENT } from '../utils/profileForm';
 
 // Navigation definition with unified emerald brand accents
 export const navItems = [
@@ -35,11 +37,27 @@ export const navItems = [
     { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Mock Interview',       path: '/student/interview',  icon: MessageSquare,   accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
-    { label: 'Campus Drives',        path: '/student/drives',     icon: Building2,       accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Projects',             path: '/student/projects',   icon: FolderGit2,      accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
-    { label: 'Resume',               path: '/student/resume',     icon: FileText,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Resume Analyzer',      path: '/student/resume',     icon: FileText,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Resume Formatter',     path: '/student/resume-formatter', icon: LayoutTemplate, accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Profile',              path: '/student/profile',    icon: User,            accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
 ];
+
+// Pages that depend on assessment results. A student who has not attempted an assessment sees the
+// "Initial Assessment Required" screen instead. Resume tools and Profile stay open: they need no results.
+const ASSESSMENT_GATED_PATHS = {
+    '/student/skill-gap': 'your skill gap analysis',
+    '/student/roadmap': 'your personalised learning roadmap',
+    '/student/practice': 'targeted practice questions',
+    '/student/interview': 'mock interviews tailored to your profile',
+    '/student/simulation': 'placement simulations',
+    '/student/projects': 'project reviews and recommendations',
+    '/student/dashboard': 'your performance dashboard and career readiness metrics',
+};
+const gatedFeatureFor = (pathname) => {
+    const normalized = pathname.replace(/^\/student\/hub/, '/student').replace(/\/+$/, '') || '/student';
+    return ASSESSMENT_GATED_PATHS[normalized === '/student' ? '/student/dashboard' : normalized] || null;
+};
 
 export const allNavItems = navItems;
 export const primaryNavItems = navItems.slice(0, 5);
@@ -117,14 +135,8 @@ const StudentLayout = () => {
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const { hasCompletedTask, isLoading: isTaskStatusLoading } = useStudentTaskStatus(user);
-
-    // Gating for new students: if assessment task is not completed, redirect from dashboard to assessment setup
-    useEffect(() => {
-        if (!isTaskStatusLoading && !hasCompletedTask && (location.pathname === '/student/dashboard' || location.pathname === '/student')) {
-            navigate('/assessment/setup', { replace: true });
-        }
-    }, [isTaskStatusLoading, hasCompletedTask, location.pathname, navigate]);
+    // New students are not redirected: the dashboard page itself shows the take-assessment screen
+    const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus(user);
 
     // Read the current path without making it an effect dependency: navigating between pages must
     // not re-sync the session and refetch the profile.
@@ -176,6 +188,13 @@ const StudentLayout = () => {
         return () => { isCancelled = true; };
     }, [user, isClerkLoaded, navigate]);
 
+    // Show a freshly saved name and role in the sidebar without a reload
+    useEffect(() => {
+        const onProfileUpdated = (e) => { if (e.detail) setProfile((prev) => ({ ...(prev || {}), ...e.detail })); };
+        window.addEventListener(PROFILE_UPDATED_EVENT, onProfileUpdated);
+        return () => window.removeEventListener(PROFILE_UPDATED_EVENT, onProfileUpdated);
+    }, []);
+
     // Close mobile drawer and start each page at the top on route change
     useEffect(() => {
         setMobileOpen(false);
@@ -192,7 +211,6 @@ const StudentLayout = () => {
                 () => import('../pages/student/StudentPractice'),
                 () => import('../pages/student/StudentMockInterview'),
                 () => import('../pages/student/StudentPlacementSimulation'),
-                () => import('../pages/student/StudentDrives'),
                 () => import('../pages/student/StudentProjects'),
                 () => import('../pages/student/StudentResumeUpload'),
                 () => import('../pages/student/StudentProfile'),
@@ -208,6 +226,8 @@ const StudentLayout = () => {
 
     // Login page renders without layout chrome
     if (location.pathname === '/student/login') return <Outlet />;
+
+    const gatedFeature = gatedFeatureFor(location.pathname);
 
     const handleLogout = async () => {
         clearStudentTaskCompleted();
@@ -463,7 +483,13 @@ const StudentLayout = () => {
                     {/* Page Content */}
                     <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-28 sm:pb-24">
                         <div className="max-w-7xl mx-auto w-full">
-                            <Outlet />
+                            {gatedFeature && !hasCompletedTask && isTaskStatusLoading ? (
+                                <div className="min-h-[60vh]" aria-busy="true" />
+                            ) : gatedFeature && !hasCompletedTask && isConfirmedNew ? (
+                                <AssessmentRequiredGate feature={gatedFeature} />
+                            ) : (
+                                <Outlet />
+                            )}
                         </div>
                     </main>
 

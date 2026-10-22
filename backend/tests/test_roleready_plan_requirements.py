@@ -158,24 +158,29 @@ def test_run_code_never_sends_hidden_expected_output(db_session, setup_test_data
 
 # ─── Sandbox failure handling (scenarios 9, 10) ────────────────────────────────
 
-def test_sandbox_down_returns_503_and_keeps_round_open(db_session, setup_test_data, monkeypatch):
+def test_sandbox_down_never_blocks_the_student(db_session, setup_test_data, monkeypatch):
+    """
+    A single "Run" still reports the outage (503). A final submission no longer fails with it: the code is saved,
+    the interview unlocks, and the grading is simply retried later (the round is marked EVAL_FAILED meanwhile).
+    """
     monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("down", status="service_error"))
     session, h = _advance_to_coding(db_session, setup_test_data)
     run = client.post(_url(session, "run-code"), headers=h, json={"problem_id": "1", "code": "print(1)", "language": "python"})
     assert run.status_code == 503
-    sub = client.post(_url(session, "submit-coding"), headers=h,
-                      json={"solutions": {"1": {"code": "print(1)", "language": "python"}}})
-    assert sub.status_code == 503
+    solutions = {"1": {"code": "print(1)", "language": "python"}}
+    sub = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": solutions})
+    assert sub.status_code == 200
+    assert sub.json()["status"] == "evaluating" and sub.json()["next_round_unlocked"] is True
     db_session.expire_all()
     db_session.refresh(session)
-    assert session.current_state == State.CODING_IN_PROGRESS
+    assert session.current_state == State.INTERVIEW_UNLOCKED
     rnd = db_session.query(models.RoleReadyRoundAttempt).filter_by(session_id=session.id, round_type="CODING").first()
-    assert rnd.status != "EVALUATED"
-    # recovery: the same submission succeeds once the sandbox is back
+    assert rnd.status == "EVAL_FAILED"
+    assert rnd.submission_payload == solutions, "the student's code must be kept"
+    # recovery: sending the same submission again grades it once the sandbox is back
     monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("down-recovered"))
-    ok = client.post(_url(session, "submit-coding"), headers=h,
-                     json={"solutions": {"1": {"code": "print(1)", "language": "python"}}})
-    assert ok.status_code == 200
+    ok = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": solutions})
+    assert ok.status_code == 200 and ok.json()["status"] == "success"
 
 
 def test_run_code_rate_limited_after_five_runs(db_session, setup_test_data, monkeypatch):
@@ -340,6 +345,7 @@ def test_adapter_compile_and_runtime_errors_are_candidate_errors(monkeypatch):
 
 
 def test_adapter_internal_error_and_http_failure_are_service_errors(monkeypatch):
+    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
     _judge0(monkeypatch, {"status": {"id": 13, "description": "Internal Error"}})
     assert piston_service.execute_code("python", "x")["status"] == "service_error"
     _judge0(monkeypatch, {}, status=503)
@@ -482,3 +488,54 @@ def test_mysql_schema_and_migration_use_mediumtext_for_resume_text():
     assert "resume_raw_text TEXT" in str(CreateTable(table).compile(dialect=sqlite.dialect()))
     (name, sqlite_ddl, mysql_ddl), = mig.ADDITIVE_COLUMNS["roleready_sessions"]
     assert (name, sqlite_ddl, mysql_ddl) == ("resume_raw_text", "TEXT NULL", "MEDIUMTEXT NULL")
+
+
+def test_adapter_polls_a_queued_job_until_it_finishes(monkeypatch):
+    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    _judge0(monkeypatch, {"token": "abc"}, status=201)
+    polls = []
+
+    def fake_get(url, headers=None, timeout=None):
+        polls.append(url)
+        if len(polls) < 3:
+            return _Resp({"status": {"id": 1, "description": "In Queue"}})
+        return _Resp({"stdout": "7\n", "status": {"id": 3, "description": "Accepted"}, "time": "0.01"})
+    monkeypatch.setattr(piston_service.requests, "get", fake_get)
+    res = piston_service.execute_code("python", "print(7)")
+    assert res["status"] == "success" and res["stdout"] == "7\n"
+    assert len(polls) == 3 and "/abc" in polls[0]
+
+
+def test_adapter_retries_submit_on_rate_limit_then_succeeds(monkeypatch):
+    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(url)
+        if len(calls) == 1:
+            return _Resp({}, status=429)
+        return _Resp({"stdout": "ok", "status": {"id": 3, "description": "Accepted"}})
+    monkeypatch.setattr(piston_service.requests, "post", fake_post)
+    res = piston_service.execute_code("python", "print('ok')")
+    assert res["status"] == "success" and len(calls) == 2
+
+
+def test_adapter_gives_up_with_service_error_when_queue_never_finishes(monkeypatch):
+    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    monkeypatch.setattr(piston_service, "RESULT_DEADLINE_SECONDS", 0.05)
+    _judge0(monkeypatch, {"token": "slow"}, status=201)
+    monkeypatch.setattr(piston_service.requests, "get", lambda *a, **k: _Resp({"status": {"id": 1, "description": "In Queue"}}))
+    res = piston_service.execute_code("python", "print(1)")
+    assert res["status"] == "service_error"
+
+
+def test_adapter_sends_auth_token_when_configured(monkeypatch):
+    monkeypatch.setenv("JUDGE0_AUTH_TOKEN", "secret")
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.update(headers or {})
+        return _Resp({"stdout": "1", "status": {"id": 3, "description": "Accepted"}})
+    monkeypatch.setattr(piston_service.requests, "post", fake_post)
+    piston_service.execute_code("python", "print(1)")
+    assert seen.get("X-Auth-Token") == "secret"

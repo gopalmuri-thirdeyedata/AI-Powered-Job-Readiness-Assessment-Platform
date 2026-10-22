@@ -1,7 +1,7 @@
 import enum
 from typing import List, Optional, Any, Dict, Union
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, model_validator
+from pydantic import BaseModel, EmailStr, model_validator, Field
 
 # Token
 class Token(BaseModel):
@@ -189,7 +189,7 @@ class SubmissionPayload(BaseModel):
 class AssignResponse(BaseModel):
     message: str
     status: str
-    email_errors: List[str]
+    credentials: List[Dict[str, str]] = []
 
 # Candidate / Resume
 class CandidateCreate(BaseModel):
@@ -314,15 +314,21 @@ class AnalyticsDashboardResponse(BaseModel):
 # ==============================================================================
 
 class StudentProfileUpdate(BaseModel):
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    college_name: Optional[str] = None
-    branch: Optional[str] = None
-    graduation_year: Optional[int] = None
-    cgpa: Optional[float] = None
-    target_role: Optional[str] = None
-    target_company: Optional[str] = None
-    current_skills: Optional[List[str]] = None
+    """
+    Only the fields present in the request are changed. A field sent as null is cleared (for the optional ones),
+    so a student can remove their company or CGPA. `education` is the free-text "Degree & Branch" and is stored
+    in the existing `branch` column; `branch` is still accepted for older clients.
+    """
+    full_name: Optional[str] = Field(None, max_length=150)
+    phone: Optional[str] = Field(None, max_length=50)
+    college_name: Optional[str] = Field(None, max_length=200)
+    education: Optional[str] = Field(None, max_length=100)
+    branch: Optional[str] = Field(None, max_length=100)
+    graduation_year: Optional[int] = Field(None, ge=1950, le=2100)
+    cgpa: Optional[float] = Field(None, ge=0, le=100)
+    target_role: Optional[str] = Field(None, max_length=100)
+    target_company: Optional[str] = Field(None, max_length=100)
+    current_skills: Optional[List[str]] = Field(None, max_length=100)
 
 class StudentProfileResponse(BaseModel):
     id: int
@@ -333,6 +339,7 @@ class StudentProfileResponse(BaseModel):
     phone: Optional[str] = None
     college_name: Optional[str] = None
     branch: Optional[str] = None
+    education: Optional[str] = None  # the "Degree & Branch" text; mirrors `branch` unless set explicitly
     graduation_year: Optional[int] = None
     cgpa: Optional[float] = None
     target_role: str
@@ -344,6 +351,12 @@ class StudentProfileResponse(BaseModel):
     is_onboarded: bool = False
     onboarding_step: int = 1
     created_at: datetime
+
+    @model_validator(mode="after")
+    def _education_mirrors_branch(self):
+        if self.education is None:
+            self.education = self.branch
+        return self
 
     class Config:
         from_attributes = True

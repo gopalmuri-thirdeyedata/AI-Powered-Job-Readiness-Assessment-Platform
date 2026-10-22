@@ -89,12 +89,14 @@ describe('Student Career Platform Phase 1 Frontend Test Suite', () => {
     });
 
     test('5. StudentProfile allows selecting target role, optional company, education, and skills', () => {
-        // Target Roles
-        assert.ok(studentProfileCode.includes('Software Engineer'));
-        assert.ok(studentProfileCode.includes('Full Stack Developer'));
-        assert.ok(studentProfileCode.includes('Python Developer'));
-        assert.ok(studentProfileCode.includes('Java Developer'));
-        assert.ok(studentProfileCode.includes('Data Engineer'));
+        // Target Roles (the role list now lives in the shared profile form module)
+        const profileFormCode = fs.readFileSync(path.join(__dirname, 'src', 'utils', 'profileForm.js'), 'utf-8');
+        assert.ok(studentProfileCode.includes('COMMON_ROLES.map'));
+        assert.ok(profileFormCode.includes('Software Engineer'));
+        assert.ok(profileFormCode.includes('Full Stack Developer'));
+        assert.ok(profileFormCode.includes('Python Developer'));
+        assert.ok(profileFormCode.includes('Java Developer'));
+        assert.ok(profileFormCode.includes('Data Engineer'));
 
         // Optional target company
         assert.ok(studentProfileCode.includes('Target Company'));
@@ -106,7 +108,7 @@ describe('Student Career Platform Phase 1 Frontend Test Suite', () => {
         // Current skills
         assert.ok(studentProfileCode.includes('Current Skills'));
         assert.ok(studentProfileCode.includes('handleAddSkill'));
-        assert.ok(studentProfileCode.includes('handleRemoveSkill'));
+        assert.ok(studentProfileCode.includes('onRemove={() => setField(\'skills\''));
     });
 
     test('6. Student API service encapsulates all /api/student endpoints and token headers', () => {

@@ -81,8 +81,12 @@ export const StatCard = ({ label, value, suffix = '', hint, icon: Icon, tone = '
 /** Stagger wrapper: children wrapped in <StaggerItem> enter one after another when scrolled into view. */
 export const Stagger = ({ children, className = '', delay = 0, gap = 0.08 }) => {
     const reduce = useReducedMotion();
+    // The enter animation plays once per mount. Items that appear later (a different role, a refreshed list)
+    // would otherwise stay invisible, so the group re-mounts, and replays, whenever its set of items changes.
+    const itemsKey = React.Children.toArray(children).map((c) => (c && c.key) ?? '').join('|');
     return (
         <motion.div
+            key={itemsKey}
             className={className}
             initial={reduce ? false : 'hidden'}
             whileInView="visible"

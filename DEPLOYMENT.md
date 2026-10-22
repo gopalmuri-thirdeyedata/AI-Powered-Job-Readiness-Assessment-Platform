@@ -86,8 +86,6 @@ This document provides step-by-step instructions for deploying the **HiringAI En
 | `VAPI_PRIVATE_KEY` | Yes | Vapi private API key for interview evaluation |
 | `VAPI_PUBLIC_KEY` | Yes | Vapi public key |
 | `PISTON_API_URL` | Yes | Code execution endpoint |
-| `EMAIL_HOST_USER` | Yes | SMTP sender email |
-| `EMAIL_HOST_PASSWORD` | Yes | SMTP app password |
 | `REDIS_URL` | Optional | `redis://<host>:6379/0` |
 
 ### Frontend (`frontend/.env.production`)

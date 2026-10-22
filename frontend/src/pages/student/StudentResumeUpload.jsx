@@ -21,6 +21,7 @@ import studentApi from '../../services/studentApi';
 import { PageHero, Stagger, StaggerItem, EmptyState } from '../../components/student-ui/StudentMotion';
 import { Reveal, Counter, EASE } from '../../components/home/primitives';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
+import ResumeJdAnalyzer from '../../components/student-ui/ResumeJdAnalyzer';
 
 const ANALYSIS_STAGES = [
     { icon: FileText, label: 'Reading your resume' },
@@ -67,6 +68,7 @@ const ScoreRing = ({ value = 0, label, color = '#10b981', delay = 0 }) => {
 };
 
 const StudentResumeUpload = () => {
+    const [mode, setMode] = useState('standard');
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState(null);
@@ -151,6 +153,16 @@ const StudentResumeUpload = () => {
 
     const analysis = currentAnalysis?.analysis_json || currentAnalysis || {};
 
+    // DSA data arrives either as a plain list or as {detected_keywords, has_coding_profile, notes}
+    const dsaRaw = analysis.dsa_indicators?.indicators || analysis.dsa_indicators;
+    const dsaIndicators = Array.isArray(dsaRaw)
+        ? dsaRaw
+        : [
+            ...((dsaRaw?.detected_keywords || []).map((k) => k.replace(/^./, (c) => c.toUpperCase()))),
+            ...(dsaRaw?.has_coding_profile ? ['Coding practice profile'] : []),
+            ...((dsaRaw?.notes && !/^no explicit/i.test(dsaRaw.notes)) ? [dsaRaw.notes] : []),
+        ];
+
     return (
         <div className="space-y-6 sm:space-y-8">
             <AssessmentLoadingOverlay
@@ -165,10 +177,42 @@ const StudentResumeUpload = () => {
             <PageHero
                 icon={FileText}
                 eyebrow="Resume Lab"
-                title="AI Resume Screening & Analysis"
-                subtitle="Upload your resume for comprehensive 9-dimension career evaluation, ATS compatibility scoring, and actionable feedback."
+                title="Resume Analyzer"
+                subtitle="Upload your resume for comprehensive 9-dimension career evaluation, ATS compatibility scoring, and actionable feedback, or check how well it fits a specific job."
             />
 
+            {/* Mode switch: general analysis vs job-description match */}
+            <div id="resume-analyzer-modes" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                    { id: 'standard', icon: FileText, title: 'Analyze Resume Without Job Description', body: 'Skills, strengths, weaknesses, experience and improvement areas of your overall profile.' },
+                    { id: 'jd', icon: Briefcase, title: 'Analyze Resume With Job Description', body: 'Match against a job: matching and missing skills, fit verdict and tailored advice.' },
+                ].map((m) => {
+                    const active = mode === m.id;
+                    return (
+                        <button
+                            key={m.id}
+                            type="button"
+                            id={`resume-mode-${m.id}`}
+                            onClick={() => setMode(m.id)}
+                            aria-pressed={active}
+                            className={`text-left p-4 rounded-2xl border transition-all cursor-pointer active:scale-[0.99] ${active ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 shadow-xs' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-300 dark:hover:border-emerald-500/40'}`}
+                        >
+                            <div className="flex items-center gap-2.5">
+                                <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${active ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                    <m.icon className="w-5 h-5" />
+                                </span>
+                                <span className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{m.title}</span>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{m.body}</p>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {mode === 'jd' ? (
+                <ResumeJdAnalyzer savedResume={currentAnalysis} />
+            ) : (
+            <>
             {/* Upload Section */}
             <Reveal className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
@@ -407,8 +451,8 @@ const StudentResumeUpload = () => {
                                     <Binary className="w-4 h-4 text-amber-500" /> DSA & Problem Solving Indicators
                                 </h4>
                                 <div className="flex flex-wrap gap-1.5">
-                                    {((analysis.dsa_indicators?.indicators || analysis.dsa_indicators) || []).length > 0 ? (
-                                        ((analysis.dsa_indicators?.indicators || analysis.dsa_indicators)).map((s, i) => (
+                                    {dsaIndicators.length > 0 ? (
+                                        dsaIndicators.map((s, i) => (
                                             <span key={i} className="px-2.5 py-1 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20 rounded-lg text-xs font-medium">
                                                 {s}
                                             </span>
@@ -430,7 +474,8 @@ const StudentResumeUpload = () => {
                                             <div key={i} className="text-xs text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/40 p-2.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
                                                 <p className="font-semibold text-slate-900 dark:text-white">{edu.degree || edu.institution || JSON.stringify(edu)}</p>
                                                 {edu.institution && edu.degree && <p className="text-slate-500 dark:text-slate-400">{edu.institution}</p>}
-                                                {edu.year && <p className="text-slate-400 dark:text-slate-500 text-[11px]">Year: {edu.year}</p>}
+                                                {(edu.year || edu.graduation_year) && <p className="text-slate-400 dark:text-slate-500 text-[11px]">Year: {edu.year || edu.graduation_year}</p>}
+                                                {edu.cgpa && <p className="text-slate-400 dark:text-slate-500 text-[11px]">CGPA / Score: {edu.cgpa}</p>}
                                             </div>
                                         ))
                                     ) : (
@@ -448,7 +493,7 @@ const StudentResumeUpload = () => {
                                     {((analysis.projects?.items || analysis.projects) || []).length > 0 ? (
                                         ((analysis.projects?.items || analysis.projects)).map((proj, i) => (
                                             <div key={i} className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 rounded-lg p-3 text-xs">
-                                                <p className="font-semibold text-slate-900 dark:text-white">{proj.name || `Project ${i + 1}`}</p>
+                                                <p className="font-semibold text-slate-900 dark:text-white">{proj.name || proj.title || `Project ${i + 1}`}</p>
                                                 {proj.description && <p className="text-slate-600 dark:text-slate-300 mt-1 line-clamp-2">{proj.description}</p>}
                                                 {proj.technologies && Array.isArray(proj.technologies) && (
                                                     <div className="flex flex-wrap gap-1 mt-2">
@@ -478,6 +523,8 @@ const StudentResumeUpload = () => {
                                             <div key={i} className="text-xs text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/40 p-2.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
                                                 <p className="font-semibold text-slate-900 dark:text-white">{exp.role || exp.company || 'Experience'}</p>
                                                 {exp.company && <p className="text-slate-500 dark:text-slate-400">{exp.company}</p>}
+                                                {(exp.duration || exp.dates) && <p className="text-slate-400 dark:text-slate-500 text-[11px]">{exp.duration || exp.dates}</p>}
+                                                {exp.summary && <p className="text-slate-600 dark:text-slate-300 mt-1 line-clamp-3">{exp.summary}</p>}
                                             </div>
                                         ))
                                     ) : (
@@ -506,6 +553,8 @@ const StudentResumeUpload = () => {
                         </Stagger>
                     </div>
                 </div>
+            )}
+            </>
             )}
         </div>
     );

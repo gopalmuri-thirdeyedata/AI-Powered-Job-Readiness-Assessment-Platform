@@ -41,8 +41,7 @@ describe('Student navigation destinations resolve to the intended modules', () =
     const layoutCode = read('./src/layouts/StudentLayout.jsx');
     const expected = {
         'skill-gap': 'StudentSkillGap', roadmap: 'StudentRoadmap', practice: 'StudentPractice',
-        interview: 'StudentMockInterview', simulation: 'StudentPlacementSimulation', drives: 'StudentDrives',
-        projects: 'StudentProjects', resume: 'StudentResumeUpload', profile: 'StudentProfile',
+        interview: 'StudentMockInterview', simulation: 'StudentPlacementSimulation', projects: 'StudentProjects', resume: 'StudentResumeUpload', 'resume-formatter': 'StudentResumeFormatter', profile: 'StudentProfile',
     };
     const hubBlock = appCode.slice(appCode.indexOf('<Route path="/student/hub"'), appCode.indexOf('{/* College Placement'));
     const [hubPart, aliasPart] = hubBlock.split('<Route element={<StudentLayout />}>');

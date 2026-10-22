@@ -21,7 +21,6 @@ import Home from './pages/Home';
 // import CollegeDashboard from './pages/college/CollegeDashboard';
 // import CollegeStudents from './pages/college/CollegeStudents';
 // import CollegeDrives from './pages/college/CollegeDrives';
-// import StudentDrives from './pages/student/StudentDrives';
 
 // RoleReady Core Assessment Pages (Lazy Loaded)
 const RoleReadySetup = lazy(() => import('./pages/roleready/RoleReadySetup'));
@@ -55,6 +54,7 @@ const VapiTest = lazy(() => import('./pages/VapiTest'));
 const StudentLogin = lazy(() => import('./pages/student/StudentLogin'));
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
 const StudentResumeUpload = lazy(() => import('./pages/student/StudentResumeUpload'));
+const StudentResumeFormatter = lazy(() => import('./pages/student/StudentResumeFormatter'));
 const StudentProfile = lazy(() => import('./pages/student/StudentProfile'));
 const StudentSkillGap = lazy(() => import('./pages/student/StudentSkillGap'));
 const StudentRoadmap = lazy(() => import('./pages/student/StudentRoadmap'));
@@ -62,7 +62,6 @@ const StudentPractice = lazy(() => import('./pages/student/StudentPractice'));
 const StudentMockInterview = lazy(() => import('./pages/student/StudentMockInterview'));
 const StudentProjects = lazy(() => import('./pages/student/StudentProjects'));
 const StudentPlacementSimulation = lazy(() => import('./pages/student/StudentPlacementSimulation'));
-const StudentDrives = lazy(() => import('./pages/student/StudentDrives'));
 
 // College Placement Pages (Lazy Loaded)
 const CollegeDashboard = lazy(() => import('./pages/college/CollegeDashboard'));
@@ -144,9 +143,9 @@ function App() {
                             <Route path="practice" element={<StudentPractice />} />
                             <Route path="interview" element={<StudentMockInterview />} />
                             <Route path="simulation" element={<StudentPlacementSimulation />} />
-                            <Route path="drives" element={<StudentDrives />} />
                             <Route path="projects" element={<StudentProjects />} />
                             <Route path="resume" element={<StudentResumeUpload />} />
+                            <Route path="resume-formatter" element={<StudentResumeFormatter />} />
                             <Route path="profile" element={<StudentProfile />} />
                         </Route>
                         <Route element={<StudentLayout />}>
@@ -155,9 +154,9 @@ function App() {
                             <Route path="/student/practice" element={<StudentPractice />} />
                             <Route path="/student/interview" element={<StudentMockInterview />} />
                             <Route path="/student/simulation" element={<StudentPlacementSimulation />} />
-                            <Route path="/student/drives" element={<StudentDrives />} />
                             <Route path="/student/projects" element={<StudentProjects />} />
                             <Route path="/student/resume" element={<StudentResumeUpload />} />
+                            <Route path="/student/resume-formatter" element={<StudentResumeFormatter />} />
                             <Route path="/student/profile" element={<StudentProfile />} />
                         </Route>
 
