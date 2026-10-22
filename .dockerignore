@@ -1,0 +1,53 @@
+# Dependencies & Virtual Environments
+node_modules/
+frontend/node_modules/
+venv/
+backend/venv/
+.venv/
+backend/.venv/
+
+# Build & Cache Directories
+dist/
+frontend/dist/
+build/
+frontend/build/
+.next/
+__pycache__/
+backend/__pycache__/
+backend/*/__pycache__/
+*.py[cod]
+.pytest_cache/
+backend/.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.backup_before_clean
+backend/hiringai.db*
+hiringai.db*
+
+# Sensitive & Environment files
+.env
+.env.*
+backend/.env
+frontend/.env.local
+frontend/.env.production
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# Scratch & Logs
+scratch/
+backend/scratch/
+*.log
+logs/
+
+# Git & Agent tooling
+.git/
+.gitignore
+.agents/
