@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, Sparkles, Eye, Rocket, Link2, Briefcase, Loader2, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Sparkles, Eye, Rocket, Link2, Briefcase, Loader2, Pencil, ChevronDown, ChevronUp, RefreshCw, AlertCircle } from 'lucide-react';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
 import JobDescriptionInput from './JobDescriptionInput';
 import { isLinkExpired } from './shareLinks';
@@ -76,6 +76,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
     const [editText, setEditText] = useState('');
     const [toast, setToast] = useState(null);
     const [genErrors, setGenErrors] = useState({}); // blueprint-generation failures stay on the role card until the next attempt
+    const [confirmUpdate, setConfirmUpdate] = useState(null); // role.id when showing update-version explanation
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -105,7 +106,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
             setForm({ title: '', role: '', description: '' });
             setFormKey((k) => k + 1);
             setFormOpen(false);
-            setToast({ message: 'Job role created. Generate its assessment blueprint next.' });
+            setToast({ message: 'Job role created. Create its assessment blueprint next.' });
             changed();
         } catch (err) {
             setFormError(errorMessage(err, 'Unable to create the job role.'));
@@ -117,14 +118,15 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
     const generate = async (role) => {
         mark(role.id, 'generate');
         setGenErrors((e) => ({ ...e, [role.id]: null }));
+        const isUpdate = Boolean(role.blueprint?.valid);
         try {
             const res = await adminApi.generateBlueprint(role.id);
             setBlueprintData((d) => ({ ...d, [role.id]: res.blueprint_data }));
-            setToast({ message: `Blueprint v${res.blueprint_version} generated and validated.` });
+            setToast({ message: isUpdate ? `Assessment updated successfully. Blueprint v${res.blueprint_version} generated and validated.` : `Assessment created successfully. Blueprint v${res.blueprint_version} generated and validated.` });
             changed();
         } catch (err) {
             const status = err?.response?.status;
-            const message = status === 502 ? `${errorMessage(err)} Nothing was changed.` : errorMessage(err, 'Blueprint generation failed.');
+            const message = status === 502 ? `${errorMessage(err)} Nothing was changed.` : errorMessage(err, 'Assessment creation failed.');
             setGenErrors((e) => ({ ...e, [role.id]: message }));
             setToast({ type: 'error', message });
         } finally {
@@ -178,7 +180,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
         try {
             await adminApi.updateRole(role.id, { description: editText.trim() });
             setEditing(null);
-            setToast({ message: 'Job description updated. Regenerate the blueprint to create a new version.' });
+            setToast({ message: 'Job description updated. Update the assessment to create a new version.' });
             changed();
         } catch (err) {
             setToast({ type: 'error', message: errorMessage(err, 'Unable to save.') });
@@ -236,17 +238,60 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
                                             : 'No valid blueprint yet'}
                                         {typeof role.registration_count === 'number' ? ` · ${role.registration_count} registered` : ''}</span>
                                     </p>
+                                    {!hasValidBlueprint && (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                                            Assessment will be created from the job description.
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     <button type="button" className={ghostBtn} onClick={() => { setEditing(editing === role.id ? null : role.id); setEditText(role.description || ''); }}><Pencil size={14} /> Edit JD</button>
-                                    <button type="button" className={ghostBtn} disabled={!!b} onClick={() => generate(role)}>{b === 'generate' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} {hasValidBlueprint ? 'Regenerate with Gemini' : 'Generate with Gemini'}</button>
-                                    {hasValidBlueprint && <button type="button" className={ghostBtn} onClick={() => toggleBlueprint(role)}><Eye size={14} /> {openBlueprint === role.id ? 'Hide' : 'Review'} {openBlueprint === role.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>}
-                                    {role.status === 'DRAFT' && <button type="button" className={primaryBtn} disabled={!hasValidBlueprint || !!b} onClick={() => publish(role)} title={hasValidBlueprint ? '' : 'Generate a blueprint with Gemini first'}>{b === 'publish' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} Publish</button>}
+                                    <button type="button" className={hasValidBlueprint ? ghostBtn : primaryBtn} disabled={!!b} onClick={() => (hasValidBlueprint ? setConfirmUpdate(confirmUpdate === role.id ? null : role.id) : generate(role))} title={hasValidBlueprint ? 'Update this assessment (creates a new version)' : 'Create assessment from job description'}>{b === 'generate' ? <Loader2 size={14} className="animate-spin" /> : (hasValidBlueprint ? <RefreshCw size={14} /> : <Sparkles size={14} />)} {b === 'generate' ? (hasValidBlueprint ? 'Updating assessment...' : 'Creating assessment...') : (hasValidBlueprint ? 'Update Assessment' : 'Create Assessment')}</button>
+                                    {hasValidBlueprint && <button type="button" className={ghostBtn} onClick={() => toggleBlueprint(role)} aria-expanded={openBlueprint === role.id}><Eye size={14} /> {openBlueprint === role.id ? 'Hide' : 'Preview Assessment'} {openBlueprint === role.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>}
+                                    {role.status === 'DRAFT' && <button type="button" className={primaryBtn} disabled={!hasValidBlueprint || !!b} onClick={() => publish(role)} title={hasValidBlueprint ? '' : 'Create an assessment first'}>{b === 'publish' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} Publish</button>}
                                     {role.status !== 'DRAFT' && (onNavigate || isLinkExpired(role)) && <button type="button" className={role.status === 'PUBLISHED' || isLinkExpired(role) ? primaryBtn : ghostBtn} disabled={!!b} onClick={() => (isLinkExpired(role) ? renewLink(role) : onNavigate('links'))}>{b === 'renew' ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />} {isLinkExpired(role) ? 'Create new link' : role.status === 'PUBLISHED' ? 'Get shared link' : 'Manage link'}</button>}
                                 </div>
                             </div>
                             {genErrors[role.id] && (
-                                <p className="mt-3 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 px-3.5 py-2.5 text-sm" role="alert">{genErrors[role.id]}</p>
+                                <div className="mt-3 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 px-3.5 py-2.5 text-sm flex items-center justify-between gap-2" role="alert">
+                                    <span>{genErrors[role.id]}</span>
+                                    <button
+                                        type="button"
+                                        className="text-xs font-bold underline hover:no-underline shrink-0 text-red-800 dark:text-red-200 cursor-pointer"
+                                        onClick={() => generate(role)}
+                                        disabled={!!b}
+                                    >
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
+                            {confirmUpdate === role.id && (
+                                <div className="mt-3 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-xs text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-3" role="status">
+                                    <div className="flex items-start gap-2 max-w-xl">
+                                        <AlertCircle size={15} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong>Update Assessment:</strong> A new version may replace or supersede the current blueprint version. Existing candidates and shared links will use the updated assessment.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            type="button"
+                                            className={primaryBtn}
+                                            disabled={b === 'generate'}
+                                            onClick={() => { setConfirmUpdate(null); generate(role); }}
+                                        >
+                                            {b === 'generate' ? <Loader2 size={13} className="animate-spin" /> : null} Confirm & Update
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={ghostBtn}
+                                            disabled={b === 'generate'}
+                                            onClick={() => setConfirmUpdate(null)}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
                             )}
                             {editing === role.id && (
                                 <div className="mt-3 space-y-2">

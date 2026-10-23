@@ -44,10 +44,10 @@ describe('Job Roles & Blueprints', () => {
 
       for (const title of ['Full Stack Engineer Draft', 'Backend Engineer']) {
         const names = await buttonNames(card(ui, title));
-        assert.deepEqual(names.filter((n) => /Edit JD|Generate with Gemini|Publish/.test(n)), ['Edit JD', 'Generate with Gemini', 'Publish'], `${title}: ${names}`);
+        assert.deepEqual(names.filter((n) => /Edit JD|Create Assessment|Publish/.test(n)), ['Edit JD', 'Create Assessment', 'Publish'], `${title}: ${names}`);
         // all three sit on one row, in that order, at the same height
         const boxes = [];
-        for (const name of ['Edit JD', 'Generate with Gemini', 'Publish']) boxes.push(await card(ui, title).getByRole('button', { name }).boundingBox());
+        for (const name of ['Edit JD', 'Create Assessment', 'Publish']) boxes.push(await card(ui, title).getByRole('button', { name }).boundingBox());
         assert.ok(boxes.every((b) => Math.abs(b.y - boxes[0].y) < 2), `${title}: buttons share a row ${JSON.stringify(boxes.map((b) => Math.round(b.y)))}`);
         assert.ok(boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x);
         assert.ok(Math.abs(boxes[0].height - boxes[1].height) < 2 && Math.abs(boxes[1].height - boxes[2].height) < 2, 'consistent button height');
@@ -55,7 +55,7 @@ describe('Job Roles & Blueprints', () => {
       // Publish is disabled until a blueprint exists, and its hint no longer mentions a template
       const publish = card(ui, 'Backend Engineer').getByRole('button', { name: 'Publish' });
       assert.equal(await publish.isDisabled(), true);
-      assert.equal(await publish.getAttribute('title'), 'Generate a blueprint with Gemini first');
+      assert.equal(await publish.getAttribute('title'), 'Create an assessment first');
       assert.equal(ui.t.errors.length, 0, ui.t.errors.join('; '));
     } finally { await browser.close(); }
   });
@@ -70,7 +70,7 @@ describe('Job Roles & Blueprints', () => {
       const overflow = await ui.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert.ok(overflow <= 1, `horizontal overflow ${overflow}px`);
       const names = await buttonNames(card(ui, 'Backend Engineer'));
-      assert.deepEqual(names.filter((n) => /Edit JD|Generate with Gemini|Publish/.test(n)), ['Edit JD', 'Generate with Gemini', 'Publish']);
+      assert.deepEqual(names.filter((n) => /Edit JD|Create Assessment|Publish/.test(n)), ['Edit JD', 'Create Assessment', 'Publish']);
     } finally { await browser.close(); }
   });
 
@@ -86,7 +86,7 @@ describe('Job Roles & Blueprints', () => {
       await ui.page.goto(`${stack.web}/admin/job-roles`);
       await ui.page.getByRole('heading', { name: 'Platform Engineer', exact: true }).waitFor({ timeout: 30000 });
       const c = card(ui, 'Platform Engineer');
-      await c.getByRole('button', { name: 'Generate with Gemini' }).click();
+      await c.getByRole('button', { name: 'Create Assessment' }).click();
       await ui.page.waitForSelector('[role=alert]', { timeout: 15000 });
       const text = await ui.text();
       assert.match(text, /run out of quota or prepaid credits/);
@@ -95,7 +95,7 @@ describe('Job Roles & Blueprints', () => {
       assert.doesNotMatch(await c.innerText(), /Blueprint v\d/, 'this role has no blueprint');
       assert.match(await c.innerText(), /No valid blueprint yet/);
       assert.equal(await c.getByRole('button', { name: 'Publish' }).isDisabled(), true);
-      assert.equal(await c.getByRole('button', { name: 'Generate with Gemini' }).isEnabled(), true, 'the admin can try again');
+      assert.equal(await c.getByRole('button', { name: 'Create Assessment' }).isEnabled(), true, 'the admin can try again');
       assert.equal(ui.t.errors.length, 0, ui.t.errors.join('; '));
     } finally { await browser.close(); }
   });
@@ -108,12 +108,12 @@ describe('Job Roles & Blueprints', () => {
       await ui.page.goto(`${stack.web}/admin/job-roles`);
       await ui.page.getByRole('heading', { name: 'Data Engineer', exact: true }).waitFor({ timeout: 30000 });
       const c = card(ui, 'Data Engineer');
-      await c.getByRole('button', { name: 'Generate with Gemini' }).click();
+      await c.getByRole('button', { name: 'Create Assessment' }).click();
       await c.getByText(/Blueprint v1/).waitFor({ timeout: 60000 });
       assert.match(await c.innerText(), /Offline test data/, 'offline mock output is labelled as such, never as Gemini');
       assert.match(await ui.text(), /generated and validated/);
-      assert.equal(await c.getByRole('button', { name: 'Regenerate with Gemini' }).count(), 1);
-      await c.getByRole('button', { name: /Review/ }).click();
+      assert.equal(await c.getByRole('button', { name: 'Update Assessment' }).count(), 1);
+      await c.getByRole('button', { name: /Preview Assessment|Review/ }).click();
       await ui.page.getByText(/Aptitude \(15 questions\)/).waitFor();
       await c.getByRole('button', { name: 'Publish' }).click();
       await c.getByRole('button', { name: /Get shared link/ }).waitFor({ timeout: 30000 });

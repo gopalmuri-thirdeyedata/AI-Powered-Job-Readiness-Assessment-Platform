@@ -139,13 +139,13 @@ describe('Job Roles & Blueprints: Gemini is the only way to create a blueprint (
         assert.ok(!rolesSrc2.includes("from '../ConfirmationModal'") && !rolesSrc2.includes('<ConfirmationModal'), 'its confirmation dialog went with it');
     });
 
-    test('12. the remaining actions are intact: Edit JD, (Re)generate with Gemini, Review, Publish, and the shared-link shortcut', () => {
+    test('12. the remaining actions are intact: Edit JD, Create/Update Assessment, Preview Assessment, Publish, and the shared-link shortcut', () => {
         assert.ok(rolesSrc2.includes('<Pencil size={14} /> Edit JD'));
-        assert.ok(rolesSrc2.includes("'Generate with Gemini'") && rolesSrc2.includes("'Regenerate with Gemini'"));
+        assert.ok(rolesSrc2.includes("'Create Assessment'") && rolesSrc2.includes("'Update Assessment'"));
         assert.ok(rolesSrc2.includes('adminApi.generateBlueprint(role.id)'));
-        assert.ok(rolesSrc2.includes('toggleBlueprint(role)') && rolesSrc2.includes('Review'));
+        assert.ok(rolesSrc2.includes('toggleBlueprint(role)') && rolesSrc2.includes('Preview Assessment'));
         assert.ok(rolesSrc2.includes('disabled={!hasValidBlueprint || !!b}') && rolesSrc2.includes('adminApi.publishRole'), 'publishing still needs a valid blueprint');
-        assert.ok(rolesSrc2.includes("title={hasValidBlueprint ? '' : 'Generate a blueprint with Gemini first'}"), 'the publish hint no longer mentions a template');
+        assert.ok(rolesSrc2.includes("title={hasValidBlueprint ? '' : 'Create an assessment first'}"), 'the publish hint no longer mentions a template');
         assert.ok(rolesSrc2.includes("onNavigate('links')"));
         // all actions live in one flex-wrap row with a single gap: nothing is left over to misalign
         const row = rolesSrc2.slice(rolesSrc2.indexOf('<div className="flex flex-wrap gap-2">'), rolesSrc2.indexOf('{genErrors[role.id] && ('));
