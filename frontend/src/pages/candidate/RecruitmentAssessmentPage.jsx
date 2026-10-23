@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { CheckCircle2, Clock, Loader2, ShieldAlert } from 'lucide-react';
 import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment';
 import { candidateApi, errorMessage } from '../../services/recruitmentApi';
@@ -33,6 +33,7 @@ const Screen = ({ icon: Icon, title, children, tone = 'muted' }) => (
  */
 const RecruitmentAssessmentPage = () => {
     const { shareToken } = useParams();
+    const navigate = useNavigate();
     const [phase, setPhase] = useState('loading');   // loading | ready | blocked | closed | redirect
     const [meta, setMeta] = useState(null);
     const [message, setMessage] = useState('');
@@ -75,7 +76,7 @@ const RecruitmentAssessmentPage = () => {
             .catch((err) => {
                 if (!alive) return;
                 const status = err?.response?.status;
-                block(status === 410 ? 'This assessment is closed and is no longer accepting candidates.'
+                block(status === 410 ? (typeof err?.response?.data?.detail === 'string' ? err.response.data.detail : 'This assessment is closed and is no longer accepting candidates.')
                     : status === 404 ? 'This assessment link is not valid. Please check the link you were given.'
                         : errorMessage(err, 'Unable to load this assessment right now.'));
             });
@@ -148,6 +149,7 @@ const RecruitmentAssessmentPage = () => {
             skipInstructions
             proctoringPolicy="flag"
             onFinished={onFinished}
+            onBackToInstructions={handle ? null : () => navigate(`/assessment/join/${shareToken}/instructions`)}
         />
     );
 };

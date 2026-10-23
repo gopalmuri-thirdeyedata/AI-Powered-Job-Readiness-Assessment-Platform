@@ -23,6 +23,7 @@ import models
 import utils
 from services import assessment_flow_service as flow
 from services import assessment_policy as policy
+from services import assessment_rules
 from services.rate_limiter import SlidingWindowLimiter, client_ip
 
 SECTIONS = [
@@ -30,13 +31,8 @@ SECTIONS = [
     {"key": "coding", "label": "Coding", "minutes": policy.SECTION_MINUTES},
     {"key": "interview", "label": "AI Technical Interview", "minutes": policy.SECTION_MINUTES},
 ]
-RULES = [
-    f"This is a single, uninterrupted {policy.OVERALL_MINUTES}-minute sitting made of three timed sections: Aptitude, Coding, and a voice-based AI Technical Interview ({policy.SECTION_MINUTES} minutes each).",
-    "The server clock is the only clock that counts. Your on-screen timer is for display.",
-    "You need a working camera and microphone and must stay in fullscreen. Proctoring events (leaving fullscreen, switching tabs or windows, other people or devices in view) are recorded for the hiring team.",
-    "Do not refresh, close, or duplicate this tab. The assessment cannot be resumed after any interruption and a reload ends your attempt permanently.",
-    "Each section must be submitted before the next one begins. You cannot go back to a previous section.",
-]
+# Candidate-facing Rules of Assessment: grouped, generated from the enforcing modules' constants (services/assessment_rules.py).
+RULES = assessment_rules.candidate_rules()
 
 register_limiter = SlidingWindowLimiter(limit=5, window_seconds=60)
 start_limiter = SlidingWindowLimiter(limit=30, window_seconds=60)

@@ -139,11 +139,23 @@ class JobDescription(Base):
     is_published = Column(Boolean, default=False, server_default=text("0"), nullable=False)
     share_token = Column(String(64), unique=True, index=True, nullable=True)
     status = Column(String(30), default="DRAFT", server_default="DRAFT", nullable=False)  # DRAFT, PUBLISHED, CLOSED
+    # Shared-link expiry (UTC, server clock): issued_at + 24 h. NULL = legacy link issued before expiry existed (never auto-expired).
+    share_link_expires_at = Column(DateTime(timezone=True), nullable=True)
     blueprint_data = Column(JSON, nullable=True)
     blueprint_version = Column(Integer, default=0, server_default=text("0"), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     organization = relationship("Organization", foreign_keys=[organization_id])
+
+
+class JobShareLinkHistory(Base):
+    """A superseded shared link. Kept (never deleted) so its URL keeps answering 410 "expired" instead of 404."""
+    __tablename__ = "job_share_link_history"
+    id = Column(Integer, primary_key=True, index=True)
+    job_description_id = Column(Integer, ForeignKey("job_descriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    share_token = Column(String(64), unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    retired_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Candidate(Base):
     __tablename__ = "candidates"

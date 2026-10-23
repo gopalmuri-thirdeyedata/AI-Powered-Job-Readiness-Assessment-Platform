@@ -33,6 +33,7 @@ from services import assessment_engine as engine
 from services import assessment_policy as policy
 from services import jd_blueprint_service as blueprints
 from services import piston_service
+from services import share_link_policy as link_policy
 from services import vapi_service
 from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter
 
@@ -151,9 +152,16 @@ def get_open_job_by_token(db: Session, share_token: str) -> models.JobDescriptio
         raise _http(404, "Assessment not found.")
     job = db.query(models.JobDescription).filter(models.JobDescription.share_token == share_token).first()
     if job is None:
+        # A superseded link stays dead with a clear message instead of turning into "not found".
+        retired = db.query(models.JobShareLinkHistory.id).filter(models.JobShareLinkHistory.share_token == share_token).first()
+        if retired is not None:
+            raise _http(410, link_policy.EXPIRED_MESSAGE)
         raise _http(404, "Assessment not found.")
+    # Server clock only; checked before the closed flag so an expired link is always reported as expired.
+    if link_policy.is_expired(job, clock.now()):
+        raise _http(410, link_policy.EXPIRED_MESSAGE)
     if not job.is_published or job.status != "PUBLISHED":
-        raise _http(410, "This assessment is closed and no longer accepts candidates.")
+        raise _http(410, link_policy.CLOSED_MESSAGE)
     return job
 
 

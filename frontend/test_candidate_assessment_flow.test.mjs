@@ -116,15 +116,17 @@ describe('Candidate shared-link flow: registration -> Exam Instructions -> devic
         assert.ok(!instructionsSrc.includes('setLease('), 'no lease before an explicit start');
     });
 
-    test('6c. the instructions cover the required content', async () => {
+    test('6c. the instructions page renders the server-written Rules of Assessment (grouped), not a hard-coded list', async () => {
         const mod = await loadModule('src/pages/candidate/ExamInstructions.jsx');
-        for (const needle of ['three sequential sections', 'Start Assessment', 'server clock is the only clock', 'cannot skip a section', 'cannot go back or reopen',
-            'Do not refresh', 'cannot be paused or resumed', 'only one attempt', 'stable internet connection', 'Read these instructions carefully', 'Submit button', 'submitted automatically', 'Maximum overall duration', 'camera and microphone', 'fullscreen', 'voice-based']) {
-            assert.ok(instructionsSrc.includes(needle), `instructions mention: ${needle}`);
-        }
-        const lines = mod.instructionsFor([{ label: 'Aptitude', minutes: 20 }, { label: 'Coding', minutes: 20 }, { label: 'AI Technical Interview', minutes: 20 }], 60);
-        assert.match(lines[0], /Aptitude \(20 minutes\).*Coding \(20 minutes\).*voice-based AI Technical Interview \(20 minutes\)/);
-        assert.match(lines[1], /at most 60 minutes from the moment you click Start Assessment/);
+        assert.ok(!instructionsSrc.includes('instructionsFor'), 'the old hard-coded list is gone: one source of truth (the server)');
+        assert.ok(instructionsSrc.includes('normalizeRules(meta.rules)') && instructionsSrc.includes('Maximum overall duration'));
+        const groups = mod.normalizeRules([{ key: 'timing', title: 'Timing', items: [{ text: 'Hard limit.', important: true }, 'Plain.'] }]);
+        assert.deepEqual(groups, [{ key: 'timing', title: 'Timing', items: [{ text: 'Hard limit.', important: true }, { text: 'Plain.', important: false }] }]);
+        assert.equal(mod.normalizeRules(['a', 'b'])[0].items.length, 2, 'a flat list from an older server still renders');
+        assert.deepEqual(mod.normalizeRules(undefined), []);
+        const html = renderToStaticMarkup(React.createElement(mod.RuleGroups, { groups }));
+        assert.match(html, /<h3[^>]*>Timing<\/h3>/);
+        assert.match(html, /border-amber-500 font-semibold[^>]*>Hard limit\./, 'important rules are visually distinct');
     });
 
     test('6d. the instructions page loads first (no Start button yet) and its route is public', async () => {

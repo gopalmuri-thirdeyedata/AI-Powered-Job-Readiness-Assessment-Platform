@@ -3,18 +3,23 @@ import { Briefcase, Users, PlayCircle, CheckCircle2, AlertTriangle, BarChart3, S
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
 import { ErrorBanner, PanelIntro, cardCls, primaryBtn } from './adminUi';
 import SharedLinkField from './SharedLinkField';
+import { isLinkExpired, isLinkLive } from './shareLinks';
 
 /**
  * The one recommended next step, derived only from real backend state (job roles + overview stats):
  *  no jobs -> no blueprint -> unpublished blueprint -> published (share the link) -> registrations (review results).
  */
 export const nextAction = (roles, stats) => {
-    const published = roles.filter((r) => r.status === 'PUBLISHED');
+    const published = roles.filter(isLinkLive);
     if ((stats?.total_registrations || 0) > 0) {
         return { key: 'review', title: 'Review candidate results', body: `${stats.total_registrations} candidate${stats.total_registrations === 1 ? ' has' : 's have'} registered. Open their scores, dossiers and reports.`, cta: { label: 'Open Candidate Results', tab: 'results' } };
     }
     if (published.length > 0) {
         return { key: 'share', title: 'Share your assessment link', body: 'Your job is published. Copy the link below and send it to candidates. No candidate has registered yet.', cta: { label: 'Manage shared links', tab: 'links' }, published };
+    }
+    const expired = roles.find(isLinkExpired);
+    if (expired) {
+        return { key: 'renew', title: `The link for “${expired.title}” has expired`, body: 'Shared links are valid for 24 hours. Create a new link to keep accepting candidates; existing candidates and results are kept.', cta: { label: 'Create a new link', tab: 'roles' } };
     }
     if (roles.length === 0) {
         return { key: 'create', title: 'Create your first job role', body: 'Add a job title and description. PrepWin generates the aptitude, coding and interview assessment from it.', cta: { label: 'Create a job role', tab: 'roles' } };

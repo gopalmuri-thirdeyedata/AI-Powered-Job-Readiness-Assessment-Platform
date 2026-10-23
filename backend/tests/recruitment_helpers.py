@@ -156,6 +156,7 @@ def cleanup_orgs(db, org_ids):
     db.query(models.CandidateRegistration).filter(models.CandidateRegistration.organization_id.in_(org_ids)).delete(synchronize_session=False)
     job_ids = [r[0] for r in db.query(models.JobDescription.id).filter(models.JobDescription.organization_id.in_(org_ids))]
     if job_ids:
+        db.query(models.JobShareLinkHistory).filter(models.JobShareLinkHistory.job_description_id.in_(job_ids)).delete(synchronize_session=False)
         db.query(models.JobBlueprintVersion).filter(models.JobBlueprintVersion.job_description_id.in_(job_ids)).delete(synchronize_session=False)
         db.query(models.JobDescription).filter(models.JobDescription.id.in_(job_ids)).delete(synchronize_session=False)
     db.query(models.ActivityLog).filter(models.ActivityLog.organization_id.in_(org_ids)).delete(synchronize_session=False)

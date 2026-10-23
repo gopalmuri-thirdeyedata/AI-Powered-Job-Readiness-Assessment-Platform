@@ -68,6 +68,22 @@ report page. `python audit_assessment_scoring.py [--csv out.csv]` is a read-only
 under equal weighting. A recalculation, if approved, must be a separate migration with a verified backup and a per-row record of the
 previous value.
 
+## Rules of Assessment (candidate-facing)
+
+The rules on the Exam Instructions page are written by the server (`services/assessment_rules.py`, delivered as `rules` in
+`GET /api/public/assessment/{token}`) in eight groups: Assessment Structure, Timing, Answering and Submitting, Aptitude, Coding,
+Technical Interview, Proctoring and Integrity, Completion and Results. Numbers come from the modules that enforce them (policy minutes,
+blueprint counts, supported languages, code cap, interruption window), and `tests/test_assessment_rules.py` exercises each promise
+against the real lifecycle. Only enforced behaviour is described. In particular: the next section's clock starts at submission, a
+reload or ~1 minute of silence ends the attempt (saved work is kept, the attempt is incomplete), integrity events are recorded and
+never end a Recruitment attempt, the coding score is described only as "more hidden tests passed = higher" (see the open scoring
+question below), and candidates are never promised scores, reports, transcription or successful evaluation.
+
+Open product questions found while verifying the rules: (1) plan v3.6 describes the coding score as per-problem 50/50 over public +
+hidden cases while the implementation pools hidden tests only (documented below as a later amendment) - the rules therefore state no
+formula; (2) the language selector in the shared workspace is one global choice, so after switching language and then problem tabs the
+editor can show another problem's code in the wrong language mode (the stored per-problem language is what runs).
+
 ## Admin navigation
 
 The admin UI contains only the recruitment workflow: **Recruitment Workspace** (`/admin/dashboard`) with four tabs driven by the
@@ -99,10 +115,24 @@ were removed from the admin UI; their old URLs redirect to the workspace. Their 
   as a failure, nothing is stored or replaced, and Publish stays disabled until a valid blueprint exists. Regenerating keeps the
   previous version in `job_blueprint_versions`. Blueprints created earlier through the removed template keep working; they simply
   show no provenance badge.
-* **Shared links do not expire.** The data model has no link-expiry timestamp. A link works while the role is published; an admin can
-  *close* it (the role becomes `CLOSED`: the public metadata, registration and start endpoints answer HTTP 410 for new candidates, the
-  URL is no longer returned by the API) and *reopen* it (the same link works again). Closing never touches candidates already sitting
-  or any stored registration, attempt or result. Closed roles stay in the Shared Links list with a Reopen button.
+* **Shared links expire 24 hours after creation.** `job_descriptions.share_link_expires_at = issued_at + 24 h`, stamped on the server
+  clock (`services/share_link_policy.py`, `assessment_clock.now()`); a link is expired when `server_now >= expires_at`. Nothing resets
+  or extends it (page refreshes, registrations, closing, reopening). After expiry the public metadata, registration and start
+  endpoints answer **HTTP 410** ("This assessment link has expired ..."); the check lives in `get_open_job_by_token`, so direct API
+  calls cannot bypass it and the browser clock is never consulted. Admin responses carry `share_link_state` (`ACTIVE` / `EXPIRED` /
+  `CLOSED`) and `share_link_expires_at`; expired links return no URL, are hidden from *Shared Links* (a note points to *Job Roles &
+  Blueprints*) and are not counted as active.
+* An admin can *close* a link (role `CLOSED`: 410 "closed", URL not returned) and *reopen* it (`POST .../publish`): the same URL
+  returns with its ORIGINAL expiry. Reopening an expired link is refused (410) and changes nothing.
+* **Creating a new link** (`POST /api/admin/job-roles/{id}/new-link`, button *Create new link* on the role card) is allowed only when the
+  current link has expired (otherwise 409). It issues a new URL with its own 24 h window; the old token moves to
+  `job_share_link_history` so the old URL keeps answering 410 "expired" (never 404, never revived). Registrations, attempts, results and
+  reports stay attached to the role. A candidate already registered keeps a valid registration capability: it works against the new link.
+* Expiry only governs the *link*. Registered candidates, running attempts and completed results are untouched, and an attempt that was
+  started before the link expired continues under its own 20-minute section / 60-minute overall deadlines.
+* **Existing links** (issued before this feature) get `share_link_expires_at = NULL` = *legacy, never auto-expired*: the migration expires
+  nothing. They keep working until an admin closes them; reopening a closed legacy link stamps a 24 h window (same URL). The UI labels
+  them "No expiry". The RoleReady *invitation* expiry (7 days) is a separate system and unchanged.
 
 ## Rollout (existing database)
 

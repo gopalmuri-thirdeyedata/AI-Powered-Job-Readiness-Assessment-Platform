@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, Sparkles, Eye, Rocket, Link2, Briefcase, Loader2, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
 import JobDescriptionInput from './JobDescriptionInput';
+import { isLinkExpired } from './shareLinks';
 import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, StatusBadge, Toast, cardCls, ghostBtn, inputCls, primaryBtn } from './adminUi';
 
 const MIN_JD_CHARS = 50;
@@ -58,7 +59,7 @@ const BlueprintPreview = ({ blueprint, generation }) => {
     );
 };
 
-/** Owns: create job role -> generate blueprint -> review -> publish. The published link itself (copy / close / reopen) lives in Shared Links. */
+/** Owns: create job role -> generate blueprint -> review -> publish. The published link itself (copy / close / reopen) lives in Shared Links; a new link after expiry is created here. */
 const JobRoleManager = ({ onChanged, onNavigate }) => {
     const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -157,6 +158,20 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
         }
     };
 
+    const renewLink = async (role) => {
+        mark(role.id, 'renew');
+        try {
+            await adminApi.newShareLink(role.id);
+            setToast({ message: 'New link created. It is valid for 24 hours; find it in Shared Links.' });
+            changed();
+        } catch (err) {
+            setToast({ type: 'error', message: errorMessage(err, 'Unable to create a new link.') });
+            changed();
+        } finally {
+            mark(role.id, null);
+        }
+    };
+
     const saveEdit = async (role) => {
         if (editText.trim().length < MIN_JD_CHARS) return setToast({ type: 'error', message: `The job description needs at least ${MIN_JD_CHARS} characters.` });
         mark(role.id, 'edit');
@@ -176,7 +191,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
 
     return (
         <section aria-label="Job roles and blueprinting" className="space-y-6">
-            <PanelIntro>Create a job role, generate its assessment blueprint, review it, then publish to get the shared link.</PanelIntro>
+            <PanelIntro>Create a job role, generate its assessment blueprint, review it, then publish to get the shared link (valid for 24 hours).</PanelIntro>
             {!formVisible && (
                 <div className="flex justify-end">
                     <button type="button" className={primaryBtn} onClick={() => setFormOpen(true)}><Plus size={15} /> New job role</button>
@@ -212,7 +227,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <h3 className="font-extrabold text-slate-900 dark:text-white truncate">{role.title}</h3>
-                                        <StatusBadge status={role.status} />
+                                        <StatusBadge status={isLinkExpired(role) ? 'EXPIRED' : role.status} />
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
                                         {hasValidBlueprint && <SourceBadge source={role.blueprint.source} />}
@@ -227,7 +242,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
                                     <button type="button" className={ghostBtn} disabled={!!b} onClick={() => generate(role)}>{b === 'generate' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} {hasValidBlueprint ? 'Regenerate with Gemini' : 'Generate with Gemini'}</button>
                                     {hasValidBlueprint && <button type="button" className={ghostBtn} onClick={() => toggleBlueprint(role)}><Eye size={14} /> {openBlueprint === role.id ? 'Hide' : 'Review'} {openBlueprint === role.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>}
                                     {role.status === 'DRAFT' && <button type="button" className={primaryBtn} disabled={!hasValidBlueprint || !!b} onClick={() => publish(role)} title={hasValidBlueprint ? '' : 'Generate a blueprint with Gemini first'}>{b === 'publish' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} Publish</button>}
-                                    {role.status !== 'DRAFT' && onNavigate && <button type="button" className={role.status === 'PUBLISHED' ? primaryBtn : ghostBtn} onClick={() => onNavigate('links')}><Link2 size={14} /> {role.status === 'PUBLISHED' ? 'Get shared link' : 'Manage link'}</button>}
+                                    {role.status !== 'DRAFT' && (onNavigate || isLinkExpired(role)) && <button type="button" className={role.status === 'PUBLISHED' || isLinkExpired(role) ? primaryBtn : ghostBtn} disabled={!!b} onClick={() => (isLinkExpired(role) ? renewLink(role) : onNavigate('links'))}>{b === 'renew' ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />} {isLinkExpired(role) ? 'Create new link' : role.status === 'PUBLISHED' ? 'Get shared link' : 'Manage link'}</button>}
                                 </div>
                             </div>
                             {genErrors[role.id] && (

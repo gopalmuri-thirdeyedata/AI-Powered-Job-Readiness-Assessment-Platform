@@ -196,6 +196,13 @@ def create_tables_with_retry(attempts: int = 8) -> None:
 
 create_tables_with_retry()
 
+# Shared-link expiry column: one nullable ADD COLUMN, idempotent. Without it every job-role query would fail on an older database.
+try:
+    import migrate_share_link_expiry
+    migrate_share_link_expiry.apply(database.engine)
+except Exception as _exc:  # never block startup; the schema guard below / the migration script report it
+    print(f"[Startup Note] share-link expiry column check: {_exc}")
+
 # CORS Configuration — Production Environment Driven
 cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
 if cors_origins_env:
@@ -332,7 +339,7 @@ def _recruitment_schema_ready() -> bool:
     from sqlalchemy import inspect as sa_inspect
     try:
         insp = sa_inspect(database.engine)
-        needed = {"share_token", "blueprint_data", "status"}
+        needed = {"share_token", "blueprint_data", "status", "share_link_expires_at"}
         have_jd = {c["name"] for c in insp.get_columns("job_descriptions")}
         have_sess = {c["name"] for c in insp.get_columns("roleready_sessions")}
         return needed <= have_jd and "registration_id" in have_sess and "overall_deadline_at" in have_sess

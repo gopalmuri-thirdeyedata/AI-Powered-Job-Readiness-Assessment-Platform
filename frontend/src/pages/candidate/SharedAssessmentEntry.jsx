@@ -46,7 +46,7 @@ const SharedAssessmentEntry = () => {
                 const status = err?.response?.status;
                 setLoadError({
                     status,
-                    message: status === 410 ? 'This assessment is closed and is no longer accepting candidates.'
+                    message: status === 410 ? (typeof err?.response?.data?.detail === 'string' ? err.response.data.detail : 'This assessment is closed and is no longer accepting candidates.')
                         : status === 404 ? 'This assessment link is not valid. Please check the link you were given.'
                             : errorMessage(err, 'Unable to load this assessment right now.'),
                 });

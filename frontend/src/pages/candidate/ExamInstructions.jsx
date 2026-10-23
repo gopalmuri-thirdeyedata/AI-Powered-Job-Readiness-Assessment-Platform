@@ -12,19 +12,36 @@ const DEFAULT_SECTIONS = [
     { key: 'interview', label: 'AI Technical Interview', minutes: 20 },
 ];
 
-export const instructionsFor = (sections, total) => {
-    const [a, c, i] = sections;
-    return [
-        `The assessment has three sequential sections: ${a.label} (${a.minutes} minutes), ${c.label} (${c.minutes} minutes) and the voice-based ${i.label} (${i.minutes} minutes).`,
-        `The whole assessment lasts at most ${total} minutes from the moment you click Start Assessment. The server clock is the only clock that counts; the timers on screen are for display.`,
-        'Sections must be completed in this order. You cannot skip a section, and once you submit a section you cannot go back or reopen it.',
-        'You need a working camera and microphone and must stay in fullscreen. Leaving fullscreen, switching tabs or windows, or other people or devices in view are recorded as integrity events and shared with the hiring team.',
-        'Do not refresh, close, duplicate or leave the assessment tab after you start. The assessment cannot be paused or resumed: an interruption ends your attempt permanently, and you have only one attempt.',
-        'Use a stable internet connection and keep this window open for the full sitting.',
-        'Answer each section within its time limit and submit it with the Submit button. When a section timer reaches zero, the answers you have entered are submitted automatically, and submitted answers cannot be changed.',
-        'Read these instructions carefully before you begin. Nothing is timed until you click Start Assessment on the device check page that follows.',
-    ];
+/**
+ * The Rules of Assessment are written by the server (services/assessment_rules.py, delivered as `meta.rules`) from the same
+ * constants that enforce them, so the wording here can never disagree with the timers, limits or proctoring policy.
+ * Shape: [{ key, title, items: [{ text, important }] }]. A plain list of strings (older servers) is shown as one group.
+ */
+export const normalizeRules = (rules) => {
+    if (!Array.isArray(rules)) return [];
+    if (rules.every((r) => typeof r === 'string')) {
+        return rules.length ? [{ key: 'rules', title: 'Rules', items: rules.map((text) => ({ text, important: false })) }] : [];
+    }
+    return rules.filter((g) => g && Array.isArray(g.items)).map((g) => ({
+        key: g.key || g.title, title: g.title,
+        items: g.items.map((i) => (typeof i === 'string' ? { text: i, important: false } : { text: i.text, important: !!i.important })),
+    }));
 };
+
+export const RuleGroups = ({ groups }) => (
+    <div className="space-y-4">
+        {groups.map((g) => (
+            <section key={g.key} aria-label={g.title} data-rule-group={g.key}>
+                <h3 className="text-sm font-extrabold text-amber-900 dark:text-amber-200 mb-1.5">{g.title}</h3>
+                <ul className="space-y-1.5 text-sm text-amber-900 dark:text-amber-200">
+                    {g.items.map((item) => (
+                        <li key={item.text} className={item.important ? 'list-none -ml-1 pl-3 border-l-4 border-amber-500 font-semibold' : 'list-disc ml-5'}>{item.text}</li>
+                    ))}
+                </ul>
+            </section>
+        ))}
+    </div>
+);
 
 /**
  * Exam Instructions: /assessment/join/:shareToken/instructions
@@ -50,7 +67,7 @@ const ExamInstructions = () => {
             .catch((err) => {
                 if (!active) return;
                 const status = err?.response?.status;
-                setLoadError(status === 410 ? 'This assessment is closed and is no longer accepting candidates.'
+                setLoadError(status === 410 ? (typeof err?.response?.data?.detail === 'string' ? err.response.data.detail : 'This assessment is closed and is no longer accepting candidates.')
                     : status === 404 ? 'This assessment link is not valid. Please check the link you were given.'
                         : errorMessage(err, 'Unable to load the instructions right now.'));
             });
@@ -115,10 +132,8 @@ const ExamInstructions = () => {
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 -mt-3"><Clock size={13} /> Maximum overall duration: {total} minutes</p>
 
                 <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 p-4">
-                    <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300 text-sm mb-2"><AlertTriangle size={16} /> Please read carefully</div>
-                    <ul className="list-disc pl-5 space-y-1.5 text-sm text-amber-900 dark:text-amber-200">
-                        {instructionsFor(sections, total).map((line) => <li key={line}>{line}</li>)}
-                    </ul>
+                    <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300 text-sm mb-3"><AlertTriangle size={16} /> Rules of Assessment: please read carefully</div>
+                    <RuleGroups groups={normalizeRules(meta.rules)} />
                 </div>
 
                 <label className="flex items-start gap-3 cursor-pointer select-none">

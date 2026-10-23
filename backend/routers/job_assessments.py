@@ -16,9 +16,11 @@ from starlette.concurrency import run_in_threadpool
 import database
 import models
 from routers.auth import TenantContext, require_admin_user
+from services import assessment_clock as clock
 from services import gemini_client
 from services import jd_blueprint_service as blueprints
 from services import jd_document_service as jd_documents
+from services import share_link_policy as link_policy
 
 router = APIRouter(prefix="/api/admin/job-roles", tags=["admin-job-roles"])
 
@@ -79,6 +81,10 @@ def _blueprint_summary(job: models.JobDescription) -> Optional[Dict[str, Any]]:
 
 
 def serialize_role(job: models.JobDescription, include_blueprint: bool = False, registrations: Optional[int] = None) -> Dict[str, Any]:
+    # Evaluated on the server clock for every response; the browser never decides whether a link is live.
+    state = link_policy.link_state(job, clock.now())
+    live = bool(job.is_published) and state == link_policy.ACTIVE
+    expiry = link_policy.expires_at(job)
     out = {
         "id": job.id,
         "title": job.title,
@@ -87,9 +93,12 @@ def serialize_role(job: models.JobDescription, include_blueprint: bool = False, 
         "required_skills": job.required_skills or [],
         "status": job.status or "DRAFT",
         "is_published": bool(job.is_published),
-        "share_token": job.share_token if job.is_published else None,
-        "share_path": share_path(job.share_token) if job.is_published else None,
-        "share_url": share_url(job.share_token) if job.is_published else None,
+        "share_token": job.share_token if live else None,
+        "share_path": share_path(job.share_token) if live else None,
+        "share_url": share_url(job.share_token) if live else None,
+        # ACTIVE | EXPIRED | CLOSED | null (never had a link); expires_at is null only for legacy links without an expiry
+        "share_link_state": state,
+        "share_link_expires_at": expiry.isoformat() if expiry else None,
         "blueprint_version": job.blueprint_version or 0,
         "blueprint": _blueprint_summary(job),
         "sections": SECTIONS,
@@ -111,6 +120,22 @@ def _get_role(db: Session, tenant_id: int, role_id: int) -> models.JobDescriptio
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job role not found.")
     return job
+
+
+_EXPIRED_REOPEN_MESSAGE = "This shared link has expired and cannot be reopened. Create a new link instead."
+
+
+def _new_token() -> str:
+    # 48 random bytes -> exactly 64 URL-safe characters (384 bits of entropy)
+    return secrets.token_urlsafe(48)
+
+
+def _require_valid_blueprint(job: models.JobDescription) -> None:
+    try:
+        blueprints.validate_blueprint(job.blueprint_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Cannot publish: {exc}. Generate a valid blueprint (15 aptitude, 2 coding, 5 interview) first.")
 
 
 def _audit(db: Session, ctx: TenantContext, action: str, target: str, details: str = ""):
@@ -240,19 +265,55 @@ def _store_blueprint(db: Session, job: models.JobDescription, tenant_context: Te
 @router.post("/{role_id}/publish")
 def publish_job_role(role_id: int, db: Session = Depends(database.get_db),
                      tenant_context: TenantContext = Depends(require_admin_user)):
+    """
+    First publication issues the shared link (24 h window). On a role that already has a link this is "reopen": the same URL
+    comes back with its ORIGINAL expiry. An expired link is never revived here (410); use POST /{id}/new-link for a fresh one.
+    """
     job = _get_role(db, tenant_context.tenant_id, role_id)
-    try:
-        blueprints.validate_blueprint(job.blueprint_data)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Cannot publish: {exc}. Generate a valid blueprint (15 aptitude, 2 coding, 5 interview) first.")
+    now = clock.now()
+    if job.share_token and link_policy.is_expired(job, now):
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=_EXPIRED_REOPEN_MESSAGE)
+    _require_valid_blueprint(job)
     if not job.share_token:
-        # 48 random bytes -> exactly 64 URL-safe characters (384 bits of entropy)
-        job.share_token = secrets.token_urlsafe(48)
+        job.share_token = _new_token()
+        job.share_link_expires_at = clock.naive_utc(link_policy.new_expiry(now))
+    elif job.share_link_expires_at is None and job.status != "PUBLISHED":
+        # Legacy closed link (issued before expiry existed): an explicit reopen gives it a 24 h window, same URL.
+        job.share_link_expires_at = clock.naive_utc(link_policy.new_expiry(now))
     job.is_published = True
     job.status = "PUBLISHED"
     _audit(db, tenant_context, "JOB_ROLE_PUBLISHED", job.title, f"blueprint_version={job.blueprint_version}")
     db.commit()
+    db.refresh(job)
+    return serialize_role(job, include_blueprint=True)
+
+
+@router.post("/{role_id}/new-link")
+def create_new_share_link(role_id: int, db: Session = Depends(database.get_db),
+                          tenant_context: TenantContext = Depends(require_admin_user)):
+    """
+    Issues a brand-new shared link (new URL, its own 24 h window) for a role whose current link has expired. The expired link is
+    kept in the history and keeps answering 410; registrations, attempts and reports stay attached to the role untouched.
+    """
+    job = _get_role(db, tenant_context.tenant_id, role_id)
+    now = clock.now()
+    if not job.share_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Publish this assessment first to get its shared link.")
+    if not link_policy.is_expired(job, now):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="The current link has not expired. Close and reopen it, or wait until it expires, to get a new link.")
+    _require_valid_blueprint(job)
+    try:
+        db.add(models.JobShareLinkHistory(job_description_id=job.id, share_token=job.share_token, expires_at=job.share_link_expires_at))
+        job.share_token = _new_token()
+        job.share_link_expires_at = clock.naive_utc(link_policy.new_expiry(now))
+        job.is_published = True
+        job.status = "PUBLISHED"
+        _audit(db, tenant_context, "JOB_ROLE_SHARE_LINK_CREATED", job.title, f"blueprint_version={job.blueprint_version}")
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The link was already renewed. Reload to see it.")
     db.refresh(job)
     return serialize_role(job, include_blueprint=True)
 

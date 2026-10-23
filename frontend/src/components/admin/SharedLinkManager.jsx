@@ -2,12 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link2, Lock } from 'lucide-react';
 import ConfirmationModal from '../ConfirmationModal';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
-import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, StatusBadge, Toast, cardCls, ghostBtn, primaryBtn } from './adminUi';
+import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, StatusBadge, Toast, cardCls, formatDate, ghostBtn, primaryBtn } from './adminUi';
 import SharedLinkField from './SharedLinkField';
+import { activeLinkRoles, expiredLinkRoles, expiryNote } from './shareLinks';
 
-/** Owns the reusable shared link of every published job: copy, preview, close and reopen. Publishing itself happens in Job Roles & Blueprints. */
+/**
+ * Owns the reusable shared link of every published job: copy, preview, close and reopen. Publishing and creating a new link after
+ * expiry happen in Job Roles & Blueprints. Links expire 24 hours after creation (decided by the server); expired links are hidden.
+ */
 const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
-    const [roles, setRoles] = useState([]);
+    const [allRoles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [toast, setToast] = useState(null);
@@ -19,7 +23,7 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
         setError('');
         try {
             const all = await adminApi.listRoles();
-            setRoles(all.filter((r) => r.status === 'PUBLISHED' || r.status === 'CLOSED'));
+            setRoles(all);
         } catch (err) {
             setError(errorMessage(err, 'Unable to load shared links.'));
         } finally {
@@ -28,6 +32,9 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
     }, []);
 
     useEffect(() => { load(); }, [load, refreshKey]);
+
+    const roles = activeLinkRoles(allRoles);
+    const expiredCount = expiredLinkRoles(allRoles).length;
 
     const onCopied = (ok) => {
         setToast(ok ? { message: 'Assessment link copied to clipboard.' } : { type: 'error', message: 'Copy failed. Select the link and copy it manually.' });
@@ -42,6 +49,7 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
             if (onChanged) onChanged();
         } catch (err) {
             setToast({ type: 'error', message: errorMessage(err, 'Unable to reopen.') });
+            load();
         } finally {
             setBusyId(null);
         }
@@ -65,7 +73,7 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
 
     return (
         <section aria-label="Shared assessment links" className="space-y-4">
-            <PanelIntro onRefresh={load} loading={loading}>Each published assessment has exactly one reusable link. Share it with every candidate; each candidate registers once and gets a single attempt.</PanelIntro>
+            <PanelIntro onRefresh={load} loading={loading}>Each published assessment has one reusable link, valid for 24 hours from its creation. Share it with every candidate; each candidate registers once and gets a single attempt.</PanelIntro>
             {error && <ErrorBanner onRetry={load}>{error}</ErrorBanner>}
             {loading && roles.length === 0 && <LoadingRow>Loading shared links...</LoadingRow>}
             {!loading && !error && roles.length === 0 && (
@@ -89,9 +97,16 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
                         </div>
                         {role.status === 'PUBLISHED' && <div className="mt-3"><SharedLinkField role={role} onCopy={onCopied} /></div>}
                         {role.status === 'CLOSED' && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Closed: the link no longer accepts new candidates. Reopen to make the same link work again.</p>}
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400" data-testid="link-expiry">{expiryNote(role, formatDate)}</p>
                     </article>
                 ))}
             </div>
+            {expiredCount > 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400" data-testid="expired-links-note">
+                    {expiredCount} expired link{expiredCount === 1 ? ' is' : 's are'} hidden.
+                    {onNavigate && <> <button type="button" className="font-semibold text-[#4c7324] dark:text-[#9fd05a] hover:underline" onClick={() => onNavigate('roles')}>Create a new link in Job Roles &amp; Blueprints</button>.</>}
+                </p>
+            )}
             <ConfirmationModal
                 isOpen={!!closeTarget} onClose={() => setCloseTarget(null)} onConfirm={close} type="warning"
                 title="Close this assessment?" confirmText="Close assessment"

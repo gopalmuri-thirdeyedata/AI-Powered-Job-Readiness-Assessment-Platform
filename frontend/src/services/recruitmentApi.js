@@ -34,6 +34,7 @@ export const adminApi = {
     generateBlueprint: (id) => adminPost(`/api/admin/job-roles/${id}/generate-blueprint`, {}, 120000),
     publishRole: (id) => adminPost(`/api/admin/job-roles/${id}/publish`),
     closeRole: (id) => adminPost(`/api/admin/job-roles/${id}/close`),
+    newShareLink: (id) => adminPost(`/api/admin/job-roles/${id}/new-link`),
     overview: () => adminGet('/api/admin/recruitment/overview-stats'),
     listCandidates: (params) => adminGet('/api/admin/recruitment/candidates', params),
     dossier: (id) => adminGet(`/api/admin/recruitment/candidates/${id}/dossier`),

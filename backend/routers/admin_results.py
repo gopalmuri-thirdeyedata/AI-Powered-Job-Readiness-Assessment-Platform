@@ -20,6 +20,7 @@ from routers.auth import TenantContext, require_admin_user, require_organization
 from services import assessment_clock as clock
 from services import assessment_flow_service as flow
 from services import assessment_sweeper_service as sweeper
+from services import share_link_policy as link_policy
 
 router = APIRouter(prefix="/api/admin/recruitment", tags=["admin-recruitment"])
 
@@ -77,7 +78,10 @@ def _has(session: models.RoleReadySession, key: str) -> bool:
 @router.get("/overview-stats")
 def overview_stats(db: Session = Depends(database.get_db), ctx: TenantContext = Depends(require_admin_user)):
     org = ctx.tenant_id
-    active_jobs = db.query(func.count(JD.id)).filter(JD.organization_id == org, JD.is_published.is_(True), JD.status == "PUBLISHED").scalar() or 0
+    now_db = clock.naive_utc(clock.now())
+    active_jobs = db.query(func.count(JD.id)).filter(
+        JD.organization_id == org, JD.is_published.is_(True), JD.status == "PUBLISHED",
+        or_(JD.share_link_expires_at.is_(None), JD.share_link_expires_at > now_db)).scalar() or 0
     total_regs = db.query(func.count(Reg.id)).filter(Reg.organization_id == org).scalar() or 0
     by_state = dict(db.query(Sess.current_state, func.count(Sess.id)).filter(
         Sess.organization_id == org, Sess.workflow_type == flow.WORKFLOW_TYPE).group_by(Sess.current_state).all())
@@ -255,7 +259,7 @@ def authorize_outage_retake(reg_id: int, body: RetakeRequest, db: Session = Depe
     db.commit()
     job = db.query(JD).filter(JD.id == reg.job_description_id).first()
     return {"registration_token": token, "incident_reference_id": incident_ref,
-            "share_token": job.share_token if job and job.is_published else None,
+            "share_token": job.share_token if job and job.is_published and not link_policy.is_expired(job, clock.now()) else None,
             "message": "Retake authorized. Share the single-use link with the candidate; the previous attempt was archived."}
 
 

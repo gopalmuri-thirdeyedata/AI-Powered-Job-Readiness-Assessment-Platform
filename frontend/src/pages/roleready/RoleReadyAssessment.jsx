@@ -270,6 +270,7 @@ const ProctorCameraFeed = ({
  *   proctoringPolicy   'terminate' (student: three strikes end the attempt) | 'flag' (recruitment: events are recorded
  *                      for the hiring team; a browser event alone never ends or invalidates an attempt)
  *   onFinished(outcome) called instead of routing to the student report
+ *   onBackToInstructions  recruitment only: returns to the Exam Instructions page (the student-style rules card is never shown to candidates)
  */
 export const AssessmentWorkspace = ({
     sessionUuid,
@@ -278,6 +279,7 @@ export const AssessmentWorkspace = ({
     skipInstructions = false,
     proctoringPolicy = 'terminate',
     onFinished = null,
+    onBackToInstructions = null,
 }) => {
     const navigate = useNavigate();
     const isRecruitment = mode === 'recruitment';
@@ -1913,7 +1915,9 @@ export const AssessmentWorkspace = ({
                                             When you click <strong>Start Assessment & Enter Fullscreen</strong>, your browser will switch to locked fullscreen mode.
                                         </p>
                                         <p>
-                                            Any attempt to exit fullscreen, switch tabs, or use external monitors will trigger an integrity warning. A 10-second countdown recovery window is provided for accidental exits.
+                                            {isRecruitment
+                                                ? 'Leaving fullscreen, switching tabs or windows, or other people or devices appearing in your camera view are recorded as integrity events for the hiring team. They do not end your assessment. A 10-second countdown recovery window is provided for accidental fullscreen exits.'
+                                                : 'Any attempt to exit fullscreen, switch tabs, or use external monitors will trigger an integrity warning. A 10-second countdown recovery window is provided for accidental exits.'}
                                         </p>
                                     </div>
 
@@ -1954,13 +1958,15 @@ export const AssessmentWorkspace = ({
                                     </label>
 
                                     <div className="flex flex-col sm:flex-row items-center gap-3">
+                                        {(!isRecruitment || onBackToInstructions) && (
                                         <button
                                             type="button"
-                                            onClick={() => setCurrentStage('instructions')}
+                                            onClick={() => (isRecruitment ? onBackToInstructions() : setCurrentStage('instructions'))}
                                             className="w-full sm:w-auto min-h-[48px] px-4 py-3.5 rounded-xl font-bold text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer active:scale-[0.98]"
                                         >
                                             Back to Instructions
                                         </button>
+                                        )}
 
                                         <button
                                             type="button"
@@ -2014,7 +2020,9 @@ export const AssessmentWorkspace = ({
                                         <BrainCircuit className="w-5 h-5 text-emerald-600" />
                                         Round 1: Role-Specific Aptitude & Reasoning
                                     </h2>
-                                    <p className="text-xs text-slate-500">Answer all questions to unlock the Sandboxed Coding Round.</p>
+                                    <p className="text-xs text-slate-500">{isRecruitment
+                                        ? 'Unanswered questions score zero. Submitting is final and starts the Coding section immediately.'
+                                        : 'Answer all questions to unlock the Sandboxed Coding Round.'}</p>
                                 </div>
                                 <div className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 self-start sm:self-auto">
                                     Question {currentAptIndex + 1} of {aptitudeQuestions.length}
@@ -2268,8 +2276,12 @@ export const AssessmentWorkspace = ({
                                         <h3 className="text-lg font-bold text-slate-900">Coding round submitted</h3>
                                         <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
                                             {codingSubmitResult.evaluation_pending
-                                                ? 'Your solutions are saved and are being evaluated in the background. The interview round is now unlocked.'
-                                                : 'Your solutions were evaluated against the hidden tests and saved. The interview round is now unlocked.'}
+                                                ? (isRecruitment
+                                                    ? 'Your solutions are saved and will be evaluated separately. The interview timer has already started.'
+                                                    : 'Your solutions are saved and are being evaluated in the background. The interview round is now unlocked.')
+                                                : (isRecruitment
+                                                    ? 'Your solutions were checked against the hidden tests and saved. The interview timer has already started, so continue now.'
+                                                    : 'Your solutions were evaluated against the hidden tests and saved. The interview round is now unlocked.')}
                                         </p>
                                     </div>
                                 </div>
@@ -2277,7 +2289,9 @@ export const AssessmentWorkspace = ({
                                 {codingSubmitResult.evaluation_pending && (
                                     <div id="coding-eval-pending" role="status" className="flex items-start gap-2.5 rounded-xl bg-cyan-50 border border-cyan-200 px-3.5 py-3 text-xs sm:text-sm text-cyan-900">
                                         <RefreshCw className="w-4 h-4 shrink-0 mt-0.5 animate-spin motion-reduce:animate-none" />
-                                        <span>Your coding result is on its way. You do not need to wait: continue to the interview and the result will be in your final report.</span>
+                                        <span>{isRecruitment
+                                            ? 'Your code is kept and will be checked later. You do not need to wait: continue to the interview.'
+                                            : 'Your coding result is on its way. You do not need to wait: continue to the interview and the result will be in your final report.'}</span>
                                     </div>
                                 )}
 
@@ -2954,15 +2968,19 @@ export const AssessmentWorkspace = ({
                         <div>
                             <h3 className="text-lg font-bold text-slate-900">Finish AI Technical Interview?</h3>
                             <p className="text-xs text-slate-500 mt-1">
-                                Your spoken responses and full conversation transcript will be submitted for multi-dimensional AI scoring.
+                                {isRecruitment
+                                    ? 'Your responses and the conversation transcript will be submitted. This is final and cannot be reopened.'
+                                    : 'Your spoken responses and full conversation transcript will be submitted for multi-dimensional AI scoring.'}
                             </p>
                         </div>
 
                         {isSubmittingInterview ? (
                             <div className="py-4 space-y-3">
                                 <div className="w-10 h-10 rounded-full border-3 border-emerald-600 border-t-transparent animate-spin mx-auto" />
-                                <p className="text-sm font-bold text-slate-800">Evaluating Voice Interview with AI...</p>
-                                <p className="text-xs text-slate-500">Synthesizing speech analysis, communication score, and your final 17-point job readiness dossier.</p>
+                                <p className="text-sm font-bold text-slate-800">{isRecruitment ? 'Submitting your interview...' : 'Evaluating Voice Interview with AI...'}</p>
+                                <p className="text-xs text-slate-500">{isRecruitment
+                                    ? 'Please keep this window open until the confirmation appears.'
+                                    : 'Synthesizing speech analysis, communication score, and your final 17-point job readiness dossier.'}</p>
                             </div>
                         ) : (
                             <>
