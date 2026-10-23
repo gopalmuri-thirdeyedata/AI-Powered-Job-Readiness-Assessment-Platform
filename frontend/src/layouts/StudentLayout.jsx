@@ -172,7 +172,7 @@ const StudentLayout = () => {
                             setProfile({
                                 full_name: user.fullName || user.firstName || 'Student',
                                 email: user.primaryEmailAddress?.emailAddress,
-                                target_role: 'Full Stack Engineer'
+                                target_role: ''
                             });
                         }
                         setIsLoading(false);
@@ -289,9 +289,6 @@ const StudentLayout = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-200 truncate">{profile.full_name || 'Student'}</div>
-                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 truncate">
-                                {profile.target_role || 'Set target role →'}
-                            </div>
                         </div>
                     </div>
                 )}

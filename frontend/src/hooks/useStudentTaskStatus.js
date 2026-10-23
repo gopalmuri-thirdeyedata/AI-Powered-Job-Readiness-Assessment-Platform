@@ -44,7 +44,8 @@ export const syncStudentSessionWithBackend = async (user) => {
             body: JSON.stringify({
                 email,
                 clerk_user_id: user.id,
-                role_intent: 'student'
+                role_intent: 'student',
+                full_name: user.fullName || user.firstName || undefined
             })
         });
 

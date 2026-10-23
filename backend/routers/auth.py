@@ -214,12 +214,17 @@ class ClerkSyncSchema(BaseModel):
     clerk_org_id: Optional[str] = None
     org_slug: Optional[str] = None
     role_intent: Optional[str] = None
+    full_name: Optional[str] = None
 
 @router.post("/clerk-sync/", response_model=schemas.Token)
 def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db)):
     email = sync_data.email.strip().lower()
     clerk_id = sync_data.clerk_user_id.strip() if sync_data.clerk_user_id else None
     role_intent = (sync_data.role_intent or "").strip().lower()
+    signup_name = (sync_data.full_name or "").strip()[:150]
+
+    def email_derived_name(addr):
+        return addr.split('@')[0].replace('.', ' ').replace('_', ' ').title()
 
     platform_admin_clerk_id = os.getenv("PLATFORM_ADMIN_CLERK_USER_ID", "").strip()
     platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
@@ -343,10 +348,14 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
                     user_id=existing_user.id,
                     organization_id=existing_user.organization_id or student_org.id,
                     email=existing_user.email,
-                    full_name=existing_user.email.split('@')[0].replace('.', ' ').replace('_', ' ').title(),
-                    target_role="Software Engineer"
+                    full_name=signup_name or email_derived_name(existing_user.email),
+                    target_role=""
                 )
                 db.add(prof)
+                db.commit()
+            elif signup_name and prof.full_name == email_derived_name(existing_user.email):
+                # Replace the placeholder name that was generated from the e-mail address
+                prof.full_name = signup_name
                 db.commit()
 
             access_token = utils.create_access_token(data={"sub": existing_user.email, "role": existing_user.role})
@@ -369,8 +378,8 @@ def clerk_sync(sync_data: ClerkSyncSchema, db: Session = Depends(database.get_db
                 user_id=new_student.id,
                 organization_id=student_org.id,
                 email=email,
-                full_name=email.split('@')[0].replace('.', ' ').replace('_', ' ').title(),
-                target_role="Software Engineer"
+                full_name=signup_name or email_derived_name(email),
+                target_role=""
             )
             db.add(prof)
             db.commit()

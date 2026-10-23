@@ -100,7 +100,7 @@ def get_current_student_profile(
             organization_id=current_user.organization_id,
             full_name=current_user.email.split('@')[0].replace('.', ' ').replace('_', ' ').title(),
             email=current_user.email,
-            target_role="Software Engineer",
+            target_role="",
             current_skills=[],
             readiness_score=15.0,
             readiness_breakdown={
