@@ -42,6 +42,16 @@ services:
       timeout: 5s
       retries: 3
 
+  # Demo code runner (Judge0-compatible, Java + Python). Internal network only - never publish its port.
+  code_runner:
+    build:
+      context: ./code-runner
+    container_name: hiringai_code_runner
+    restart: always
+    mem_limit: 768m
+    networks:
+      - hiringai_internal
+
   # FastAPI ASGI Backend Application
   backend:
     build:
@@ -57,6 +67,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       # SQLite file on a persistent volume: saved profiles survive logout, restarts and rebuilds
       - DATABASE_URL=sqlite:////app/data/hiringai.db
+      # Demo-only Java/Python runner (the public Judge0 is overloaded); use a real Judge0 for production
+      - JUDGE0_API_URL=http://code_runner:2358/submissions
     volumes:
       - backend_media:/app/media
       - backend_data:/app/data
