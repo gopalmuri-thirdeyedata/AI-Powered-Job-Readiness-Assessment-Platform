@@ -58,6 +58,11 @@ const RoundMeta = ({ meta }) => {
     );
 };
 
+// A section score, or "Not attempted" when the attempt never reached that section (null is never shown as 0%).
+const ScoreFigure = ({ value }) => (typeof value === 'number'
+    ? <Counter to={Math.round(value)} suffix="%" />
+    : <span className="text-slate-400 text-xl font-bold">Not attempted</span>);
+
 const RoleReadyReport = () => {
     const { sessionUuid } = useParams();
     const [reportData, setReportData] = useState(null);
@@ -183,33 +188,40 @@ const RoleReadyReport = () => {
     const {
         target_role,
         target_company,
-        overall_readiness_score = 0,
-        aptitude_score = 0,
-        coding_score = 0,
-        interview_score = 0,
+        overall_readiness_score = null,
+        aptitude_score = null,
+        coding_score = null,
+        interview_score = null,
         final_report = {},
         completed_at
     } = reportData;
+    // An attempt that did not complete every section has NO overall score and no score for sections it never reached
+    // (the server reports null; a missing section is never shown as a zero).
+    const overallIncomplete = typeof overall_readiness_score !== 'number';
+    const isTimedOut = reportData.current_state === 'TIMED_OUT';
+    const legacyScoring = reportData.scoring_model === 'legacy_weighted_25_40_35';
+    const pctOf = (v) => (typeof v === 'number' ? v : 0);
+
     const roundDetails = final_report.round_details || {};
     const matchScore = reportData.resume_to_jd_match_score ?? final_report.resume_to_jd_match_score;
     const skillGap = final_report.skill_gap_analysis || [];
     const recommendations = final_report.personalized_recommendations || [];
     const learningRoadmap = final_report.suggested_learning_roadmap || {};
 
-    const readinessTier = final_report.readiness_tier || (overall_readiness_score >= 80 ? "Direct Role Ready" : "Foundation Strong");
+    const readinessTier = final_report.readiness_tier || (overallIncomplete ? "Incomplete" : (overall_readiness_score >= 80 ? "Direct Role Ready" : "Foundation Strong"));
     const skillsVerified = final_report.skills_verified || ["Algorithms", "Problem Solving"];
     const areasToImprove = final_report.areas_for_improvement || ["Algorithmic Optimization", "Architecture Depth"];
     const interviewBreakdown = final_report.interview_breakdown || [];
     const interviewTechDepth = typeof final_report.interview_technical_depth_score === 'number' 
         ? final_report.interview_technical_depth_score 
-        : interview_score;
+        : pctOf(interview_score);
     const interviewComm = typeof final_report.interview_communication_score === 'number' 
         ? final_report.interview_communication_score 
-        : interview_score;
+        : pctOf(interview_score);
 
     const isDisqualified = !!final_report.is_disqualified;
-    const isStrong = !isDisqualified && overall_readiness_score >= 80;
-    const needsSupport = isDisqualified || overall_readiness_score < 50;
+    const isStrong = !isDisqualified && !overallIncomplete && overall_readiness_score >= 80;
+    const needsSupport = isDisqualified || overallIncomplete || overall_readiness_score < 50;
     const strengthsCount = skillsVerified.length + skillGap.filter(g => g.status === "Demonstrated").length;
     const gapsCount = areasToImprove.length + skillGap.filter(g => g.status !== "Demonstrated").length;
     const nextStepsCount = recommendations.length + Object.keys(learningRoadmap).length;
@@ -257,6 +269,17 @@ const RoleReadyReport = () => {
                     </div>
                 </div>
 
+                {/* Time-out banner: the 60-minute overall limit ended the attempt */}
+                {isTimedOut && (
+                    <Rv className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-xs">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                        <div>
+                            <h3 className="font-bold text-sm">Assessment closed: the 60-minute time limit was reached</h3>
+                            <p className="text-xs mt-1 leading-relaxed">Scores earned in the sections you completed are shown below. An overall score is only calculated when all three sections are complete, and sections you did not reach have no score.</p>
+                        </div>
+                    </Rv>
+                )}
+
                 {/* Malpractice Disqualification Banner */}
                 {isDisqualified && (
                     <Rv className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-3 shadow-xs">
@@ -287,8 +310,15 @@ const RoleReadyReport = () => {
                         </div>
 
                         <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--rr-text)] leading-tight">
-                            Overall Job Readiness: <span className="text-[var(--brand)]"><Counter to={Math.round(overall_readiness_score)} suffix="%" /></span>
+                            Overall Job Readiness: <span className="text-[var(--brand)]">{overallIncomplete ? 'Incomplete' : <Counter to={Math.round(overall_readiness_score)} suffix="%" />}</span>
                         </h2>
+                        {!overallIncomplete && (
+                            <p className="text-[11px] text-[var(--rr-muted)]">
+                                {legacyScoring
+                                    ? 'This result was scored with the previous weighting (25% aptitude, 40% coding, 35% interview). New assessments weigh the three sections equally.'
+                                    : 'Overall = (Aptitude + Coding + Interview) / 3: each section counts equally.'}
+                            </p>
+                        )}
 
                         <p className="text-sm text-[var(--rr-text-2)] leading-relaxed">
                             Based on your multi-round performance in role-specific aptitude, sandboxed coding challenges, and AI technical interview articulation against the verified target JD.
@@ -309,7 +339,9 @@ const RoleReadyReport = () => {
                     </div>
 
                     <div className="relative flex items-center justify-center shrink-0">
-                        <CircularGauge score={overall_readiness_score} size={140} strokeWidth={11} />
+                        {overallIncomplete
+                            ? <div className="w-[140px] h-[140px] rounded-full border-[11px] border-[var(--rr-border)] flex items-center justify-center text-xs font-bold text-[var(--rr-muted)]">No overall score</div>
+                            : <CircularGauge score={overall_readiness_score} size={140} strokeWidth={11} />}
                     </div>
                 </div>
                 <SummaryStrip strengths={strengthsCount} gaps={gapsCount} next={nextStepsCount} />
@@ -328,10 +360,10 @@ const RoleReadyReport = () => {
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-[var(--rr-text)]">Aptitude & Reasoning</h3>
-                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><Counter to={Math.round(aptitude_score)} suffix="%" /></div>
+                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><ScoreFigure value={aptitude_score} /></div>
                         </div>
                         <div className="w-full bg-[var(--rr-border)] h-1.5 rounded-full overflow-hidden">
-                            <AnimBar className="bg-[var(--brand)]" pct={Math.min(100, Math.max(5, aptitude_score))} delay={0.3} />
+                            <AnimBar className="bg-[var(--brand)]" pct={Math.min(100, Math.max(typeof aptitude_score === 'number' ? 5 : 0, pctOf(aptitude_score)))} delay={0.3} />
                         </div>
                         <p className="text-[11px] text-[var(--rr-muted)]">Quantitative & logic score</p>
                     </div>
@@ -348,10 +380,10 @@ const RoleReadyReport = () => {
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-[var(--rr-text)]">Practical Coding</h3>
-                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><Counter to={Math.round(coding_score)} suffix="%" /></div>
+                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><ScoreFigure value={coding_score} /></div>
                         </div>
                         <div className="w-full bg-[var(--rr-border)] h-1.5 rounded-full overflow-hidden">
-                            <AnimBar className="bg-blue-500" pct={Math.min(100, Math.max(5, coding_score))} delay={0.3} />
+                            <AnimBar className="bg-blue-500" pct={Math.min(100, Math.max(typeof coding_score === 'number' ? 5 : 0, pctOf(coding_score)))} delay={0.3} />
                         </div>
                         <p className="text-[11px] text-[var(--rr-muted)]">Hidden test suite execution</p>
                     </div>
@@ -368,10 +400,10 @@ const RoleReadyReport = () => {
                         </div>
                         <div>
                             <h3 className="text-base font-bold text-[var(--rr-text)]">AI Technical Interview</h3>
-                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><Counter to={Math.round(interview_score)} suffix="%" /></div>
+                            <div className="text-3xl font-extrabold text-[var(--rr-text)] mt-1"><ScoreFigure value={interview_score} /></div>
                         </div>
                         <div className="w-full bg-[var(--rr-border)] h-1.5 rounded-full overflow-hidden">
-                            <AnimBar className="bg-amber-500" pct={Math.min(100, Math.max(5, interview_score))} delay={0.3} />
+                            <AnimBar className="bg-amber-500" pct={Math.min(100, Math.max(typeof interview_score === 'number' ? 5 : 0, pctOf(interview_score)))} delay={0.3} />
                         </div>
                         <p className="text-[11px] text-[var(--rr-muted)]">Concept & communication depth</p>
                     </div>

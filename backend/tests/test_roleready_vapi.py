@@ -48,7 +48,9 @@ def test_vapi_init_not_found(db_session):
     assert res.status_code == 404
 
 def test_vapi_init_success_with_session(db_session):
-    test_email = f"vapi.success.{uuid.uuid4().hex[:6]}@roleready.test"
+    # The profile name is only replaced by the resume name when the email-derived placeholder contains digits,
+    # so the handle must always contain one (a random hex suffix was digit-free ~0.3% of runs -> flaky).
+    test_email = f"vapi.success.{uuid.uuid4().int % 10**6:06d}@roleready.test"
     client.post("/api/auth/check-email/", json={"email": test_email, "intent": "student"})
     sync_res = client.post("/api/auth/clerk-sync/", json={
         "email": test_email,

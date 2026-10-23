@@ -85,6 +85,15 @@ def get_current_student_profile(
         models.StudentProfile.user_id == current_user.id
     ).first()
 
+    # A student profile makes /api/auth/me report the user as a STUDENT, which locks a hiring admin out of the admin
+    # workspace. Never auto-provision one for hiring staff (an existing profile keeps working).
+    if not profile and current_user.role in (models.UserRole.ORGANIZATION_ADMIN, models.UserRole.HR,
+                                             models.UserRole.HR_ADMIN, models.UserRole.SUPER_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hiring administrator accounts do not have a student profile."
+        )
+
     if not profile:
         profile = models.StudentProfile(
             user_id=current_user.id,

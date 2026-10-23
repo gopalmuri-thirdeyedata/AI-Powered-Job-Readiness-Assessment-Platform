@@ -1,14 +1,15 @@
 """
 Interview evaluation runs in the background: submit returns immediately, the report reports
 PROCESSING -> READY, double submits are safe, and a failure is recoverable (FAILED -> retry -> READY).
-Uses an isolated in-memory database; the AI call is faked.
+Uses an isolated database file per test (NOT a shared in-memory connection: the worker thread and the polling test thread
+must have separate connections, otherwise closing the polling session rolls back the worker's uncommitted writes); the AI
+call is faked.
 """
 import time
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import database
 import models
@@ -19,8 +20,8 @@ ANSWERS = [{"question_id": i, "response": "I would add caching and indexes."} fo
 
 
 @pytest.fixture
-def env(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+def env(monkeypatch, tmp_path):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'bg.db').as_posix()}", connect_args={"check_same_thread": False, "timeout": 30})
     models.Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     monkeypatch.setattr(database, "SessionLocal", Session)  # the worker thread opens its own session
@@ -34,6 +35,7 @@ def env(monkeypatch):
     db.commit()
     yield Session, db, prof
     db.close()
+    engine.dispose()
 
 
 def _new_session(db, prof, uuid):
@@ -79,7 +81,7 @@ def test_submit_returns_immediately_then_report_becomes_ready(env):
     done = d.query(models.RoleReadySession).filter_by(session_uuid="bg1").first()
     assert done.current_state == models.RoleReadySessionState.COMPLETED
     assert done.interview_score == 77.0
-    assert done.overall_readiness_score == 62.0  # 60*.25 + 50*.40 + 77*.35
+    assert done.overall_readiness_score == 62.33  # equal weight: (60 + 50 + 77) / 3
 
 
 def test_failed_evaluation_is_recoverable(env, monkeypatch):

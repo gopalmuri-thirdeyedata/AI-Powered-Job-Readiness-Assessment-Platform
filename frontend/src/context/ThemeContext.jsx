@@ -16,6 +16,9 @@ export const ThemeProvider = ({ children }) => {
         try {
             const stored = localStorage.getItem('rr-theme');
             if (stored === 'dark' || stored === 'light') return stored;
+            if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                return 'dark';
+            }
         } catch { /* localStorage unavailable */ }
 
         // Default: light mode (ThirdEye / PrepWin default)
@@ -34,6 +37,17 @@ export const ThemeProvider = ({ children }) => {
             localStorage.setItem('rr-theme', theme);
         } catch { /* ignore */ }
     }, [theme]);
+
+    // Synchronize across tabs or external theme storage changes
+    useEffect(() => {
+        const handleStorage = (e) => {
+            if (e.key === 'rr-theme' && (e.newValue === 'dark' || e.newValue === 'light')) {
+                setTheme(e.newValue);
+            }
+        };
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
+    }, []);
 
     const toggleTheme = () => {
         setTheme(prev => prev === 'light' ? 'dark' : 'light');

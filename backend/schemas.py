@@ -934,7 +934,7 @@ class AssessmentRoundSummary(BaseModel):
     round_number: Optional[int] = None
     round_name: str
     round_type: str
-    score: float
+    score: Optional[float] = None   # null for a section that was never attempted
     max_score: float = 100.0
     status: str
     feedback: Optional[str] = None

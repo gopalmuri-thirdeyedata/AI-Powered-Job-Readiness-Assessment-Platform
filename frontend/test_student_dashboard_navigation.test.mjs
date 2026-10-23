@@ -27,9 +27,10 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(fileContent.includes('Student Dashboard'), 'GlobalNavbar must render "Student Dashboard"');
     });
 
-    test('4. Home.jsx redirects authenticated students to /student/dashboard', () => {
+    test('4. Home.jsx routes authenticated students to Assessment Setup and admins to the admin dashboard', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'Home.jsx'), 'utf-8');
-        assert.ok(fileContent.includes("navigate('/student/dashboard'"), 'Home.jsx must navigate to /student/dashboard');
+        assert.ok(fileContent.includes("navigate('/assessment/setup'"), 'Home.jsx must navigate students to /assessment/setup');
+        assert.ok(fileContent.includes("navigate('/admin/dashboard'"), 'Home.jsx must navigate admins to /admin/dashboard');
     });
 
     test('5. StudentLogin.jsx defaults destination to /student/dashboard', () => {

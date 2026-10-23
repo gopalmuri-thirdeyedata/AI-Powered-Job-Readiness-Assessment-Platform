@@ -1,14 +1,19 @@
 import requests
 import os
 import re
+import threading
 from dotenv import load_dotenv
+
+from services import gemini_client
 
 load_dotenv()
 VAPI_PRIVATE_KEY = os.getenv("VAPI_PRIVATE_KEY") 
 # Base Vapi API URL
 VAPI_BASE_URL = "https://api.vapi.ai"
+# The interview section is 20 minutes; callers pass the seconds actually left so the call can never outlive the server deadline.
+DEFAULT_MAX_DURATION_SECONDS = 20 * 60
 
-def build_assistant_payload(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = "") -> dict:
+def build_assistant_payload(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = "", max_duration_seconds: int = None) -> dict:
     """
     Constructs the structured transient Vapi assistant configuration dictionary.
     Can be sent directly to @vapi-ai/web (vapi.start(assistantConfig)) or to Vapi REST API.
@@ -122,8 +127,8 @@ Begin the interview now.
 
     return {
         "model": {
-            "provider": "openai",
-            "model": "gpt-4-turbo",
+            "provider": "google",
+            "model": gemini_client.get_model_name(),
             "messages": [
                 {
                     "role": "system",
@@ -160,10 +165,74 @@ Begin the interview now.
             "backoffSeconds": 1.2
         },
         "silenceTimeoutSeconds": 180,
-        "maxDurationSeconds": 1800,
+        "maxDurationSeconds": max(1, int(max_duration_seconds or DEFAULT_MAX_DURATION_SECONDS)),
         "backgroundDenoisingEnabled": True,
         "firstMessageMode": "assistant-speaks-first"
     }
+
+
+REQUEST_TIMEOUT_SECONDS = 15        # a hung Vapi API must never hold a request thread open
+
+
+def delete_assistant(assistant_id) -> bool:
+    """
+    Best-effort deletion of an ephemeral interview assistant (each interview provisions its own; they are never reused).
+    The id is validated before it is placed in the URL. Returns True when the assistant is gone (deleted or already absent).
+    Failures are swallowed on purpose: cleanup must never break an assessment.
+    """
+    key = os.getenv("VAPI_PRIVATE_KEY") or VAPI_PRIVATE_KEY
+    if not key or not isinstance(assistant_id, str) or not re.fullmatch(r"[0-9A-Fa-f-]{8,64}", assistant_id):
+        return False
+    try:
+        response = requests.delete(f"{VAPI_BASE_URL}/assistant/{assistant_id}", headers={"Authorization": f"Bearer {key}"},
+                                   timeout=REQUEST_TIMEOUT_SECONDS)
+        ok = response.status_code in (200, 204, 404)
+        if not ok:
+            print(f"[vapi_service] assistant cleanup returned HTTP {response.status_code}")
+        return ok
+    except Exception as e:
+        print(f"[vapi_service] assistant cleanup failed: {type(e).__name__}")
+        return False
+
+
+def _spawn(fn, *args):
+    threading.Thread(target=fn, args=args, daemon=True).start()      # indirection for tests
+
+
+def release_assistant_async(assistant_id) -> None:
+    if assistant_id:
+        _spawn(delete_assistant, assistant_id)
+
+
+def swap_round_assistant(db, rnd, new_id) -> None:
+    """
+    Remember (server-side only, inside the round's private JSON; no schema change) the assistant provisioned for this
+    interview, and release the one it replaces. A session therefore owns at most one live assistant.
+    """
+    keys = dict(rnd.server_keys_payload or {})
+    old = keys.get("vapi_assistant_id")
+    if new_id:
+        keys["vapi_assistant_id"] = new_id
+    else:
+        keys.pop("vapi_assistant_id", None)
+    rnd.server_keys_payload = keys
+    db.commit()
+    if old and old != new_id:
+        release_assistant_async(old)
+
+
+def release_round_assistant(db, rnd) -> None:
+    """The interview is closed: delete its assistant (best effort; never raises)."""
+    try:
+        keys = dict(rnd.server_keys_payload or {})
+        old = keys.pop("vapi_assistant_id", None)
+        if old:
+            rnd.server_keys_payload = keys
+            db.commit()
+            release_assistant_async(old)
+    except Exception as e:
+        db.rollback()
+        print(f"[vapi_service] assistant release skipped: {type(e).__name__}")
 
 
 def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = "", prebuilt_payload: dict = None):
@@ -192,7 +261,7 @@ def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: s
             "Content-Type": "application/json"
         }
         
-        response = requests.post(f"{VAPI_BASE_URL}/assistant", json=payload, headers=headers)
+        response = requests.post(f"{VAPI_BASE_URL}/assistant", json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
         
         if response.status_code == 201:
             data = response.json()
@@ -206,7 +275,7 @@ def create_ephemeral_assistant(candidate_name: str, role: str, resume_summary: s
         return None
 
 
-def create_or_build_assistant(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = ""):
+def create_or_build_assistant(candidate_name: str, role: str, resume_summary: str = "", custom_instructions: str = "", questions: list = None, jd_summary: str = "", max_duration_seconds: int = None):
     """
     Builds the assistant configuration and optionally provisions it on Vapi REST API.
     Returns tuple: (assistant_id, assistant_payload).
@@ -217,7 +286,8 @@ def create_or_build_assistant(candidate_name: str, role: str, resume_summary: st
         resume_summary=resume_summary,
         custom_instructions=custom_instructions,
         questions=questions,
-        jd_summary=jd_summary
+        jd_summary=jd_summary,
+        max_duration_seconds=max_duration_seconds
     )
     assistant_id = None
     try:

@@ -73,15 +73,20 @@ def _gather_raw_student_assessments(
         is_completed = s.current_state == models.RoleReadySessionState.COMPLETED or (
             s.overall_readiness_score > 0 and s.current_state not in (
                 models.RoleReadySessionState.NOT_STARTED,
-                models.RoleReadySessionState.ABANDONED
+                models.RoleReadySessionState.ABANDONED,
+                models.RoleReadySessionState.TIMED_OUT
             )
         )
         is_in_progress = s.current_state not in (
             models.RoleReadySessionState.COMPLETED,
             models.RoleReadySessionState.ABANDONED,
+            models.RoleReadySessionState.TIMED_OUT,
             models.RoleReadySessionState.NOT_STARTED
         )
-        status_label = "COMPLETED" if is_completed else ("IN_PROGRESS" if is_in_progress else "ABANDONED")
+        if s.current_state == models.RoleReadySessionState.TIMED_OUT:
+            status_label = "TIMED_OUT"
+        else:
+            status_label = "COMPLETED" if is_completed else ("IN_PROGRESS" if is_in_progress else "ABANDONED")
         
         # Build round summaries
         rounds_summary = []
@@ -91,7 +96,7 @@ def _gather_raw_student_assessments(
                     round_number=r.round_order,
                     round_name=f"Round {r.round_order}: {r.round_type.title()}",
                     round_type=r.round_type,
-                    score=round(float(r.score or 0.0), 1),
+                    score=None if r.status == "UNATTEMPTED" else round(float(r.score or 0.0), 1),
                     max_score=100.0,
                     status=r.status,
                     feedback=f"Time spent: {r.time_spent_seconds // 60} mins" if r.time_spent_seconds else None
@@ -122,11 +127,11 @@ def _gather_raw_student_assessments(
             "formatted_date": _format_datetime_friendly(completed_date or s.created_at),
             "rounds_summary": rounds_summary,
             "details_available": True,
-            "view_url": f"/assessment/{s.session_uuid}/report" if is_completed else f"/assessment/{s.session_uuid}",
+            "view_url": f"/assessment/{s.session_uuid}/report" if (is_completed or status_label == "TIMED_OUT") else f"/assessment/{s.session_uuid}",
             "strengths": (s.final_report_data or {}).get("top_strengths", []),
             "weaknesses": (s.final_report_data or {}).get("critical_gaps", []),
             "recommendations": (s.final_report_data or {}).get("roadmap_focus", []),
-            "report_url": f"/assessment/{s.session_uuid}/report" if is_completed else None,
+            "report_url": f"/assessment/{s.session_uuid}/report" if (is_completed or status_label == "TIMED_OUT") else None,
             "raw_obj": s
         })
 
@@ -764,7 +769,7 @@ def get_student_assessment_detail(
                 round_number=r.round_order,
                 round_name=f"Round {r.round_order}: {r.round_type.title()}",
                 round_type=r.round_type,
-                score=round(float(r.score or 0.0), 1),
+                score=None if r.status == "UNATTEMPTED" else round(float(r.score or 0.0), 1),
                 max_score=100.0,
                 status=r.status,
                 feedback=(r.evaluation_payload or {}).get("feedback") if r.evaluation_payload else None
@@ -781,7 +786,7 @@ def get_student_assessment_detail(
             test_name=f"{session.target_role or 'RoleReady'} Assessment",
             category="RoleReady Assessment",
             category_key="ROLEREADY",
-            status="COMPLETED" if is_completed else "IN_PROGRESS",
+            status=("COMPLETED" if is_completed else ("TIMED_OUT" if session.current_state == models.RoleReadySessionState.TIMED_OUT else "IN_PROGRESS")),
             overall_score=round(float(session.overall_readiness_score or 0.0), 1) if is_completed else None,
             max_score=100.0,
             percentage=round(float(session.overall_readiness_score or 0.0), 1) if is_completed else None,

@@ -64,11 +64,11 @@ export default function ClerkAdminGuard({ children }) {
                     }
                 } catch (err) {
                     console.warn("Direct admin token verification network error:", err);
-                    const stored = JSON.parse(localStorage.getItem('user_profile') || '{}');
-                    if (['PLATFORM_ADMIN', 'ORGANIZATION_ADMIN', 'HR'].includes(stored.role)) {
-                        if (isMounted) setStatus('authorized');
-                        return;
+                    if (isMounted) {
+                        setErrorMsg("Unable to verify administrator session with server. Please check your connection and sign in again.");
+                        setStatus('error');
                     }
+                    return;
                 }
             }
 

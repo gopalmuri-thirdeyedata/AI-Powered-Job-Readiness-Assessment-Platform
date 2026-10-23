@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import schemas, models, database
 from services.rag_service import RAGService
 from services import skill_suggestion
-from routers.auth import get_current_user
+from routers.auth import get_current_user, require_hr_or_admin
 
 router = APIRouter(
     prefix="/api/resume",
@@ -1311,7 +1311,7 @@ def update_candidate(
     candidate_id: int,
     update_data: schemas.CandidateUpdate,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(require_hr_or_admin)
 ):
     org_id = _get_tenant_org_id(current_user, db)
     query = db.query(models.Candidate).filter(models.Candidate.id == candidate_id)
@@ -1346,7 +1346,7 @@ def update_candidate(
 def delete_candidate(
     candidate_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(require_hr_or_admin)
 ):
     org_id = _get_tenant_org_id(current_user, db)
     query = db.query(models.Candidate).filter(models.Candidate.id == candidate_id)
@@ -1367,7 +1367,7 @@ def delete_candidate(
 def bulk_update_candidates(
     payload: schemas.BulkCandidateUpdate,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(require_hr_or_admin)
 ):
     org_id = _get_tenant_org_id(current_user, db)
     query = db.query(models.Candidate).filter(models.Candidate.id.in_(payload.candidate_ids))

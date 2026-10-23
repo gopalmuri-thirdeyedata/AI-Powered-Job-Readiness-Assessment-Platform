@@ -322,3 +322,8 @@ screenshots/
 tmp/
 temp/
 .pytest_cache/
+
+# Recruitment workflow migration artifacts (backups contain real data; conflict reports contain PII)
+backend/backups/
+backend/migration_conflicts.json
+backend/hiringai.db.bak_*

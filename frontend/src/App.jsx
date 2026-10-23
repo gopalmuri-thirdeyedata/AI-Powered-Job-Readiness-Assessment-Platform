@@ -28,18 +28,16 @@ const RoleReadyAssessment = lazy(() => import('./pages/roleready/RoleReadyAssess
 const RoleReadyReport = lazy(() => import('./pages/roleready/RoleReadyReport'));
 const CandidateInvitationPortal = lazy(() => import('./pages/roleready/CandidateInvitationPortal'));
 
+// Admin Recruitment Workflow: public shared-link candidate flow (no account, no OTP)
+const SharedAssessmentEntry = lazy(() => import('./pages/candidate/SharedAssessmentEntry'));
+const ExamInstructions = lazy(() => import('./pages/candidate/ExamInstructions'));
+const RecruitmentAssessmentPage = lazy(() => import('./pages/candidate/RecruitmentAssessmentPage'));
+
 // Recruiter Pages (Lazy Loaded)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const ResumeScreening = lazy(() => import('./pages/ResumeScreening'));
-const CodingRound = lazy(() => import('./pages/CodingRound'));
-const TechnicalInterview = lazy(() => import('./pages/TechnicalInterview'));
-const AptitudeRound = lazy(() => import('./pages/AptitudeRound'));
-const RecruitmentRoundsManager = lazy(() => import('./pages/RecruitmentRoundsManager'));
-const Candidates = lazy(() => import('./pages/Candidates'));
-const ScreenedCandidates = lazy(() => import('./pages/ScreenedCandidates'));
-const Analytics = lazy(() => import('./pages/Analytics'));
-const GlobalSettings = lazy(() => import('./pages/GlobalSettings'));
-const PlatformAdminDashboard = lazy(() => import('./pages/PlatformAdminDashboard'));
+const JobRolesPage = lazy(() => import('./pages/admin/JobRolesPage'));
+const SharedLinksPage = lazy(() => import('./pages/admin/SharedLinksPage'));
+const CandidateResultsPage = lazy(() => import('./pages/admin/CandidateResultsPage'));
 
 // Candidate Portal Pages (Lazy Loaded)
 const CandidateLogin = lazy(() => import('./pages/candidate/CandidateLogin'));
@@ -80,12 +78,17 @@ function App() {
     return (
         <ThemeProvider>
         <Router>
-            <div className="min-h-screen">
+            <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1220] text-slate-900 dark:text-slate-100 transition-colors">
                 <Suspense fallback={<PageLoadingSpinner />}>
                     <Routes>
                         {/* Public Home */}
                         <Route path="/" element={<Home />} />
                         <Route path="/login" element={<Home />} />
+
+                        {/* Shared-link recruitment assessment (public, capability based) */}
+                        <Route path="/assessment/join/:shareToken" element={<SharedAssessmentEntry />} />
+                        <Route path="/assessment/join/:shareToken/instructions" element={<ExamInstructions />} />
+                        <Route path="/assessment/join/:shareToken/assessment" element={<RecruitmentAssessmentPage />} />
 
                         {/* RoleReady Core Assessment Routes - Protected */}
                         <Route path="/assessment/setup" element={<RoleReadyAuthGuard><RoleReadySetup /></RoleReadyAuthGuard>} />
@@ -97,18 +100,23 @@ function App() {
                         {/* Admin Dashboard Routes - Protected by Clerk */}
                         <Route element={<ClerkAdminGuard><DashboardLayout /></ClerkAdminGuard>}>
                             <Route path="/admin/dashboard" element={<Dashboard />} />
+                            <Route path="/admin/job-roles" element={<JobRolesPage />} />
+                            <Route path="/admin/shared-links" element={<SharedLinksPage />} />
+                            <Route path="/admin/candidate-results" element={<CandidateResultsPage />} />
                             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                             <Route path="/dashboard" element={<Navigate to="/admin/dashboard" replace />} />
-                            <Route path="/recruitment/rounds" element={<RecruitmentRoundsManager />} />
-                            <Route path="/resume-screening" element={<ResumeScreening />} />
-                            <Route path="/screened-candidates" element={<ScreenedCandidates />} />
-                            <Route path="/coding-round" element={<CodingRound />} />
-                            <Route path="/aptitude-round" element={<AptitudeRound />} />
-                            <Route path="/technical-interview" element={<TechnicalInterview />} />
-                            <Route path="/candidates" element={<Candidates />} />
-                            <Route path="/analytics" element={<Analytics />} />
-                            <Route path="/settings" element={<GlobalSettings />} />
-                            <Route path="/platform/organizations" element={<PlatformAdminDashboard />} />
+                            {/* Modules outside the recruitment workflow were removed from the admin UI: old URLs land on the workspace */}
+                            <Route path="/recruitment/rounds" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/recruitment/invitations" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/resume-screening" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/screened-candidates" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/coding-round" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/aptitude-round" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/technical-interview" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/candidates" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/analytics" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/settings" element={<Navigate to="/admin/dashboard" replace />} />
+                            <Route path="/platform/organizations" element={<Navigate to="/admin/dashboard" replace />} />
                         </Route>
 
                         {/* Candidate Portal Routes */}

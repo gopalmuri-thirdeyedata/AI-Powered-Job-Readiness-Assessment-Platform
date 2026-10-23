@@ -33,36 +33,36 @@ const ConfirmationModal = ({
     const getTheme = () => {
         if (isDanger) {
             return {
-                headerBg: 'bg-red-50/70',
-                iconBg: 'bg-red-100 text-red-600',
-                titleColor: 'text-red-900',
+                headerBg: 'bg-red-50/70 dark:bg-red-950/40',
+                iconBg: 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+                titleColor: 'text-red-900 dark:text-red-200',
                 btnGradient: 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 focus:ring-red-500',
                 icon: <Trash2 size={24} className="stroke-[2.2]" />
             };
         }
         if (isWarning) {
             return {
-                headerBg: 'bg-amber-50/70',
-                iconBg: 'bg-amber-100 text-amber-600',
-                titleColor: 'text-amber-900',
+                headerBg: 'bg-amber-50/70 dark:bg-amber-950/40',
+                iconBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400',
+                titleColor: 'text-amber-900 dark:text-amber-200',
                 btnGradient: 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 focus:ring-amber-500',
                 icon: <AlertTriangle size={24} className="stroke-[2.2]" />
             };
         }
         if (isSuccess) {
             return {
-                headerBg: 'bg-emerald-50/70',
-                iconBg: 'bg-emerald-100 text-emerald-600',
-                titleColor: 'text-emerald-900',
+                headerBg: 'bg-emerald-50/70 dark:bg-emerald-950/40',
+                iconBg: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400',
+                titleColor: 'text-emerald-900 dark:text-emerald-200',
                 btnGradient: 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 focus:ring-emerald-500',
                 icon: <CheckCircle2 size={24} className="stroke-[2.2]" />
             };
         }
         // Default: info / blue / brand
         return {
-            headerBg: 'bg-blue-50/70',
-            iconBg: 'bg-blue-100 text-blue-600',
-            titleColor: 'text-blue-900',
+            headerBg: 'bg-blue-50/70 dark:bg-blue-950/40',
+            iconBg: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',
+            titleColor: 'text-blue-900 dark:text-blue-200',
             btnGradient: 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-blue-500',
             icon: <Info size={24} className="stroke-[2.2]" />
         };
@@ -90,11 +90,11 @@ const ConfirmationModal = ({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.94, y: 8 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                        className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-gray-100"
+                        className="relative z-10 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-gray-100 dark:border-slate-800"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header */}
-                        <div className={`p-6 ${theme.headerBg} border-b border-gray-100 flex items-start gap-4`}>
+                        <div className={`p-6 ${theme.headerBg} border-b border-gray-100 dark:border-slate-800 flex items-start gap-4`}>
                             <div className={`p-3 rounded-2xl ${theme.iconBg} shadow-sm shrink-0`}>
                                 {theme.icon}
                             </div>
@@ -102,13 +102,13 @@ const ConfirmationModal = ({
                                 <h3 className={`text-lg font-bold ${theme.titleColor} tracking-tight leading-snug`}>
                                     {title}
                                 </h3>
-                                <div className="mt-2 text-sm text-gray-600 whitespace-pre-line leading-relaxed font-normal">
+                                <div className="mt-2 text-sm text-gray-600 dark:text-slate-300 whitespace-pre-line leading-relaxed font-normal">
                                     {message}
                                 </div>
                             </div>
                             <button
                                 onClick={onClose}
-                                className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100/60"
+                                className="text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-slate-200 transition-colors p-1 rounded-lg hover:bg-gray-100/60 dark:hover:bg-slate-800"
                                 aria-label="Close dialog"
                             >
                                 <X size={20} />
@@ -116,12 +116,12 @@ const ConfirmationModal = ({
                         </div>
 
                         {/* Actions */}
-                        <div className="p-4 bg-gray-50/80 border-t border-gray-100 flex justify-end items-center gap-3">
+                        <div className="p-4 bg-gray-50/80 dark:bg-slate-950/60 border-t border-gray-100 dark:border-slate-800 flex justify-end items-center gap-3">
                             {!isAlert && (
                                 <button
                                     type="button"
                                     onClick={onClose}
-                                    className="px-4 py-2.5 text-sm font-semibold text-gray-700 hover:text-gray-900 hover:bg-gray-200/80 rounded-xl transition-all"
+                                    className="px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200/80 dark:hover:bg-slate-800 rounded-xl transition-all"
                                 >
                                     {cancelText}
                                 </button>

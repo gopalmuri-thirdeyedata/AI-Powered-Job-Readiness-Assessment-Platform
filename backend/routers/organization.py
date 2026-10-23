@@ -222,6 +222,15 @@ def update_organization_member(
         if member.user and new_status == "deactivated":
             member.user.is_active = False
 
+    # Legacy duplicate rows for the same user in this org must never keep a role/status the admin just removed.
+    for duplicate in db.query(models.OrganizationMember).filter(
+        models.OrganizationMember.organization_id == current_tenant.id,
+        models.OrganizationMember.user_id == member.user_id,
+        models.OrganizationMember.id != member.id
+    ).all():
+        duplicate.role = member.role
+        duplicate.status = member.status
+
     db.commit()
     return {
         "message": "Member updated successfully.",

@@ -18,3 +18,8 @@ tests/
 *.db
 *.sqlite3
 *.sqlite
+
+# Recruitment workflow migration artifacts (real data / PII: never bake into an image)
+backups/
+migration_conflicts.json
+hiringai.db.bak_*

@@ -126,6 +126,13 @@
 @layer base {
     html {
         scroll-behavior: smooth;
+        color-scheme: light;
+    }
+
+    html.dark {
+        color-scheme: dark;
+        background-color: var(--rr-bg);
+        color: var(--rr-text);
     }
 
     body {

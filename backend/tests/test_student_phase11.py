@@ -27,6 +27,9 @@ client = TestClient(app)
 def audit_data():
     """Provisions isolated tenants, users, and drives for the Phase 11 security audit."""
     db = database.SessionLocal()
+    # The fixture hands ORM objects to the tests after db.close(). With the default expire_on_commit, the later commits
+    # (candidate user, drive) expire profile_b on a fresh database and `profile_b.id` raises DetachedInstanceError.
+    db.expire_on_commit = False
     try:
         # 1. Tenants: Org Alpha and Org Beta
         org_a = db.query(models.Organization).filter(models.Organization.slug == "audit-college-a").first()

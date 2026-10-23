@@ -17,7 +17,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy import and_, desc, or_
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
@@ -34,6 +34,10 @@ from models import (
 from services.gemini_client import call_gemini
 from services.readiness_service import refresh_profile_readiness
 from services import piston_service
+from services import vapi_service
+from services import assessment_clock as clock
+from services import assessment_engine as engine
+from services import assessment_policy as policy
 from services.interview_evaluation import evaluate_five_technical_questions
 
 # ==============================================================================
@@ -1186,7 +1190,7 @@ def create_student_session(
         round_type="APTITUDE",
         round_order=1,
         status="PENDING",
-        time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["APTITUDE"],
+        time_limit_minutes=policy.SECTION_MINUTES,
         questions_payload=apt_client,
         server_keys_payload=apt_keys
     )
@@ -1196,7 +1200,7 @@ def create_student_session(
         round_type="CODING",
         round_order=2,
         status="PENDING",
-        time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["CODING"],
+        time_limit_minutes=policy.SECTION_MINUTES,
         questions_payload=coding_client,
         server_keys_payload=coding_keys
     )
@@ -1206,7 +1210,7 @@ def create_student_session(
         round_type="INTERVIEW",
         round_order=3,
         status="PENDING",
-        time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["INTERVIEW"],
+        time_limit_minutes=policy.SECTION_MINUTES,
         questions_payload=interview_questions,
         server_keys_payload={"questions": interview_questions}
     )
@@ -1227,17 +1231,43 @@ def get_session_by_uuid(db: Session, session_uuid: str) -> RoleReadySession:
 
 # ─── ROUND LIFECYCLE HELPERS ──────────────────────────────────────────────────
 
-PYTHON_ONLY_DETAIL = "Only Python and Java are supported for coding assessments."
+PYTHON_ONLY_DETAIL = engine.UNSUPPORTED_LANGUAGE_DETAIL
 # Max parallel sandbox calls per coding submission (kept modest to stay under the sandbox's rate limit)
-CODING_TEST_CONCURRENCY = 8
-SUPPORTED_CODING_LANGUAGES = {"python", "python3", "java"}
-UNSUPPORTED_LANGUAGE_DETAIL = "Only Python and Java are supported for coding assessments."
+CODING_TEST_CONCURRENCY = engine.CODING_TEST_CONCURRENCY
+SUPPORTED_CODING_LANGUAGES = engine.SUPPORTED_LANGUAGES
+UNSUPPORTED_LANGUAGE_DETAIL = engine.UNSUPPORTED_LANGUAGE_DETAIL
 RUN_CODE_RATE_LIMIT = 5            # run-code requests per window, per student
 RUN_CODE_WINDOW_SECONDS = 60
 RUN_CODE_MAX_CONCURRENT = 2        # simultaneous sandbox executions per student
-MAX_CODE_BYTES = 64 * 1024
-MAX_OUTPUT_CHARS = 10 * 1024
-EXPIRY_GRACE_SECONDS = 60          # grace before an unsubmitted expired round is auto-finalized
+MAX_CODE_BYTES = engine.MAX_CODE_BYTES
+MAX_OUTPUT_CHARS = engine.MAX_OUTPUT_CHARS
+# Arrival window for a final submission dispatched before a deadline (shared with the recruitment workflow).
+EXPIRY_GRACE_SECONDS = policy.TRANSIT_WINDOW_SECONDS
+
+# States in which the assessment clock is running (an unlocked-but-unstarted round still counts against the overall deadline).
+LIVE_STATES = (
+    RoleReadySessionState.APTITUDE_IN_PROGRESS,
+    RoleReadySessionState.CODING_UNLOCKED,
+    RoleReadySessionState.CODING_IN_PROGRESS,
+    RoleReadySessionState.INTERVIEW_UNLOCKED,
+    RoleReadySessionState.INTERVIEW_IN_PROGRESS,
+)
+# States after which an attempt is closed for good (never reopened automatically).
+TERMINAL_STATES = (
+    RoleReadySessionState.COMPLETED,
+    RoleReadySessionState.TIMED_OUT,
+    RoleReadySessionState.ABANDONED,
+)
+_ACTIVE_ROUND_FOR_STATE = {
+    RoleReadySessionState.APTITUDE_IN_PROGRESS: "APTITUDE",
+    RoleReadySessionState.CODING_IN_PROGRESS: "CODING",
+    RoleReadySessionState.INTERVIEW_IN_PROGRESS: "INTERVIEW",
+}
+_SECTION_STATE = {
+    "APTITUDE": RoleReadySessionState.APTITUDE_IN_PROGRESS,
+    "CODING": RoleReadySessionState.CODING_IN_PROGRESS,
+    "INTERVIEW": RoleReadySessionState.INTERVIEW_IN_PROGRESS,
+}
 
 # NOTE: in-process limiter; with multiple workers the effective limit is per worker.
 _run_code_lock = threading.Lock()
@@ -1309,26 +1339,55 @@ def _reject_resubmission(session: RoleReadySession, rnd: RoleReadyRoundAttempt, 
 ROUND_TIME_LIMITS_MINUTES = {"APTITUDE": 15, "CODING": 30, "INTERVIEW": 15}
 
 
-def _round_timing(rnd: RoleReadyRoundAttempt) -> Dict[str, Any]:
-    """Server-authoritative timer: the client hydrates its countdown from these values."""
+def _db_now() -> datetime:
+    """The authoritative server clock as the naive-UTC value the DateTime columns persist."""
+    return clock.naive_utc(clock.now())
+
+
+def _section_deadline(session: RoleReadySession, rnd: RoleReadyRoundAttempt) -> Optional[datetime]:
+    """When this round must be over: its own limit, but never later than the overall deadline."""
     if not rnd.started_at:
-        return {"started_at": None, "deadline_at": None, "remaining_seconds": rnd.time_limit_minutes * 60}
-    started = rnd.started_at.replace(tzinfo=None)
-    deadline = started + timedelta(minutes=rnd.time_limit_minutes)
+        return None
+    deadline = clock.aware(rnd.started_at) + timedelta(minutes=rnd.time_limit_minutes)
+    overall = clock.aware(session.overall_deadline_at)
+    return min(deadline, overall) if overall is not None else deadline
+
+
+def _round_timing(rnd: RoleReadyRoundAttempt, session: Optional[RoleReadySession] = None) -> Dict[str, Any]:
+    """Server-authoritative timer: the client hydrates its countdown from these values (display only)."""
+    now = clock.now()
+    overall = clock.aware(session.overall_deadline_at) if session is not None else None
+    out: Dict[str, Any] = {"server_time": now.isoformat()}
+    if overall is not None:
+        out["overall_deadline_at"] = overall.isoformat()
+        out["overall_remaining_seconds"] = max(0, int((overall - now).total_seconds()))
+    if not rnd.started_at:
+        remaining = rnd.time_limit_minutes * 60
+        if overall is not None:
+            remaining = min(remaining, out["overall_remaining_seconds"])
+        return {"started_at": None, "deadline_at": None, "remaining_seconds": remaining, **out}
+    deadline = _section_deadline(session, rnd) if session is not None else \
+        clock.aware(rnd.started_at) + timedelta(minutes=rnd.time_limit_minutes)
     return {
-        "started_at": started.isoformat(),
+        "started_at": clock.aware(rnd.started_at).isoformat(),
         "deadline_at": deadline.isoformat(),
-        "remaining_seconds": max(0, int((deadline - datetime.utcnow()).total_seconds())),
+        "remaining_seconds": max(0, int((deadline - now).total_seconds())),
+        **out,
     }
 
 
+def _server_time_spent(rnd: RoleReadyRoundAttempt, fallback: int = 0) -> int:
+    """Seconds spent on a round measured by the server; the browser's figure is only a fallback."""
+    if rnd.started_at:
+        return max(0, int((clock.now() - clock.aware(rnd.started_at)).total_seconds()))
+    return max(0, int(fallback or 0))
+
+
 def _require_supported_language(language: Optional[str]) -> str:
-    lang = (language or "python").strip().lower()
-    if lang not in SUPPORTED_CODING_LANGUAGES:
+    try:
+        return engine.normalize_language(language)
+    except ValueError:
         raise HTTPException(status_code=400, detail=UNSUPPORTED_LANGUAGE_DETAIL)
-    if lang in ("python", "python3"):
-        return "python"
-    return "java"
 
 
 _require_python = _require_supported_language
@@ -1364,34 +1423,185 @@ def _trim_output(text: Optional[str]) -> str:
     return (text or "")[:MAX_OUTPUT_CHARS]
 
 
+def reported_overall(session: RoleReadySession) -> Optional[float]:
+    """
+    The overall score a report may show: only a COMPLETED attempt has one (a disqualified attempt reports its explicit 0).
+    The column itself is NOT NULL and holds 0.0 for every other attempt, so every reader goes through here instead of
+    treating that placeholder as a result.
+    """
+    if session.current_state != RoleReadySessionState.COMPLETED:
+        return None
+    return float(session.overall_readiness_score or 0.0)
+
+
+def section_scores(session: RoleReadySession) -> Dict[str, Optional[float]]:
+    """Section percentages for display. A timed-out attempt reports null for sections it never reached."""
+    if session.current_state == RoleReadySessionState.TIMED_OUT:
+        report = session.final_report_data or {}
+        return {k: policy.display_pct(report.get(k)) for k in ("aptitude_score", "coding_score", "interview_score")}
+    return {"aptitude_score": policy.display_pct(session.aptitude_score), "coding_score": policy.display_pct(session.coding_score),
+            "interview_score": policy.display_pct(session.interview_score)}
+
+
+def _assert_attempt_open(session: RoleReadySession) -> None:
+    if session.current_state == RoleReadySessionState.TIMED_OUT:
+        raise HTTPException(status_code=409, detail="The assessment time limit has expired. This attempt is closed.")
+    if session.current_state == RoleReadySessionState.ABANDONED:
+        raise HTTPException(status_code=409, detail="This assessment attempt has been closed.")
+
+
+def _draft_of(rnd: Optional[RoleReadyRoundAttempt]) -> Optional[Dict[str, Any]]:
+    """The autosaved (not yet submitted) work of an in-progress round, in canonical submission form."""
+    payload = rnd.submission_payload if rnd is not None else None
+    if isinstance(payload, dict) and isinstance(payload.get("_draft"), dict):
+        return payload["_draft"]
+    return None
+
+
+def save_draft(db: Session, session: RoleReadySession, section: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Autosave of in-progress work (a debounced call from the shared assessment UI) so the server can score what a
+    candidate had if the section or the whole assessment ends before they submit. Hard stop at the deadline.
+    """
+    finalize_expired_round(db, session)
+    section = (section or "").upper()
+    if section not in _SECTION_STATE:
+        raise HTTPException(status_code=400, detail="Unknown section.")
+    _assert_attempt_open(session)
+    if session.current_state != _SECTION_STATE[section]:
+        raise HTTPException(status_code=403, detail="That section is not the active section.")
+    rnd = _get_round(db, session, section, section.title())
+    if rnd.status != "IN_PROGRESS":
+        raise HTTPException(status_code=409, detail="This section has already been submitted.")
+    now = clock.now()
+    deadline = _section_deadline(session, rnd)
+    if deadline is not None and now >= deadline:
+        raise HTTPException(status_code=408, detail="Assessment round deadline reached. No further work permitted.")
+    try:
+        normalized = engine.normalize_submission(section, payload, rnd.questions_payload or [])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    rnd.submission_payload = {"_draft": normalized, "saved_at": now.isoformat()}
+    _commit_or_500(db)
+    return {"saved": True, "server_time": now.isoformat()}
+
+
+def _begin_round(db: Session, session: RoleReadySession, rnd: RoleReadyRoundAttempt,
+                 unlocked_state: RoleReadySessionState, running_state: RoleReadySessionState) -> None:
+    """
+    Unlocked -> in progress, atomically: only the request that wins the state change starts the clock, so repeated or
+    concurrent start requests can never reset a deadline. The section limit is the canonical 20 minutes, capped by the
+    overall deadline.
+    """
+    if session.current_state != unlocked_state:
+        return
+    now = clock.now()
+    overall = clock.aware(session.overall_deadline_at)
+    section_deadline = policy.section_deadline(now, overall)
+    claimed = db.query(RoleReadySession).filter(
+        RoleReadySession.id == session.id, RoleReadySession.current_state == unlocked_state
+    ).update({"current_state": running_state.value, "current_section_deadline_at": clock.naive_utc(section_deadline)},
+             synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        db.refresh(session)
+        return
+    started = clock.naive_utc(now)
+    db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.id == rnd.id, RoleReadyRoundAttempt.started_at.is_(None)
+    ).update({"status": "IN_PROGRESS", "started_at": started, "time_limit_minutes": policy.SECTION_MINUTES},
+             synchronize_session=False)
+    _commit_or_500(db)
+    db.refresh(session)
+    db.refresh(rnd)
+
+
 def finalize_expired_round(db: Session, session: RoleReadySession) -> bool:
     """
-    Server-side timer authority: if the active round's deadline (plus grace) has passed without a
-    submission, finalize it with no answers (unanswered items score zero) and advance the session.
-    Returns True when a round was finalized.
+    Server-side timer authority, evaluated on every request that touches an attempt:
+      * overall deadline (+ arrival window) passed  -> the active section is scored from its autosaved work, every
+        later section becomes UNATTEMPTED and the attempt is closed as TIMED_OUT (overall score stays null);
+      * only the active section's deadline passed   -> the section is closed from its autosaved work and the attempt
+        advances exactly as if the candidate had submitted it.
+    Sessions that never recorded an overall deadline (started before the 60-minute limit existed) keep their original
+    per-round limits. Returns True when something was finalized.
     """
-    active = {
-        RoleReadySessionState.APTITUDE_IN_PROGRESS: ("APTITUDE", lambda: submit_aptitude_round(db, session, {}, 0)),
-        RoleReadySessionState.CODING_IN_PROGRESS: ("CODING", lambda: submit_coding_round(db, session, {}, 0)),
-        RoleReadySessionState.INTERVIEW_IN_PROGRESS: ("INTERVIEW", lambda: submit_interview_round(db, session, {"answers": []}, 0)),
-    }.get(session.current_state)
-    if not active:
+    if session.current_state not in LIVE_STATES:
         return False
-    rnd = db.query(RoleReadyRoundAttempt).filter(
-        RoleReadyRoundAttempt.session_id == session.id,
-        RoleReadyRoundAttempt.round_type == active[0]
-    ).first()
-    if not rnd or rnd.status in ("EVALUATED", "EVALUATING", "EVAL_FAILED") or not rnd.started_at:
-        return False
-    deadline = rnd.started_at.replace(tzinfo=None) + timedelta(minutes=rnd.time_limit_minutes)
-    if (datetime.utcnow() - deadline).total_seconds() < EXPIRY_GRACE_SECONDS:
-        return False
+    now = clock.now()
+    window = timedelta(seconds=policy.TRANSIT_WINDOW_SECONDS)
+    overall = clock.aware(session.overall_deadline_at)
+    active_type = _ACTIVE_ROUND_FOR_STATE.get(session.current_state)
+    rnd = None
+    if active_type:
+        rnd = db.query(RoleReadyRoundAttempt).filter(
+            RoleReadyRoundAttempt.session_id == session.id,
+            RoleReadyRoundAttempt.round_type == active_type
+        ).first()
+        if rnd is None or rnd.status in ("EVALUATED", "EVALUATING", "EVAL_FAILED"):
+            return False
     try:
-        active[1]()
+        if overall is not None and now > overall + window:
+            return _time_out_session(db, session, rnd)
+        if rnd is None or not rnd.started_at:
+            return False
+        if now <= _section_deadline(session, rnd) + window:
+            return False
+        draft = _draft_of(rnd) or {}
+        spent = _server_time_spent(rnd)
+        if active_type == "APTITUDE":
+            submit_aptitude_round(db, session, draft.get("answers") or {}, spent, None, _auto=True)
+        elif active_type == "CODING":
+            submit_coding_round(db, session, draft.get("solutions") or {}, spent, None, _auto=True)
+        else:
+            submit_interview_round(db, session, {"answers": draft.get("answers") or [], "transcript": draft.get("transcript") or []},
+                                   spent, None, _auto=True)
         return True
     except HTTPException:
         db.rollback()
         return False
+
+
+def _time_out_session(db: Session, session: RoleReadySession, active_round: Optional[RoleReadyRoundAttempt]) -> bool:
+    """Overall deadline reached: keep every score earned so far, never turn a missing section into a zero."""
+    now = clock.now()
+    now_db = clock.naive_utc(now)
+    if active_round is not None and active_round.status == "IN_PROGRESS":
+        draft = _draft_of(active_round) or {}
+        spent = _server_time_spent(active_round)
+        if active_round.round_type == "APTITUDE":
+            _score_aptitude(db, session, active_round, draft.get("answers") or {}, spent, None)
+        elif active_round.round_type == "CODING":
+            _score_coding(db, session, active_round, draft.get("solutions") or {}, spent, None)
+        else:
+            _score_interview(db, session, active_round,
+                             {"answers": draft.get("answers") or [], "transcript": draft.get("transcript") or []}, spent, None)
+    rounds = db.query(RoleReadyRoundAttempt).filter(RoleReadyRoundAttempt.session_id == session.id).all()
+    for r in rounds:
+        if r.status not in ("EVALUATED", "TERMINATED"):
+            r.status = "UNATTEMPTED"
+            r.score = 0.0
+            r.evaluation_payload = {"status": "UNATTEMPTED", "score": None}
+    by_type = {r.round_type: r for r in rounds}
+    scores = {k: (by_type[k].score if k in by_type and by_type[k].status == "EVALUATED" else None) for k in ("APTITUDE", "CODING", "INTERVIEW")}
+    session.current_state = RoleReadySessionState.TIMED_OUT
+    session.finalized_at = now_db
+    session.overall_readiness_score = 0.0   # NOT NULL placeholder; reported_overall() hides it
+    session.final_report_data = {
+        "session_uuid": session.session_uuid,
+        "completion_status": "TIMED_OUT",
+        "scoring_model": policy.SCORING_MODEL,
+        "evaluated_at": now.isoformat(),
+        "overall_readiness_score": None,
+        "readiness_tier": "Incomplete",
+        "aptitude_score": scores["APTITUDE"],
+        "coding_score": scores["CODING"],
+        "interview_score": scores["INTERVIEW"],
+        "demonstrated_strengths": [],
+        "areas_for_improvement": ["The 60-minute assessment limit was reached before every section was completed."],
+    }
+    _commit_or_500(db)
+    return True
 
 
 # ─── RESUME / JD MATCH & DOSSIER ──────────────────────────────────────────────
@@ -1419,7 +1629,9 @@ def compute_resume_jd_match(session: RoleReadySession) -> float:
     return round(matched / len(required) * 100, 1)
 
 
-def readiness_tier(score: float) -> str:
+def readiness_tier(score: Optional[float]) -> str:
+    if score is None:
+        return "Incomplete"
     if score >= 90.0:
         return "Exceptional Placement Ready"
     if score >= 75.0:
@@ -1491,7 +1703,11 @@ def _build_round_details(db: Session, session: RoleReadySession) -> Dict[str, An
     return details
 
 
-def build_performance_dossier(db: Session, session: RoleReadySession, qualitative: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+_FROM_SESSION = object()
+
+
+def build_performance_dossier(db: Session, session: RoleReadySession, qualitative: Optional[Dict[str, Any]] = None,
+                              overall: Any = _FROM_SESSION) -> Dict[str, Any]:
     """Deterministic 17-point student performance dossier (works with no AI available)."""
     qualitative = qualitative or {}
     jd = session.extracted_jd_data or {}
@@ -1507,7 +1723,8 @@ def build_performance_dossier(db: Session, session: RoleReadySession, qualitativ
         student_name = cand.name if cand else None
 
     apt, code, interview = session.aptitude_score or 0.0, session.coding_score or 0.0, session.interview_score or 0.0
-    overall = session.overall_readiness_score or 0.0
+    if overall is _FROM_SESSION:
+        overall = reported_overall(session)
 
     coding_round = db.query(RoleReadyRoundAttempt).filter(
         RoleReadyRoundAttempt.session_id == session.id, RoleReadyRoundAttempt.round_type == "CODING").first()
@@ -1583,8 +1800,11 @@ def build_performance_dossier(db: Session, session: RoleReadySession, qualitativ
 
 def start_aptitude_round(db: Session, session: RoleReadySession) -> Dict[str, Any]:
     """
-    Enforces state: NOT_STARTED or APTITUDE_IN_PROGRESS -> returns client-safe questions.
+    NOT_STARTED -> APTITUDE_IN_PROGRESS: the explicit start of the assessment. This is the ONLY place the overall
+    60-minute deadline is established; registration, instructions and repeated start requests never move it.
     """
+    finalize_expired_round(db, session)
+    _assert_attempt_open(session)
     allowed = [RoleReadySessionState.NOT_STARTED, RoleReadySessionState.APTITUDE_IN_PROGRESS]
     if session.current_state not in allowed:
         raise HTTPException(status_code=400, detail=f"Cannot start Aptitude round from state '{session.current_state}'.")
@@ -1598,20 +1818,59 @@ def start_aptitude_round(db: Session, session: RoleReadySession) -> Dict[str, An
         raise HTTPException(status_code=404, detail="Aptitude round configuration missing.")
 
     if session.current_state == RoleReadySessionState.NOT_STARTED:
-        session.current_state = RoleReadySessionState.APTITUDE_IN_PROGRESS
-        session.started_at = datetime.utcnow()
-        apt_round.status = "IN_PROGRESS"
-        apt_round.started_at = datetime.utcnow()
-        _commit_or_500(db)
+        now = clock.now()
+        overall = policy.overall_deadline(now)
+        claimed = db.query(RoleReadySession).filter(
+            RoleReadySession.id == session.id, RoleReadySession.current_state == RoleReadySessionState.NOT_STARTED
+        ).update({
+            "current_state": RoleReadySessionState.APTITUDE_IN_PROGRESS.value,
+            "started_at": clock.naive_utc(now),
+            "overall_deadline_at": clock.naive_utc(overall),
+            "current_section_deadline_at": clock.naive_utc(policy.section_deadline(now, overall)),
+        }, synchronize_session=False)
+        if claimed == 1:
+            db.query(RoleReadyRoundAttempt).filter(RoleReadyRoundAttempt.id == apt_round.id).update({
+                "status": "IN_PROGRESS", "started_at": clock.naive_utc(now), "time_limit_minutes": policy.SECTION_MINUTES,
+            }, synchronize_session=False)
+            _commit_or_500(db)
+        else:  # a concurrent request won the start; its deadline stands
+            db.rollback()
+        db.refresh(session)
+        db.refresh(apt_round)
 
     return {
         "session_uuid": session.session_uuid,
         "round_type": "APTITUDE",
         "current_state": session.current_state,
         "time_limit_minutes": apt_round.time_limit_minutes,
-        **_round_timing(apt_round),
+        **_round_timing(apt_round, session),
         "questions": apt_round.questions_payload
     }
+
+
+def _score_aptitude(db: Session, session: RoleReadySession, apt_round: RoleReadyRoundAttempt, answers: Dict[str, Any],
+                    time_spent_seconds: int, proctoring_violations: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """Score and persist the aptitude round (no state transition): shared by a normal submit and by expiry."""
+    result = engine.evaluate_aptitude(apt_round.server_keys_payload or {}, answers)
+    _claim_round(db, apt_round)
+    now_db = _db_now()
+    apt_round.score = result["score"]
+    apt_round.status = "EVALUATED"
+    apt_round.time_spent_seconds = time_spent_seconds
+    apt_round.submission_payload = answers
+    apt_round.proctoring_violations = proctoring_violations or []
+    apt_round.started_at = apt_round.started_at or now_db
+    apt_round.submitted_at = now_db
+    apt_round.evaluated_at = now_db
+    apt_round.evaluation_payload = {
+        "score": result["score"],
+        "correct_count": result["correct_count"],
+        "total_questions": result["total_questions"],
+        "breakdown": result["breakdown"]
+    }
+    session.aptitude_score = result["score"]
+    session.started_at = session.started_at or now_db
+    return result
 
 
 def submit_aptitude_round(
@@ -1619,12 +1878,15 @@ def submit_aptitude_round(
     session: RoleReadySession,
     answers: Dict[str, str],
     time_spent_seconds: int = 0,
-    proctoring_violations: Optional[List[Dict[str, Any]]] = None
+    proctoring_violations: Optional[List[Dict[str, Any]]] = None,
+    _auto: bool = False
 ) -> Dict[str, Any]:
     """
     Server evaluates answers against secret keys, scores aptitude (unanswered = 0),
     transitions session to CODING_UNLOCKED regardless of score (zero-rejection), returns scorecard.
     """
+    if not _auto:
+        finalize_expired_round(db, session)
     apt_round = _get_round(db, session, "APTITUDE", "Aptitude")
     answers = answers or {}
 
@@ -1636,7 +1898,7 @@ def submit_aptitude_round(
             "session_uuid": session.session_uuid,
             "status": "EVALUATED",
             "round_type": "APTITUDE",
-            "score": apt_round.score,
+            "score": policy.display_pct(apt_round.score),
             "correct_count": stored.get("correct_count"),
             "total_questions": stored.get("total_questions"),
             "current_state": session.current_state,
@@ -1646,48 +1908,13 @@ def submit_aptitude_round(
             "idempotent_replay": True
         }
 
+    _assert_attempt_open(session)
     if session.current_state not in (RoleReadySessionState.NOT_STARTED, RoleReadySessionState.APTITUDE_IN_PROGRESS):
         raise HTTPException(status_code=403, detail=f"Aptitude round is not open. Current state: '{session.current_state}'.")
 
-    keys = apt_round.server_keys_payload or {}
-    total_questions = len(keys)
-    correct_count = 0
-    breakdown = []
-
-    for qid, key_info in keys.items():
-        correct_key = key_info.get("correct_key", "")
-        student_ans = str(answers.get(qid, "")).strip().upper()
-        is_correct = (student_ans == correct_key.upper())
-        if is_correct:
-            correct_count += 1
-        breakdown.append({
-            "question_id": qid,
-            "student_choice": student_ans,
-            "is_correct": is_correct,
-            "explanation": key_info.get("explanation", "")
-        })
-
-    score = round((correct_count / total_questions * 100), 1) if total_questions > 0 else 0.0
-
-    _claim_round(db, apt_round)
-    apt_round.score = score
-    apt_round.status = "EVALUATED"
-    apt_round.time_spent_seconds = time_spent_seconds
-    apt_round.submission_payload = answers
-    apt_round.proctoring_violations = proctoring_violations or []
-    apt_round.started_at = apt_round.started_at or datetime.utcnow()
-    apt_round.submitted_at = datetime.utcnow()
-    apt_round.evaluated_at = datetime.utcnow()
-    apt_round.evaluation_payload = {
-        "score": score,
-        "correct_count": correct_count,
-        "total_questions": total_questions,
-        "breakdown": breakdown
-    }
+    result = _score_aptitude(db, session, apt_round, answers, _server_time_spent(apt_round, time_spent_seconds), proctoring_violations)
 
     # State transition: any score (including 0%) unlocks the Coding round
-    session.aptitude_score = score
-    session.started_at = session.started_at or datetime.utcnow()
     session.current_state = RoleReadySessionState.CODING_UNLOCKED
     _commit_or_500(db)
 
@@ -1695,14 +1922,14 @@ def submit_aptitude_round(
         "session_uuid": session.session_uuid,
         "status": "success",
         "round_type": "APTITUDE",
-        "score": score,
-        "correct_count": correct_count,
-        "total_questions": total_questions,
+        "score": policy.display_pct(result["score"]),
+        "correct_count": result["correct_count"],
+        "total_questions": result["total_questions"],
         "current_state": session.current_state,
         "next_stage": session.current_state,
         "next_round_unlocked": True,
         "message": "Aptitude assessment submitted successfully. Round 2 (Coding) is now unlocked.",
-        "breakdown": breakdown
+        "breakdown": result["breakdown"]
     }
 
 
@@ -1713,6 +1940,8 @@ def start_coding_round(db: Session, session: RoleReadySession) -> Dict[str, Any]
     STRICT BACKEND GATING: Requires CODING_UNLOCKED or CODING_IN_PROGRESS.
     Direct API calls without completing Aptitude return HTTP 403!
     """
+    finalize_expired_round(db, session)
+    _assert_attempt_open(session)
     allowed = [RoleReadySessionState.CODING_UNLOCKED, RoleReadySessionState.CODING_IN_PROGRESS]
     if session.current_state not in allowed:
         raise HTTPException(
@@ -1728,18 +1957,14 @@ def start_coding_round(db: Session, session: RoleReadySession) -> Dict[str, Any]
     if not coding_round:
         raise HTTPException(status_code=404, detail="Coding round configuration missing.")
 
-    if session.current_state == RoleReadySessionState.CODING_UNLOCKED:
-        session.current_state = RoleReadySessionState.CODING_IN_PROGRESS
-        coding_round.status = "IN_PROGRESS"
-        coding_round.started_at = datetime.utcnow()
-        _commit_or_500(db)
+    _begin_round(db, session, coding_round, RoleReadySessionState.CODING_UNLOCKED, RoleReadySessionState.CODING_IN_PROGRESS)
 
     return {
         "session_uuid": session.session_uuid,
         "round_type": "CODING",
         "current_state": session.current_state,
         "time_limit_minutes": coding_round.time_limit_minutes,
-        **_round_timing(coding_round),
+        **_round_timing(coding_round, session),
         "problems": coding_round.questions_payload
     }
 
@@ -1752,18 +1977,23 @@ def run_coding_test(
     language: str = "python"
 ) -> Dict[str, Any]:
     """
-    Ephemeral run against the single public sample test case via the Judge0 sandbox.
+    Ephemeral run against the public sample test case(s) via the Judge0 sandbox.
     Supports Python and Java; no state is changed. Sandbox outage -> HTTP 503 (round stays open).
+    Rejected once the section (or the overall) deadline has passed: running code is never an arrival-window action.
     """
     selected_lang = _require_supported_language(language)
     if len((code or "").encode("utf-8")) > MAX_CODE_BYTES:
         raise HTTPException(status_code=400, detail="Code exceeds the 64 KB submission limit.")
 
+    finalize_expired_round(db, session)
     coding_round = _get_round(db, session, "CODING", "Coding")
     if session.current_state != RoleReadySessionState.CODING_IN_PROGRESS:
-        if coding_round.status == "EVALUATED" or session.current_state == RoleReadySessionState.COMPLETED:
+        if coding_round.status == "EVALUATED" or session.current_state in TERMINAL_STATES:
             raise HTTPException(status_code=400, detail="Round completed: the coding round is closed.")
         raise HTTPException(status_code=403, detail="Coding round is locked or not started.")
+    deadline = _section_deadline(session, coding_round)
+    if deadline is not None and clock.now() >= deadline:
+        raise HTTPException(status_code=408, detail="Assessment round deadline reached. No further work permitted.")
 
     # Locate public test cases for problem
     problem = None
@@ -1778,54 +2008,40 @@ def run_coding_test(
     limiter_key = session.student_profile_id or session.id
     _acquire_run_slot(limiter_key)
     try:
-        results = []
-        for test in (problem.get("public_test_cases") or [])[:1]:
-            inp = test.get("input", "")
-            exp = test.get("expected_output", "").strip()
-            exec_res = piston_service.execute_code(selected_lang, code, stdin=inp)
-            if exec_res.get("status") == "service_error":
-                raise _sandbox_unavailable()
-
-            stdout = _trim_output(exec_res.get("stdout")).strip()
-            compile_err = _trim_output(exec_res.get("compile_output"))
-            runtime_err = _trim_output(exec_res.get("stderr"))
-            error = compile_err or runtime_err or (exec_res.get("output") if exec_res.get("status") in ("error", "failed") else None)
-
-            error_type = None
-            if compile_err or exec_res.get("status") == "error":
-                error_type = "Compilation Error"
-            elif runtime_err or exec_res.get("status") == "failed":
-                error_type = "Runtime Error" if not exec_res.get("timed_out") else "Time Limit Exceeded"
-
-            results.append({
-                "input": inp,
-                "expected_output": exp,
-                "actual_output": stdout,
-                "error": error,
-                "error_type": error_type,
-                "timed_out": bool(exec_res.get("timed_out")),
-                "execution_time_ms": exec_res.get("execution_time_ms"),
-                "passed": piston_service.outputs_match(stdout, exp)
-            })
+        result = engine.run_sample_tests(problem, code, selected_lang)
+    except engine.SandboxUnavailable:
+        raise _sandbox_unavailable()
     finally:
         _release_run_slot(limiter_key)
 
-    all_passed = all(r["passed"] for r in results) if results else False
-    first = results[0] if results else {}
-    return {
-        "status": "success",
-        "problem_id": problem_id,
-        "language": selected_lang,
-        "all_passed": all_passed,
-        "sample_test_passed": all_passed,
-        "stdout": first.get("actual_output", ""),
-        "stderr": first.get("error") or "",
-        "error_type": first.get("error_type"),
-        "execution_time_ms": first.get("execution_time_ms"),
-        "expected_output": first.get("expected_output", ""),
-        "actual_output": first.get("actual_output", ""),
-        "test_results": results
+    return {**result, "problem_id": problem_id}
+
+
+def _score_coding(db: Session, session: RoleReadySession, coding_round: RoleReadyRoundAttempt, solutions: Dict[str, Any],
+                  time_spent_seconds: int, proctoring_violations: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """Evaluate against the hidden tests and persist the coding round (no state transition). Sandbox outage -> HTTP 503, nothing committed."""
+    try:
+        result = engine.evaluate_coding(coding_round.questions_payload or [], coding_round.server_keys_payload or {}, solutions)
+    except engine.SandboxUnavailable:
+        raise _sandbox_unavailable()
+    _claim_round(db, coding_round)
+    now_db = _db_now()
+    coding_round.score = result["score"]
+    coding_round.status = "EVALUATED"
+    coding_round.time_spent_seconds = time_spent_seconds
+    coding_round.submission_payload = solutions
+    coding_round.proctoring_violations = proctoring_violations or []
+    coding_round.started_at = coding_round.started_at or now_db
+    coding_round.submitted_at = now_db
+    coding_round.evaluated_at = now_db
+    coding_round.evaluation_payload = {
+        "score": result["score"],
+        "problems": result["problems"],
+        "total_hidden_tests": result["total_hidden_tests"],
+        "passed_hidden_tests": result["passed_hidden_tests"]
     }
+    session.coding_score = result["score"]
+    return result
 
 
 # ─── CODING: grading runs in the background ──────────────────────────────────
@@ -1847,67 +2063,10 @@ def _grade_coding_submission(coding_round: RoleReadyRoundAttempt, solutions: Dic
     Runs every hidden test for the submitted code and returns the evaluation payload.
     Raises HTTP 503 (via _sandbox_unavailable) when the sandbox itself is down.
     """
-    hidden_keys = coding_round.server_keys_payload or {}
-    total_hidden_tests = 0
-    passed_hidden_tests = 0
-    problem_evaluations = []
-
-    # Every hidden test is an independent sandbox round-trip, so run them concurrently instead of one after
-    # another. Results are matched back to their test by index.
-    jobs = []  # (problem_index, expected_output, language, code, stdin)
-    plans = []
-    for prob in coding_round.questions_payload or []:
-        pid = str(prob.get("id"))
-        sol_data = (solutions or {}).get(pid, {}) or {}
-        code = sol_data.get("code", "")
-        sol_lang = _require_supported_language(sol_data.get("language"))
-        prob_hidden = hidden_keys.get(pid, {}).get("hidden_test_cases", [])
-        plans.append((prob, pid, sol_lang, len(prob_hidden)))
-        total_hidden_tests += len(prob_hidden)
-        if code.strip():  # an empty/unanswered solution scores zero without a sandbox call
-            for h_test in prob_hidden:
-                jobs.append((len(plans) - 1, (h_test.get("expected_output", "") or "").strip(), sol_lang, code, h_test.get("input", "")))
-
-    def _run_hidden_test(job):
-        _, _, lang, code_, stdin_ = job
-        res = piston_service.execute_code(lang, code_, stdin=stdin_)
-        # One retry for a transient sandbox hiccup, but never after a job already waited out the full deadline
-        if res.get("status") == "service_error" and not (res.get("raw") or {}).get("deadline_exceeded"):
-            res = piston_service.execute_code(lang, code_, stdin=stdin_)
-        return res
-
-    passed_by_problem = defaultdict(int)
-    if jobs:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(CODING_TEST_CONCURRENCY, len(jobs))) as pool:
-            results = list(pool.map(_run_hidden_test, jobs))
-        for job, res in zip(jobs, results):
-            if res.get("status") == "service_error":
-                raise _sandbox_unavailable()
-            stdout = _trim_output(res.get("stdout")).strip()
-            if piston_service.outputs_match(stdout, job[1]):
-                passed_by_problem[job[0]] += 1
-                passed_hidden_tests += 1
-
-    for idx, (prob, pid, sol_lang, prob_total) in enumerate(plans):
-        prob_passed = passed_by_problem[idx]
-        prob_score = round((prob_passed / prob_total * 100), 1) if prob_total > 0 else 0.0
-        problem_evaluations.append({
-            "problem_id": pid,
-            "title": prob.get("title"),
-            "language": sol_lang,
-            "passed_tests": prob_passed,
-            "total_tests": prob_total,
-            "score": prob_score
-        })
-
-    overall_coding_score = round((passed_hidden_tests / total_hidden_tests * 100), 1) if total_hidden_tests > 0 else 0.0
-    return {
-        "score": overall_coding_score,
-        "problems": problem_evaluations,
-        "total_hidden_tests": total_hidden_tests,
-        "passed_hidden_tests": passed_hidden_tests,
-    }
-
+    try:
+        return engine.evaluate_coding(coding_round.questions_payload or [], coding_round.server_keys_payload or {}, solutions)
+    except engine.SandboxUnavailable:
+        raise _sandbox_unavailable()
 
 def _store_coding_grade(db: Session, session: RoleReadySession, coding_round: RoleReadyRoundAttempt, payload: Dict[str, Any]) -> bool:
     """
@@ -2168,6 +2327,8 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
     STRICT BACKEND GATING: Requires INTERVIEW_UNLOCKED or INTERVIEW_IN_PROGRESS.
     Direct API calls without completing Coding return HTTP 403!
     """
+    finalize_expired_round(db, session)
+    _assert_attempt_open(session)
     allowed = [RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS]
     if session.current_state not in allowed:
         raise HTTPException(
@@ -2185,23 +2346,19 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
             session_id=session.id,
             round_type="INTERVIEW",
             status="NOT_STARTED",
-            time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["INTERVIEW"]
+            time_limit_minutes=policy.SECTION_MINUTES
         )
         db.add(int_round)
         _commit_or_500(db)
 
-    if session.current_state == RoleReadySessionState.INTERVIEW_UNLOCKED:
-        session.current_state = RoleReadySessionState.INTERVIEW_IN_PROGRESS
-        int_round.status = "IN_PROGRESS"
-        int_round.started_at = datetime.utcnow()
-        _commit_or_500(db)
+    _begin_round(db, session, int_round, RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS)
 
     return {
         "session_uuid": session.session_uuid,
         "round_type": "INTERVIEW",
         "current_state": session.current_state,
         "time_limit_minutes": int_round.time_limit_minutes,
-        **_round_timing(int_round),
+        **_round_timing(int_round, session),
         "questions": int_round.questions_payload
     }
 
@@ -2235,6 +2392,8 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
     Synthesizes custom questions grounded in BOTH the candidate's Resume and Job Description,
     provisions a dynamic Vapi assistant, and returns assistantId and structured questions.
     """
+    finalize_expired_round(db, session)
+    _assert_attempt_open(session)
     allowed = [RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS]
     if session.current_state not in allowed:
         raise HTTPException(
@@ -2252,16 +2411,12 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
             session_id=session.id,
             round_type="INTERVIEW",
             status="NOT_STARTED",
-            time_limit_minutes=ROUND_TIME_LIMITS_MINUTES["INTERVIEW"]
+            time_limit_minutes=policy.SECTION_MINUTES
         )
         db.add(int_round)
         _commit_or_500(db)
 
-    if session.current_state == RoleReadySessionState.INTERVIEW_UNLOCKED:
-        session.current_state = RoleReadySessionState.INTERVIEW_IN_PROGRESS
-        int_round.status = "IN_PROGRESS"
-        int_round.started_at = datetime.utcnow()
-        _commit_or_500(db)
+    _begin_round(db, session, int_round, RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS)
 
     # 1. Candidate Name Resolution (Strict Real Name - Prioritize Uploaded Resume)
     candidate_name = None
@@ -2405,10 +2560,19 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
             resume_summary=resume_summary,
             custom_instructions=f"Conduct a rigorous, professional interview evaluating the candidate against: {jd_summary}. Focus on asking the 5 questions one by one.",
             questions=questions,
-            jd_summary=jd_summary
+            jd_summary=jd_summary,
+            # The voice call itself may not outlive the section: it ends at the server deadline.
+            max_duration_seconds=max(1, _round_timing(int_round, session)["remaining_seconds"])
         )
     except Exception as e:
         print(f"[RoleReady] Ephemeral Vapi Assistant initialization failed: {e}")
+
+    if assistant_id:
+        try:
+            vapi_service.swap_round_assistant(db, int_round, assistant_id)     # one live assistant per session
+        except Exception as e:
+            db.rollback()
+            print(f"[RoleReady] Vapi assistant bookkeeping skipped: {type(e).__name__}")
 
     return {
         "session_uuid": session.session_uuid,
@@ -2418,9 +2582,56 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
         "role": role,
         "company": company,
         "candidateName": candidate_name,
-        "duration": int_round.time_limit_minutes or ROUND_TIME_LIMITS_MINUTES["INTERVIEW"],
-        **_round_timing(int_round)
+        "duration": int_round.time_limit_minutes or policy.SECTION_MINUTES,
+        **_round_timing(int_round, session)
     }
+
+
+def _interview_context(session: RoleReadySession) -> Dict[str, str]:
+    role = session.target_role or "Software Engineer"
+    jd_data = session.extracted_jd_data or {}
+    jd_skills = ", ".join(jd_data.get("required_skills", []) or [])
+    jd_text = (session.custom_jd_text or "").strip()
+    jd_summary = f"Role: {role}. Skills: {jd_skills}. Context: {jd_text[:400]}" if jd_text else f"Role: {role}. Skills: {jd_skills}"
+    resume_raw = (session.resume_raw_text or "").strip()
+    resume_skills = ", ".join(_skill_names(session.resume_snapshot))
+    resume_summary = f"Skills: {resume_skills}. Experience: {resume_raw[:500]}" if resume_raw else f"Skills: {resume_skills}"
+    return {"role": role, "jd_summary": jd_summary, "resume_summary": resume_summary}
+
+
+def _score_interview(db: Session, session: RoleReadySession, int_round: RoleReadyRoundAttempt,
+                     answers_or_transcript: Dict[str, Any], time_spent_seconds: int,
+                     proctoring_violations: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """Evaluate and persist the interview round (no state transition). The AI call happens before anything is written."""
+    ctx = _interview_context(session)
+    # Looked up here (not bound at import) so tests / alternative evaluators replacing the module globals are honoured.
+    result = engine.evaluate_interview(
+        int_round.questions_payload or [], answers_or_transcript.get("answers") or [],
+        role=ctx["role"], jd_summary=ctx["jd_summary"], resume_summary=ctx["resume_summary"],
+        transcript=answers_or_transcript.get("transcript") or [],
+        evaluate_fn=lambda **kw: evaluate_five_technical_questions(**kw), call_gemini_fn=lambda *a, **kw: call_gemini(*a, **kw))
+    _claim_round(db, int_round)
+    now_db = _db_now()
+    int_round.score = result["score"]
+    int_round.status = "EVALUATED"
+    int_round.time_spent_seconds = time_spent_seconds
+    int_round.submission_payload = answers_or_transcript
+    int_round.proctoring_violations = proctoring_violations or []
+    int_round.started_at = int_round.started_at or now_db
+    int_round.submitted_at = now_db
+    int_round.evaluated_at = now_db
+    int_round.evaluation_payload = {
+        "score": result["score"],
+        "qualitative_feedback": result["qualitative_feedback"],
+        "evaluation_source": result["evaluation_source"],
+        "technical_depth_score": result["technical_depth_score"],
+        "communication_score": result["communication_score"],
+        "key_strengths": result["key_strengths"],
+        "key_areas_for_improvement": result["key_areas_for_improvement"],
+        "question_evaluations": result["question_evaluations"],
+    }
+    session.interview_score = result["score"]
+    return result
 
 
 def submit_interview_round(
@@ -2428,12 +2639,16 @@ def submit_interview_round(
     session: RoleReadySession,
     answers_or_transcript: Dict[str, Any], # { "answers": [{"question_id": 1, "response": "..."}] }
     time_spent_seconds: int = 0,
-    proctoring_violations: Optional[List[Dict[str, Any]]] = None
+    proctoring_violations: Optional[List[Dict[str, Any]]] = None,
+    _auto: bool = False
 ) -> Dict[str, Any]:
     """
     Evaluates interview responses with AI scoring (no answers = 0), synthesizes the 17-point
     final job-readiness dossier, and transitions session to COMPLETED regardless of score.
+    The overall score is the canonical equal-weight formula (services.assessment_policy.overall_score).
     """
+    if not _auto:
+        finalize_expired_round(db, session)
     int_round = _get_round(db, session, "INTERVIEW", "Interview")
 
     if int_round.status == "EVALUATED":
@@ -2442,95 +2657,33 @@ def submit_interview_round(
             "session_uuid": session.session_uuid,
             "status": "COMPLETED",
             "round_type": "INTERVIEW",
-            "score": int_round.score,
+            "score": policy.display_pct(int_round.score),
             "current_state": session.current_state,
             "session_status": session.current_state,
             "report_available": bool(session.final_report_data),
-            "overall_readiness_score": session.overall_readiness_score,
+            "overall_readiness_score": reported_overall(session),
             "final_report": session.final_report_data,
             "idempotent_replay": True
         }
 
+    _assert_attempt_open(session)
     if session.current_state not in (RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS):
         raise HTTPException(status_code=403, detail="Interview round is locked. Complete the previous round first.")
 
-    interview_answers = answers_or_transcript.get("answers") or []
-    raw_transcript = answers_or_transcript.get("transcript") or []
-    qualitative = {}
-    evaluation_source = "ai"
-
-    questions = int_round.questions_payload or []
-    role = session.target_role or "Software Engineer"
-    jd_data = session.extracted_jd_data or {}
-    jd_skills = ", ".join(jd_data.get("required_skills", []) or [])
-    jd_text = (session.custom_jd_text or "").strip()
-    jd_summary = f"Role: {role}. Skills: {jd_skills}. Context: {jd_text[:400]}" if jd_text else f"Role: {role}. Skills: {jd_skills}"
-
-    resume_raw = (session.resume_raw_text or "").strip()
-    resume_skills = ", ".join(_skill_names(session.resume_snapshot))
-    resume_summary = f"Skills: {resume_skills}. Experience: {resume_raw[:500]}" if resume_raw else f"Skills: {resume_skills}"
-
-    if not interview_answers:
-        interview_score = 0.0  # unanswered interview scores zero
-        qualitative_feedback = "No interview responses were submitted."
-        evaluation_source = "no_answers"
-        qualitative = {
-            "score": 0.0,
-            "overall_score": 0.0,
-            "summary": qualitative_feedback,
-            "evaluation_source": "no_answers",
-            "question_evaluations": []
-        }
-    else:
-        eval_res = evaluate_five_technical_questions(
-            questions=questions,
-            answers=interview_answers,
-            role=role,
-            jd_summary=jd_summary,
-            resume_summary=resume_summary,
-            transcript=raw_transcript,
-            call_gemini_fn=call_gemini
-        )
-        interview_score = max(0.0, min(100.0, float(eval_res.get("score", 0.0))))
-        qualitative_feedback = eval_res.get("summary") or eval_res.get("qualitative_feedback") or "Evaluation completed."
-        evaluation_source = eval_res.get("evaluation_source", "ai")
-        qualitative = eval_res
-
-    _claim_round(db, int_round)
-    int_round.score = interview_score
-    int_round.status = "EVALUATED"
-    int_round.time_spent_seconds = time_spent_seconds
-    int_round.submission_payload = answers_or_transcript
-    int_round.proctoring_violations = proctoring_violations or []
-    int_round.started_at = int_round.started_at or datetime.utcnow()
-    int_round.submitted_at = datetime.utcnow()
-    int_round.evaluated_at = datetime.utcnow()
-    int_round.evaluation_payload = {
-        "score": interview_score,
-        "qualitative_feedback": qualitative_feedback,
-        "evaluation_source": evaluation_source,
-        "technical_depth_score": qualitative.get("technical_depth_score", interview_score),
-        "communication_score": qualitative.get("communication_score", interview_score),
-        "key_strengths": qualitative.get("key_strengths", []),
-        "key_areas_for_improvement": qualitative.get("key_areas_for_improvement", []),
-        "question_evaluations": qualitative.get("question_evaluations", [])
-    }
-
-    session.interview_score = interview_score
+    spent = _server_time_spent(int_round, time_spent_seconds)
+    result = _score_interview(db, session, int_round, answers_or_transcript, spent, proctoring_violations)
+    qualitative = {**result}
+    qualitative_feedback = result["qualitative_feedback"]
+    interview_score = result["score"]
 
     # The coding grade runs in the background; make sure it is in before the final score is computed
     ensure_coding_evaluated(db, session)
     if session.coding_score is None:
         session.coding_score = 0.0
 
-    # Final Consolidated Job Readiness Index (Weighted: Aptitude 25%, Coding 40%, Interview 35%)
-    overall_readiness = round(
-        (session.aptitude_score * 0.25) +
-        (session.coding_score * 0.40) +
-        (session.interview_score * 0.35),
-        1
-    )
-    session.overall_readiness_score = overall_readiness
+    # Final consolidated job-readiness index: equal weight, only now that all three sections are complete
+    overall_readiness = policy.overall_score(session.aptitude_score, session.coding_score, session.interview_score)
+    session.overall_readiness_score = overall_readiness if overall_readiness is not None else 0.0
 
     # Dossier is computed from stored scores, so it succeeds even when AI is unavailable.
     final_report = {
@@ -2538,21 +2691,25 @@ def submit_interview_round(
         "skills_verified": (session.extracted_jd_data or {}).get("required_skills", [])[:4],
         "evaluated_at": datetime.utcnow().isoformat(),
         "completion_status": "COMPLETED",
-        **build_performance_dossier(db, session, {**qualitative, "qualitative_feedback": qualitative_feedback}),
+        "scoring_model": policy.SCORING_MODEL,
+        **build_performance_dossier(db, session, {**qualitative, "qualitative_feedback": qualitative_feedback},
+                                    overall=overall_readiness),
     }
     final_report["strengths"] = final_report["demonstrated_strengths"]
 
     session.final_report_data = final_report
     session.current_state = RoleReadySessionState.COMPLETED
     session.completed_at = datetime.utcnow()
+    session.finalized_at = _db_now()
     _commit_or_500(db)
     _refresh_student_readiness(db, session)
+    vapi_service.release_round_assistant(db, int_round)        # the interview is over: delete its voice assistant
 
     return {
         "session_uuid": session.session_uuid,
         "status": "success",
         "round_type": "INTERVIEW",
-        "score": interview_score,
+        "score": policy.display_pct(interview_score),
         "current_state": session.current_state,
         "session_status": session.current_state,
         "report_available": True,
@@ -2621,6 +2778,7 @@ def start_interview_evaluation(
     """Records the interview submission and evaluates it in the background (returns immediately)."""
     if not BACKGROUND_INTERVIEW_EVALUATION:
         return submit_interview_round(db, session, answers_or_transcript, time_spent_seconds, proctoring_violations)
+    finalize_expired_round(db, session)
     int_round = _get_round(db, session, "INTERVIEW", "Interview")
     processing = {"session_uuid": session.session_uuid, "status": "PROCESSING", "report_status": "PROCESSING",
                   "round_type": "INTERVIEW", "current_state": session.current_state}
@@ -2631,6 +2789,7 @@ def start_interview_evaluation(
     if int_round.status == "EVALUATING" and not _evaluation_is_stale(int_round):
         return processing
 
+    _assert_attempt_open(session)
     if session.current_state not in (RoleReadySessionState.INTERVIEW_UNLOCKED, RoleReadySessionState.INTERVIEW_IN_PROGRESS):
         raise HTTPException(status_code=403, detail="Interview round is locked. Complete the previous round first.")
 
@@ -2665,6 +2824,8 @@ def retry_interview_evaluation(db: Session, session: RoleReadySession) -> Dict[s
 def _report_status(session: RoleReadySession, int_round: Optional[RoleReadyRoundAttempt]) -> str:
     if session.current_state == RoleReadySessionState.COMPLETED:
         return "READY"
+    if session.current_state == RoleReadySessionState.TIMED_OUT:
+        return "INCOMPLETE"
     if int_round is not None:
         if int_round.status == "EVAL_FAILED" or (int_round.status == "EVALUATING" and _evaluation_is_stale(int_round)):
             return "FAILED"
@@ -2684,6 +2845,8 @@ def terminate_malpractice_session(
     Fast-path termination: Immediately locks and disqualifies an assessment due to malpractice.
     Bypasses all expensive AI (Gemini) and sandbox compiler (Piston) evaluations to return in < 50ms.
     """
+    # A closed attempt (timed out / abandoned) is never reopened or rewritten by a late termination request.
+    _assert_attempt_open(session)
     clean_reason = reason or "3/3 Malpractice Violations Recorded"
     all_violations = violations or []
 
@@ -2723,6 +2886,7 @@ def terminate_malpractice_session(
     final_report = {
         "session_uuid": session.session_uuid,
         "completion_status": "TERMINATED",
+        "scoring_model": policy.SCORING_MODEL,
         "is_disqualified": True,
         "termination_reason": clean_reason,
         "disqualification_note": f"Assessment terminated due to proctoring malpractice: {clean_reason}. All scores forfeited.",
@@ -2760,6 +2924,7 @@ def get_student_report(db: Session, session: RoleReadySession) -> Dict[str, Any]
     final_report = dict(session.final_report_data or {})
     if session.current_state == RoleReadySessionState.COMPLETED:
         final_report = {**build_performance_dossier(db, session), **final_report}
+    scores = section_scores(session)   # unattempted sections of a timed-out attempt are null, never a fabricated zero
     int_round = db.query(RoleReadyRoundAttempt).filter(
         RoleReadyRoundAttempt.session_id == session.id,
         RoleReadyRoundAttempt.round_type == "INTERVIEW"
@@ -2771,10 +2936,9 @@ def get_student_report(db: Session, session: RoleReadySession) -> Dict[str, Any]
         "target_company": session.target_company,
         "jd_title": session.jd_title,
         "current_state": session.current_state,
-        "overall_readiness_score": session.overall_readiness_score,
-        "aptitude_score": session.aptitude_score,
-        "coding_score": session.coding_score,
-        "interview_score": session.interview_score,
+        "overall_readiness_score": reported_overall(session),
+        "scoring_model": policy.scoring_model_of(session.final_report_data) if session.current_state == RoleReadySessionState.COMPLETED else None,
+        **scores,
         "resume_to_jd_match_score": compute_resume_jd_match(session),
         "final_report": final_report,
         "started_at": session.started_at.isoformat() if session.started_at else None,
@@ -2896,9 +3060,10 @@ def verify_and_start_invitation(db: Session, token: str) -> Dict[str, Any]:
             coding_client, coding_keys = future_coding.result()
             interview_questions = future_interview.result()
 
-        r1 = RoleReadyRoundAttempt(session_id=session.id, round_type="APTITUDE", round_order=1, questions_payload=apt_client, server_keys_payload=apt_keys)
-        r2 = RoleReadyRoundAttempt(session_id=session.id, round_type="CODING", round_order=2, questions_payload=coding_client, server_keys_payload=coding_keys)
-        r3 = RoleReadyRoundAttempt(session_id=session.id, round_type="INTERVIEW", round_order=3, questions_payload=interview_questions, server_keys_payload={"questions": interview_questions})
+        limit = policy.SECTION_MINUTES
+        r1 = RoleReadyRoundAttempt(session_id=session.id, round_type="APTITUDE", round_order=1, time_limit_minutes=limit, questions_payload=apt_client, server_keys_payload=apt_keys)
+        r2 = RoleReadyRoundAttempt(session_id=session.id, round_type="CODING", round_order=2, time_limit_minutes=limit, questions_payload=coding_client, server_keys_payload=coding_keys)
+        r3 = RoleReadyRoundAttempt(session_id=session.id, round_type="INTERVIEW", round_order=3, time_limit_minutes=limit, questions_payload=interview_questions, server_keys_payload={"questions": interview_questions})
         
         db.add_all([r1, r2, r3])
         inv.status = "ACCEPTED"
@@ -2942,7 +3107,7 @@ def get_admin_batch_report(db: Session, org_id: int, batch_id: int) -> Dict[str,
             "email": cand.email,
             "invitation_status": inv.status,
             "assessment_state": session.current_state if session else "NOT_STARTED",
-            "overall_score": session.overall_readiness_score if session else 0.0,
+            "overall_score": reported_overall(session) if session else None,
             "aptitude_score": session.aptitude_score if session else 0.0,
             "coding_score": session.coding_score if session else 0.0,
             "interview_score": session.interview_score if session else 0.0,
@@ -2950,7 +3115,7 @@ def get_admin_batch_report(db: Session, org_id: int, batch_id: int) -> Dict[str,
         })
 
     # Sort candidates by overall score descending
-    candidate_reports.sort(key=lambda x: x["overall_score"], reverse=True)
+    candidate_reports.sort(key=lambda x: (x["overall_score"] is not None, x["overall_score"] or 0.0), reverse=True)
 
     completed_count = sum(1 for c in candidate_reports if c["assessment_state"] == "COMPLETED")
     return {
@@ -3010,6 +3175,8 @@ def get_admin_tracking_data(db: Session, org_id: int) -> List[Dict[str, Any]]:
                 readable_status = "Interview Completed"
             elif st == RoleReadySessionState.COMPLETED:
                 readable_status = "Assessment Completed"
+            elif st == RoleReadySessionState.TIMED_OUT:
+                readable_status = "Timed Out"
 
         tracking_list.append({
             "id": inv.id,
@@ -3033,11 +3200,21 @@ def get_admin_tracking_data(db: Session, org_id: int) -> List[Dict[str, Any]]:
         })
 
     # Also include direct student sessions (Self-Assessment or portal sessions not initiated via batch invitation)
+    # A session with no organization of its own belongs to this tenant only through its student/candidate owner;
+    # counting every org-less session would leak other tenants' student practice sessions into this list.
     direct_query = db.query(RoleReadySession).filter(
         or_(
             RoleReadySession.organization_id == org_id,
-            RoleReadySession.organization_id == None
-        )
+            and_(
+                RoleReadySession.organization_id.is_(None),
+                or_(
+                    RoleReadySession.student_profile_id.in_(db.query(StudentProfile.id).filter(StudentProfile.organization_id == org_id)),
+                    RoleReadySession.candidate_id.in_(db.query(Candidate.id).filter(Candidate.organization_id == org_id)),
+                ),
+            ),
+        ),
+        # Shared-link recruitment attempts have their own roster (admin recruitment API); keep them out of this legacy view
+        RoleReadySession.workflow_type != "RECRUITMENT_ASSESSMENT",
     )
     if seen_session_ids:
         direct_query = direct_query.filter(RoleReadySession.id.notin_(seen_session_ids))
@@ -3071,6 +3248,8 @@ def get_admin_tracking_data(db: Session, org_id: int) -> List[Dict[str, Any]]:
             readable_status = "Interview Completed"
         elif st == RoleReadySessionState.COMPLETED:
             readable_status = "Assessment Completed"
+        elif st == RoleReadySessionState.TIMED_OUT:
+            readable_status = "Timed Out"
 
         tracking_list.append({
             "id": f"sess-{sess.id}",

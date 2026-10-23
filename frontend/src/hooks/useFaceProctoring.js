@@ -18,13 +18,29 @@ import API_URL from '../apiConfig';
  * @param {Function} [options.onDetections]  - Callback (detections: Array, faceBoxes: Array)
  * @param {boolean}  [options.enabled=true]  - Toggle background detection on/off
  * @param {MediaStream} [options.externalStream] - Optional existing MediaStream to reuse
+ * @param {Function} [options.getAuthHeaders] - Returns the credential headers for /api/proctor/analyze-frame. The endpoint is
+ *        authenticated: students / the candidate portal use the stored account token (default), shared-link recruitment
+ *        candidates pass their session capability (X-Session-Id + X-Session-Token) through their API adapter.
  */
+
+const storedAuthHeaders = () => {
+    const headers = {};
+    try {
+        const token = localStorage.getItem('studentToken') || localStorage.getItem('candidateToken') || localStorage.getItem('token');
+        const invitation = localStorage.getItem('invitationToken');
+        if (token) headers.Authorization = `Bearer ${token}`;
+        if (invitation) headers['X-Invitation-Token'] = invitation;
+    } catch { /* storage unavailable: the request goes out unauthenticated and the server refuses it */ }
+    return headers;
+};
+
 const useFaceProctoring = ({
     onViolation,
     onDetection,
     onDetections,
     enabled = true,
-    externalStream = null
+    externalStream = null,
+    getAuthHeaders = null
 } = {}) => {
     const streamRef = useRef(null);
     const videoRef = useRef(null);
@@ -48,8 +64,10 @@ const useFaceProctoring = ({
     const onDetectionsRef = useRef(onDetections);
     const onDetectionRef = useRef(onDetection);
     const onViolationRef = useRef(onViolation);
+    const getAuthHeadersRef = useRef(getAuthHeaders);
 
     // Keep callback refs fresh
+    useEffect(() => { getAuthHeadersRef.current = getAuthHeaders; }, [getAuthHeaders]);
     useEffect(() => { onDetectionsRef.current = onDetections; }, [onDetections]);
     useEffect(() => { onDetectionRef.current = onDetection; }, [onDetection]);
     useEffect(() => { onViolationRef.current = onViolation; }, [onViolation]);
@@ -194,7 +212,7 @@ const useFaceProctoring = ({
 
             const response = await fetch(`${API_URL}/api/proctor/analyze-frame`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(getAuthHeadersRef.current ? getAuthHeadersRef.current() : storedAuthHeaders()) },
                 body: JSON.stringify({ image: base64Image }),
                 signal: controller.signal
             });

@@ -224,11 +224,57 @@ def _interview_questions(count: int = 5) -> Dict[str, Any]:
     ]}
 
 
+def sample_blueprint(role_title: str = "Backend Engineer") -> Dict[str, Any]:
+    """A schema-valid JobAssessmentBlueprint (15 aptitude, 2 coding, 5 interview) for offline dev/tests."""
+    keys = ["A", "B", "C", "D"]
+    aptitude = []
+    for i in range(1, 16):
+        correct = keys[i % 4]
+        options = {k: f"Option {k} for question {i}" for k in keys}
+        aptitude.append({
+            "id": f"A{i}", "domain": ["Quantitative", "Logical", "Verbal", "Domain Fundamentals"][i % 4],
+            "difficulty": ["Easy", "Medium", "Hard"][i % 3],
+            "question": f"Mock aptitude question {i}: choose the correct option.",
+            "options": options, "correct_key": correct, "explanation": f"Option {correct} is correct.",
+        })
+    coding = [
+        {"id": "C1", "title": "Sum Two Numbers", "difficulty": "Easy",
+         "description": "Return the sum of a and b.",
+         "starter_code": {"python": "def solve(a, b):\n    pass\n"},
+         "public_test_cases": [{"input": {"a": 1, "b": 2}, "expected": 3}, {"input": {"a": 5, "b": 7}, "expected": 12}],
+         "hidden_test_cases": [{"input": {"a": 0, "b": 0}, "expected": 0}, {"input": {"a": -1, "b": 1}, "expected": 0},
+                               {"input": {"a": 100, "b": 200}, "expected": 300}]},
+        {"id": "C2", "title": "Reverse String", "difficulty": "Easy",
+         "description": "Return the string s reversed.",
+         "starter_code": {"python": "def solve(s):\n    pass\n"},
+         "public_test_cases": [{"input": {"s": "abc"}, "expected": "cba"}, {"input": {"s": "ab"}, "expected": "ba"}],
+         "hidden_test_cases": [{"input": {"s": ""}, "expected": ""}, {"input": {"s": "racecar"}, "expected": "racecar"},
+                               {"input": {"s": "hello"}, "expected": "olleh"}]},
+    ]
+    interview = [
+        {"id": f"I{i}", "topic": f"Topic {i}", "competency": "Technical depth",
+         "question_text": f"Mock interview question {i}: explain a relevant design trade-off.",
+         "evaluation_criteria": ["Technical accuracy", "Depth of fundamentals", "Structured communication", "Edge cases"],
+         "expected_technical_concepts": ["trade-offs", "scalability"]}
+        for i in range(1, 6)
+    ]
+    return {"blueprint_version": 1, "role_title": role_title, "seniority_level": "Mid",
+            "required_technical_skills": ["Python", "SQL"], "aptitude_questions": aptitude,
+            "coding_problems": coding, "interview_questions": interview}
+
+
 def get_mock_response(prompt: str, json_mode: bool = True) -> Dict[str, Any]:
     if not json_mode:
         return {"text": "Mock Gemini response."}
 
     p = prompt.lower()
+    if "jd assessment blueprint" in p:
+        return sample_blueprint()
+    if "technical hiring bar-raiser" in p:
+        return {"overall_score": 80.0, "technical_depth_score": 78.0, "communication_score": 82.0,
+                "summary": "Mock evaluation: clear, structured technical answers.",
+                "key_strengths": ["Structured answers"], "key_areas_for_improvement": ["Quantify impact"],
+                "question_evaluations": []}
     if "aptitude questions" in p:
         return _aptitude_questions(10)
     if "coding assessment problems" in p:

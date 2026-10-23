@@ -67,6 +67,6 @@ describe('Security Hardening, Performance & Integration Phase 11 Frontend Test S
     test('8. GlobalNavbar.jsx handles user profile authentication state and role navigation', () => {
         assert.ok(globalNavbarCode.includes('/api/auth/me'));
         assert.ok(globalNavbarCode.includes('user_profile'));
-        assert.ok(globalNavbarCode.includes('handleNotificationClick'));
+        assert.ok(!globalNavbarCode.includes('handleNotificationClick'), 'legacy activity notifications are not part of the recruitment workflow');
     });
 });

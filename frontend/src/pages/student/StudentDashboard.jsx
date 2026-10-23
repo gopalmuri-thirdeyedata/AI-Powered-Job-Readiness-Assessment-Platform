@@ -119,6 +119,9 @@ const CircularScoreGauge = ({ score = 0, size = 110, strokeWidth = 8, label = "R
     );
 };
 
+// A section / overall percentage, or an em dash when the attempt never produced one (null is not a 0%).
+const pctOrDash = (v) => (typeof v === 'number' ? `${Math.round(v)}%` : '—');
+
 const StudentDashboard = () => {
     const { user } = useUser();
     const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus(user);
@@ -552,13 +555,13 @@ const StudentDashboard = () => {
                     <div className="my-5">
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                {assessmentHistory?.latest_assessment?.overall_readiness_score !== undefined
+                                {typeof assessmentHistory?.latest_assessment?.overall_readiness_score === 'number'
                                     ? `${Math.round(assessmentHistory.latest_assessment.overall_readiness_score)}%`
                                     : 'N/A'
                                 }
                             </span>
                             <span className="text-slate-400 font-medium text-xs">
-                                {assessmentHistory?.latest_assessment ? 'overall score' : 'no score'}
+                                {typeof assessmentHistory?.latest_assessment?.overall_readiness_score === 'number' ? 'overall score' : (assessmentHistory?.latest_assessment ? 'no overall score yet' : 'no score')}
                             </span>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
@@ -728,7 +731,7 @@ const StudentDashboard = () => {
                         const allRecords = assessmentHistory?.assessments || [];
                         const filteredRecords = allRecords.filter(item => {
                             if (historyFilter === 'COMPLETED') return item.is_completed;
-                            if (historyFilter === 'IN_PROGRESS') return !item.is_completed;
+                            if (historyFilter === 'IN_PROGRESS') return !item.is_closed;
                             return true;
                         });
 
@@ -796,17 +799,17 @@ const StudentDashboard = () => {
                                                     </td>
                                                     <td className="py-4 px-3 text-center">
                                                         <span className="font-bold text-slate-800 dark:text-slate-200">
-                                                            {item.aptitude_score}%
+                                                            {pctOrDash(item.aptitude_score)}
                                                         </span>
                                                     </td>
                                                     <td className="py-4 px-3 text-center">
                                                         <span className="font-bold text-slate-800 dark:text-slate-200">
-                                                            {item.coding_score}%
+                                                            {pctOrDash(item.coding_score)}
                                                         </span>
                                                     </td>
                                                     <td className="py-4 px-3 text-center">
                                                         <span className="font-bold text-slate-800 dark:text-slate-200">
-                                                            {item.interview_score}%
+                                                            {pctOrDash(item.interview_score)}
                                                         </span>
                                                     </td>
                                                     <td className="py-4 px-4 text-center">
@@ -817,7 +820,7 @@ const StudentDashboard = () => {
                                                                 ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' 
                                                                 : 'bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300'
                                                         }`}>
-                                                            {Math.round(item.overall_readiness_score)}%
+                                                            {pctOrDash(item.overall_readiness_score)}
                                                         </span>
                                                     </td>
                                                     <td className="py-4 px-4 whitespace-nowrap">
@@ -834,12 +837,12 @@ const StudentDashboard = () => {
                                                         ) : (
                                                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
                                                                 <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                                                                In Progress
+                                                                {item.is_timed_out ? 'Timed Out' : 'In Progress'}
                                                             </span>
                                                         )}
                                                     </td>
                                                     <td className="py-4 px-5 text-right whitespace-nowrap">
-                                                        {item.is_completed ? (
+                                                        {item.report_url ? (
                                                             <Link
                                                                 to={item.report_url}
                                                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold transition-all"
@@ -886,7 +889,7 @@ const StudentDashboard = () => {
                                                     </span>
                                                 ) : (
                                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-300">
-                                                        In Progress
+                                                        {item.is_timed_out ? 'Timed Out' : 'In Progress'}
                                                     </span>
                                                 )}
                                             </div>
@@ -894,24 +897,24 @@ const StudentDashboard = () => {
                                             <div className="grid grid-cols-4 gap-2 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl text-center">
                                                 <div>
                                                     <div className="text-[10px] text-slate-400 font-semibold uppercase">Aptitude</div>
-                                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">{item.aptitude_score}%</div>
+                                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">{pctOrDash(item.aptitude_score)}</div>
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] text-slate-400 font-semibold uppercase">Coding</div>
-                                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">{item.coding_score}%</div>
+                                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">{pctOrDash(item.coding_score)}</div>
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] text-slate-400 font-semibold uppercase">Interview</div>
-                                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">{item.interview_score}%</div>
+                                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">{pctOrDash(item.interview_score)}</div>
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase">Overall</div>
-                                                    <div className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5">{Math.round(item.overall_readiness_score)}%</div>
+                                                    <div className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5">{pctOrDash(item.overall_readiness_score)}</div>
                                                 </div>
                                             </div>
 
                                             <div className="flex justify-end pt-1">
-                                                {item.is_completed ? (
+                                                {item.report_url ? (
                                                     <Link
                                                         to={item.report_url}
                                                         className="w-full text-center py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-xs"

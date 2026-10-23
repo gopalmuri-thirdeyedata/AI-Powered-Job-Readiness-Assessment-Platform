@@ -39,7 +39,9 @@ describe('RoleReady Critical Repair — Authentication, Routing, and Integration
     test('3. StudentLogin parses and honors the return destination query parameter', () => {
         assert.ok(studentLoginCode.includes('useSearchParams'), 'StudentLogin must use useSearchParams');
         assert.ok(studentLoginCode.includes('redirectParam'), 'StudentLogin must retrieve redirect param');
-        assert.ok(studentLoginCode.includes('navigate(destination)'), 'StudentLogin must navigate to destination upon login');
+        assert.ok(studentLoginCode.includes('resolvePostLoginDestination'), 'StudentLogin must resolve the post-login destination');
+        assert.ok(studentLoginCode.includes('return redirectParam'), 'StudentLogin must honor a safe redirect param');
+        assert.ok(studentLoginCode.includes('navigate(dest)'), 'StudentLogin must navigate to destination upon login');
     });
 
     test('4. PublicNavbar provides distinct flows for Student Assessment and Enterprise Sign In', () => {
@@ -58,11 +60,9 @@ describe('RoleReady Critical Repair — Authentication, Routing, and Integration
     test('6. Dashboard.jsx replaces old Hiring Control Panel and legacy command center with Assessment Management', () => {
         assert.ok(!dashboardCode.includes('Hiring Control Panel'), 'Old Hiring Control Panel title must not exist');
         assert.ok(dashboardCode.includes('Assessment Management'), 'Dashboard must render Assessment Management');
-        assert.ok(dashboardCode.includes('Upload student resumes, send assessment invitations, and review results.'), 'Dashboard must have exact description');
-        assert.ok(dashboardCode.includes('Assessment Tracking'), 'Dashboard must feature Assessment Tracking');
-        assert.ok(dashboardCode.includes('listBatches') || dashboardCode.includes('getTrackingData'), 'Dashboard must load assessment tracking data');
-        assert.ok(dashboardCode.includes('dispatchBatch') || dashboardCode.includes('createBatch'), 'Dashboard must support dispatching assessments');
-        assert.ok(dashboardCode.includes('getBatchReport'), 'Dashboard must provide consolidated recruitment reports');
+        assert.ok(dashboardCode.includes('Create job assessments, share assessment links, and review candidate results.'), 'Dashboard describes the shared-link workflow');
+        assert.ok(!dashboardCode.includes('Upload student resumes, send assessment invitations'), 'the old invitation description no longer misdescribes the workspace');
+        assert.ok(!dashboardCode.includes('dispatchBatch') && !dashboardCode.includes('getTrackingData'), 'the legacy email-invitation flow is not part of the workspace');
     });
 
     test('7. DashboardLayout replaces old navigation and Branding with PrepWin', () => {

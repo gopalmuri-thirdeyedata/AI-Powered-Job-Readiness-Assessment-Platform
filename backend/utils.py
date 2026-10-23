@@ -173,3 +173,35 @@ def is_valid_candidate_email(email: Optional[str]) -> bool:
         
     return True
 
+# ------------------------------------------------------------------------------
+# Canonical candidate identity normalization (Admin Recruitment Workflow)
+# ------------------------------------------------------------------------------
+def normalize_email(email: Optional[str]) -> str:
+    """
+    Canonical email form used for every candidate/registration write and lookup:
+    NFKC-normalised, stripped, lower-cased, with an IDNA (punycode) domain so that SQLite's ASCII-only
+    LOWER() and MySQL's collations agree with the application.
+    """
+    import unicodedata
+    value = unicodedata.normalize("NFKC", (email or "")).strip().lower()
+    if "@" in value:
+        local, _, domain = value.rpartition("@")
+        try:
+            domain = domain.encode("idna").decode("ascii")
+        except UnicodeError:
+            pass
+        value = f"{local}@{domain}"
+    return value
+
+
+_PHONE_STRIP_PATTERN = r"[\s\-().]"
+
+
+def normalize_phone_e164(phone: Optional[str]) -> Optional[str]:
+    """Return +<country><number> (E.164) or None when the input is not a plausible international number."""
+    raw = re.sub(_PHONE_STRIP_PATTERN, "", (phone or "").strip())
+    if raw.startswith("00"):
+        raw = "+" + raw[2:]
+    if not re.fullmatch(r"\+[1-9]\d{6,14}", raw):
+        return None
+    return raw

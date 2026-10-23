@@ -1,7 +1,9 @@
 import os
 import base64
+import binascii
 import io
 import threading
+import re
 try:
     import numpy as np
     from PIL import Image
@@ -38,6 +40,61 @@ RELEVANT_CLASSES = {
     73: 'book',
     76: 'scissors',
 }
+
+# ── Request limits (the endpoint is reachable by candidates, so every input is bounded) ─────────────────────────────────
+MAX_BASE64_CHARS = 1_500_000          # request field size; a 640x480 JPEG at quality 0.6 is ~40k characters
+MAX_DECODED_BYTES = 1_048_576         # 1 MiB after base64 decoding
+MAX_IMAGE_PIXELS = 2_100_000          # ~1920x1080; larger images are rejected before they are decoded into memory
+ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+_DATA_URL_PATTERN = r"^data:image/(jpeg|jpg|png|webp);base64,"
+_MAGIC = ((bytes.fromhex("ffd8ff"), "JPEG"), (bytes.fromhex("89504e470d0a1a0a"), "PNG"))
+
+
+class InvalidFrame(ValueError):
+    """The submitted frame is malformed or exceeds the limits. The message is safe to show to a client."""
+
+
+def decode_frame(image_base64) -> "Image.Image":
+    """
+    Strictly validate and decode a client frame. Raises InvalidFrame (never returns a partially valid image).
+    Order matters: cheap checks first, pixel-count check before the pixels are decoded (decompression-bomb guard).
+    """
+    if not VISION_LIBS_AVAILABLE:
+        raise InvalidFrame("Proctoring is unavailable.")
+    if not isinstance(image_base64, str) or not image_base64.strip():
+        raise InvalidFrame("No image provided.")
+    if len(image_base64) > MAX_BASE64_CHARS:
+        raise InvalidFrame("Image is too large.")
+    data = image_base64.strip()
+    if data.lower().startswith("data:"):
+        match = re.match(_DATA_URL_PATTERN, data, re.IGNORECASE)
+        if not match:
+            raise InvalidFrame("Unsupported image type.")
+        data = data[match.end():]
+    if len(data) * 3 // 4 > MAX_DECODED_BYTES + 3:
+        raise InvalidFrame("Image is too large.")
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        raise InvalidFrame("Invalid image encoding.")
+    if not raw or len(raw) > MAX_DECODED_BYTES:
+        raise InvalidFrame("Image is too large.")
+    if not (any(raw.startswith(sig) for sig, _ in _MAGIC) or (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")):
+        raise InvalidFrame("Unsupported image type.")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        if image.format not in ALLOWED_IMAGE_FORMATS:
+            raise InvalidFrame("Unsupported image type.")
+        width, height = image.size
+        if width < 1 or height < 1 or width * height > MAX_IMAGE_PIXELS:
+            raise InvalidFrame("Image dimensions are not allowed.")
+        image.load()
+        return image.convert("RGB")
+    except InvalidFrame:
+        raise
+    except Exception:  # corrupt / truncated data: PIL's message may describe internals, so none of it is returned
+        raise InvalidFrame("Invalid image.")
+
 
 # Detection confidence threshold
 CONFIDENCE_THRESHOLD = 0.40
@@ -77,6 +134,29 @@ def warm_up() -> bool:
     instead of making the first candidate frame, and everything queued behind it, wait.
     """
     model = get_model()
+    if model is None or np is None:
+        return False
+    try:
+        with _infer_lock:
+            model(np.zeros((240, 320, 3), dtype=np.uint8), conf=CONFIDENCE_THRESHOLD, verbose=False, device='cpu')
+        return True
+    except Exception as e:
+        print(f"[ProctoringService] Warm-up inference failed: {e}")
+        return False
+
+
+def start_warm_up_in_background():
+    """Starts warm_up() once per process on a daemon thread and returns immediately."""
+    global _warmup_thread
+    if _warmup_thread is not None or _model is not None:
+        return
+    _warmup_thread = threading.Thread(target=warm_up, name='proctor-warmup', daemon=True)
+    _warmup_thread.start()
+
+
+def get_public_status() -> dict:
+    """The minimum a readiness check needs: is the detector usable? No file names, class lists or thresholds."""
+    return {"status": "ready" if get_model() is not None else "error"}
     if model is None or np is None:
         return False
     try:
@@ -148,17 +228,13 @@ def analyze_frame(image_base64: str) -> dict:
             "detections": [],
             "person_count": -1,
             "face_boxes": [],
-            "error": "YOLO model not initialized or file missing"
+            "error": "Proctoring model is unavailable."
         }
 
     try:
-        # Decode base64 image
-        if ',' in image_base64:
-            image_base64 = image_base64.split(',')[1]
-        
-        image_bytes = base64.b64decode(image_base64)
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        
+        # Accept an already-validated PIL image (the router decodes first) or a base64 string (validated here)
+        image = decode_frame(image_base64) if isinstance(image_base64, str) else image_base64
+
         # Resize to 320x240 for faster CPU inference
         image = image.resize((320, 240))
         image_np = np.array(image)
@@ -254,14 +330,16 @@ def analyze_frame(image_base64: str) -> dict:
             "face_boxes": face_boxes
         }
 
+    except InvalidFrame as e:
+        return {"status": "error", "violations": [], "detections": [], "person_count": -1, "face_boxes": [], "error": str(e)}
     except Exception as e:
-        print(f"[ProctoringService] Frame analysis error: {e}")
+        print(f"[ProctoringService] Frame analysis error: {type(e).__name__}")   # detail stays in the server log only
         return {
             "status": "error",
             "violations": [],
             "detections": [],
             "person_count": -1,
             "face_boxes": [],
-            "error": str(e)
+            "error": "Frame analysis failed."
         }
 

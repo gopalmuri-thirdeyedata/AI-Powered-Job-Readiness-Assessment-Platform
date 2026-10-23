@@ -114,12 +114,13 @@ def test_vapi_assistant_uses_google_model_and_keeps_voice_stack(monkeypatch):
         def json(self):
             return {"id": "asst_1"}
 
-    def fake_post(url, json=None, headers=None):
-        sent.update(url=url, json=json)
+    def fake_post(url, json=None, headers=None, timeout=None):      # the assistant request now carries a timeout
+        sent.update(url=url, json=json, timeout=timeout)
         return Resp()
 
     monkeypatch.setattr(vapi_service.requests, "post", fake_post)
     assert vapi_service.create_ephemeral_assistant("Jo", "Backend Engineer", "summary", "") == "asst_1"
+    assert sent["timeout"] == vapi_service.REQUEST_TIMEOUT_SECONDS
     payload = sent["json"]
     assert payload["model"]["provider"] == "google" and payload["model"]["model"] == "gemini-test"
     assert payload["voice"]["provider"] == "vapi"

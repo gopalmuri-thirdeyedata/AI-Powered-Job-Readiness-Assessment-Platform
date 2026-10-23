@@ -109,14 +109,14 @@ def test_zero_percent_coding_and_empty_interview_complete_session(db_session, se
     assert res.json()["score"] == 0.0 and res.json()["report_available"] is True
 
 
-# ─── REQ-06 / REQ-07: Python only, hidden tests private ────────────────────────
+# ─── REQ-06 / REQ-07: Python + Java only, hidden tests private ────────────────────────
 
-def test_coding_payload_is_python_only_with_one_public_sample_and_no_hidden_leak(db_session, setup_test_data):
+def test_coding_payload_is_python_and_java_only_with_one_public_sample_and_no_hidden_leak(db_session, setup_test_data):
     session, h = _advance_to_coding(db_session, setup_test_data)
     problems = client.post(_url(session, "start-coding"), headers=h).json()["problems"]
     assert len(problems) == 2
     for p in problems:
-        assert list(p["starter_code"].keys()) == ["python"]
+        assert list(p["starter_code"].keys()) == ["python", "java"]
         assert len(p["public_test_cases"]) == 1
         assert "hidden_test_cases" not in p
     rnd = db_session.query(models.RoleReadyRoundAttempt).filter_by(session_id=session.id, round_type="CODING").first()
@@ -132,11 +132,11 @@ def test_run_code_rejects_non_python_with_400(db_session, setup_test_data, monke
     assert res.status_code == 400
 
 
-def test_submit_coding_rejects_non_python_and_changes_nothing(db_session, setup_test_data, monkeypatch):
+def test_submit_coding_rejects_unsupported_language_and_changes_nothing(db_session, setup_test_data, monkeypatch):
     monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox())
     session, h = _advance_to_coding(db_session, setup_test_data)
     res = client.post(_url(session, "submit-coding"), headers=h,
-                      json={"solutions": {"1": {"code": "x", "language": "java"}}})
+                      json={"solutions": {"1": {"code": "x", "language": "ruby"}}})
     assert res.status_code == 400
     db_session.refresh(session)
     assert session.current_state == State.CODING_IN_PROGRESS
@@ -416,16 +416,16 @@ def test_additive_migration_is_idempotent_and_preserves_rows(tmp_path):
     assert tuple(row) == ("legacy-1", None)
 
 
-# ─── REQ-05: every fallback coding problem is Medium, Python-only, 1 public + 3-4 hidden ──
+# ─── REQ-05: every fallback coding problem is Medium, Python+Java starters, 1 public + 3-4 hidden ──
 
 @pytest.mark.parametrize("role", ["Frontend Developer", "Data Analyst", "DevOps Engineer",
                                   "ML Engineer", "Backend Engineer", "Full Stack Engineer"])
-def test_fallback_coding_problems_are_medium_python_only(role):
+def test_fallback_coding_problems_are_medium_python_and_java_only(role):
     problems, keys = roleready_service.generate_coding_problems({"role_title": role, "required_skills": ["x"]}, 2)
     assert len(problems) == 2
     for p in problems:
         assert p["difficulty"] == "Medium"
-        assert list(p["starter_code"]) == ["python"]
+        assert list(p["starter_code"]) == ["python", "java"]
         assert len(p["public_test_cases"]) == 1
         assert 3 <= len(keys[p["id"]]["hidden_test_cases"]) <= 4
 

@@ -132,6 +132,14 @@ export const rolereadyApi = {
         return response.data;
     },
 
+    // Autosave of in-progress work (scored by the server if the section or the 60-minute assessment ends first)
+    async saveDraft(sessionUuid, section, payload) {
+        const response = await axios.put(`${API_URL}/api/roleready/session/${sessionUuid}/draft`, { section, payload }, {
+            headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
     // Fast-path malpractice termination
     async terminateSession(sessionUuid, reason = "3/3 Malpractice Violations Recorded", proctoringViolations = [], currentStage = null) {
         const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/terminate`, {

@@ -677,6 +677,7 @@ const StudentPerformanceView = () => {
                             <option value="COMPLETED">Completed</option>
                             <option value="IN_PROGRESS">In Progress</option>
                             <option value="ABANDONED">Abandoned</option>
+                            <option value="TIMED_OUT">Timed out</option>
                         </select>
 
                         {/* Sort Dropdown */}

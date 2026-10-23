@@ -649,21 +649,21 @@ const RoleReadySetup = () => {
                                         stepNumber="1"
                                         title="Aptitude"
                                         description="Quantitative, logical reasoning & domain scenario MCQs."
-                                        duration="15 min"
+                                        duration="20 min"
                                         isGated={false}
                                     />
                                     <PipelineRoundRow
                                         stepNumber="2"
                                         title="Coding Assessment"
                                         description="Algorithmic coding in an interactive sandbox with test cases."
-                                        duration="30 min"
+                                        duration="20 min"
                                         isGated={true}
                                     />
                                     <PipelineRoundRow
                                         stepNumber="3"
                                         title="Technical Interview"
                                         description="AI-guided technical conversation & concept defense."
-                                        duration="15 min"
+                                        duration="20 min"
                                         isGated={true}
                                     />
                                 </div>

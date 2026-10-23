@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 import models
-from routers.auth import get_current_user
+from routers.auth import get_current_user, require_organization_admin_context, TenantContext
 from pydantic import BaseModel
 from typing import Dict, Any
 
@@ -132,15 +132,10 @@ def get_settings(
 def update_settings(
     settings_update: SettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    tenant_context: TenantContext = Depends(require_organization_admin_context)
 ):
-    target_org_id = getattr(current_user, "organization_id", None) or getattr(current_user, "company_id", None)
-    if not target_org_id:
-        member = db.query(models.OrganizationMember).filter(
-            models.OrganizationMember.user_id == current_user.id
-        ).first()
-        if member:
-            target_org_id = member.organization_id
+    current_user = tenant_context.user
+    target_org_id = tenant_context.tenant_id
 
     db_settings = None
     if target_org_id:

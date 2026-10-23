@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from dataclasses import dataclass
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from fastapi.security import OAuth2PasswordBearer
@@ -451,8 +452,7 @@ def get_current_tenant(
             db.add(org)
             db.commit()
             db.refresh(org)
-            current_user.organization_id = org.id
-            db.commit()
+            # The user row is intentionally NOT re-anchored here: tenant resolution is request-scoped.
 
     if not org:
         raise HTTPException(
@@ -479,52 +479,181 @@ def require_platform_admin(
         )
     return current_user
 
-def require_organization_admin(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(database.get_db)
-) -> models.User:
-    """Security check: Ensures user is an Organization Admin or Platform Admin."""
-    if current_user.role == models.UserRole.PLATFORM_ADMIN:
-        return current_user
 
-    member = db.query(models.OrganizationMember).filter(
-        models.OrganizationMember.user_id == current_user.id,
-        models.OrganizationMember.status == "active"
-    ).first()
+# ------------------------------------------------------------------------------
+# Canonical admin authorization (Admin Recruitment Workflow)
+# ------------------------------------------------------------------------------
+ADMIN_MEMBER_ROLES = ("ORGANIZATION_ADMIN", "HR", "HR_ADMIN", "RECRUITER")
+ORG_OWNER_ROLES = ("ORGANIZATION_ADMIN",)
 
-    if not member or member.role != "ORGANIZATION_ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Organization administrator privileges required."
-        )
-    return current_user
 
-def require_hr_or_admin(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(database.get_db)
-) -> models.User:
-    """Security check: Ensures user is an authorized recruiter (HR, Org Admin, or Platform Admin)."""
-    if current_user.role in (models.UserRole.CANDIDATE, models.UserRole.STUDENT) or current_user.email.endswith(".internal"):
+@dataclass(frozen=True)
+class TenantContext:
+    """Immutable, request-scoped tenant resolution result. Never persisted, never mutates the user row."""
+    tenant_id: int
+    organization: models.Organization
+    user: models.User
+    member: Optional[models.OrganizationMember]
+    is_platform_admin: bool
+
+
+def _assert_admin_identity(current_user: models.User) -> bool:
+    """Shared identity gate. Returns True for platform admins; raises 403 for anyone who is not an admin identity."""
+    if getattr(current_user, "is_active", True) is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is deactivated.")
+    if current_user.role in (models.UserRole.CANDIDATE, models.UserRole.STUDENT) or (current_user.email or "").endswith(".internal"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Candidates and students are not permitted to access recruiter tools."
         )
+    return current_user.role == models.UserRole.PLATFORM_ADMIN
 
-    if current_user.role == models.UserRole.PLATFORM_ADMIN:
-        return current_user
 
-    member = db.query(models.OrganizationMember).filter(
+def _parse_org_header(request: Optional[Request]) -> Optional[int]:
+    raw = request.headers.get("x-organization-id") if request is not None else None
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Organization-Id must be an integer.")
+    if value <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Organization-Id must be a positive integer.")
+    return value
+
+
+def _strongest_membership(memberships, organization_id):
+    """Highest-privilege active membership in one org (tolerates historical duplicate rows deterministically)."""
+    in_org = [m for m in memberships if m.organization_id == organization_id]
+    if not in_org:
+        return None
+    return min(in_org, key=lambda m: (m.role not in ORG_OWNER_ROLES, m.id))
+
+
+def _resolve_tenant_context(
+    request: Optional[Request],
+    current_user: models.User,
+    db: Session,
+    is_platform_admin: bool,
+) -> TenantContext:
+    """
+    Deterministic tenant resolution: explicit header -> persistent anchor -> single membership.
+    Multiple memberships without an explicit header/anchor are rejected (no arbitrary .first()).
+    The user row is never modified.
+    """
+    header_org_id = _parse_org_header(request)
+    member = None
+    org = None
+
+    active_memberships = db.query(models.OrganizationMember).filter(
         models.OrganizationMember.user_id == current_user.id,
-        models.OrganizationMember.status == "active"
-    ).first()
+        models.OrganizationMember.status == "active",
+    ).all()
 
-    if not member:
+    if header_org_id is not None:
+        org = db.query(models.Organization).filter(models.Organization.id == header_org_id).first()
+        member = _strongest_membership(active_memberships, header_org_id)
+        if is_platform_admin:
+            if not org:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
+        elif member is None or org is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User is not an active member of the specified organization."
+            )
+    else:
+        anchor_id = current_user.organization_id
+        anchor_member = _strongest_membership(active_memberships, anchor_id) if anchor_id else None
+        if anchor_member is not None:
+            member = anchor_member
+        elif len(active_memberships) == 1:
+            member = active_memberships[0]
+        elif len(active_memberships) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User belongs to multiple organizations. An explicit 'X-Organization-Id' header is required."
+            )
+        elif is_platform_admin and anchor_id:
+            org = db.query(models.Organization).filter(models.Organization.id == anchor_id).first()
+        elif is_platform_admin:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Platform administrators must specify a target organization via 'X-Organization-Id'."
+            )
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User has no active organization memberships.")
+        if org is None and member is not None:
+            org = db.query(models.Organization).filter(models.Organization.id == member.organization_id).first()
+
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active organization membership required.")
+    if org.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Organization '{org.name}' is currently {org.status}. Access denied."
+        )
+
+    return TenantContext(tenant_id=org.id, organization=org, user=current_user, member=member, is_platform_admin=is_platform_admin)
+
+
+def require_admin_user(
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db),
+) -> TenantContext:
+    """
+    Canonical dependency for every recruitment/admin operation. Authorizes PLATFORM_ADMIN,
+    ORGANIZATION_ADMIN, HR and RECRUITER identities and returns an immutable TenantContext.
+    """
+    is_platform_admin = _assert_admin_identity(current_user)
+    ctx = _resolve_tenant_context(request, current_user, db, is_platform_admin)
+    if not is_platform_admin and (ctx.member is None or ctx.member.role not in ADMIN_MEMBER_ROLES):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account has not been invited to HiringAI. Please contact your organization administrator."
         )
+    return ctx
 
+
+def require_organization_admin_context(
+    ctx: TenantContext = Depends(require_admin_user),
+) -> TenantContext:
+    """Tenant owners/leads only (ORGANIZATION_ADMIN in the resolved tenant, or PLATFORM_ADMIN)."""
+    if ctx.is_platform_admin:
+        return ctx
+    if ctx.member is None or ctx.member.role not in ORG_OWNER_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization administrator privileges required.")
+    return ctx
+
+
+def require_organization_admin(
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+) -> models.User:
+    """Org Admin or Platform Admin. Returns the user (legacy signature); tenant is resolved via the canonical path."""
+    is_platform_admin = _assert_admin_identity(current_user)
+    if is_platform_admin:
+        return current_user
+    ctx = _resolve_tenant_context(request, current_user, db, False)
+    if ctx.member is None or ctx.member.role not in ORG_OWNER_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization administrator privileges required.")
     return current_user
+
+
+def require_hr_or_admin(
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+) -> models.User:
+    """
+    Backward-compatible wrapper over the canonical admin authorization (returns the user, not the context).
+    Platform admins keep their legacy unscoped pass-through; everyone else goes through tenant resolution.
+    """
+    is_platform_admin = _assert_admin_identity(current_user)
+    if is_platform_admin:
+        return current_user
+    return require_admin_user(request, current_user, db).user
 
 @router.get("/me")
 def get_current_user_profile(
@@ -564,10 +693,14 @@ def get_current_user_profile(
             "organization_slug": "roleready-students"
         }
 
-    member = db.query(models.OrganizationMember).filter(
+    active_members = db.query(models.OrganizationMember).filter(
         models.OrganizationMember.user_id == current_user.id,
         models.OrganizationMember.status == "active"
-    ).first()
+    ).order_by(models.OrganizationMember.id).all()
+    # Same rule as the tenant resolver: anchored org first, then strongest role (ties -> lowest id).
+    member = _strongest_membership(active_members, current_user.organization_id) if current_user.organization_id else None
+    if member is None:
+        member = min(active_members, key=lambda m: (m.role not in ORG_OWNER_ROLES, m.id), default=None)
 
     if not member:
         raise HTTPException(

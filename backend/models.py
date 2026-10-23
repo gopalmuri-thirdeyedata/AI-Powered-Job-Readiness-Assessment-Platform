@@ -1,9 +1,14 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, JSON, Float, DateTime, Text
-from sqlalchemy.dialects.mysql import MEDIUMTEXT
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, JSON, Float, DateTime, Text, UniqueConstraint, text
+from sqlalchemy.dialects.mysql import MEDIUMTEXT, DATETIME as MYSQL_DATETIME
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from database import Base
+
+# Whole-second DATETIME on MySQL would round deadlines (strict 10.0s/10.1s arrival-window boundary) and break the
+# sweeper's lease-fencing equality (sweeper_claimed_at = :claimed_at). Recruitment timestamps keep microseconds there.
+PreciseDateTime = DateTime(timezone=True).with_variant(MYSQL_DATETIME(fsp=6), "mysql")
+
 
 class UserRole(str, enum.Enum):
     PLATFORM_ADMIN = "PLATFORM_ADMIN"
@@ -130,13 +135,21 @@ class JobDescription(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
 
+    # Admin Recruitment Workflow: published assessment + reusable shared link
+    is_published = Column(Boolean, default=False, server_default=text("0"), nullable=False)
+    share_token = Column(String(64), unique=True, index=True, nullable=True)
+    status = Column(String(30), default="DRAFT", server_default="DRAFT", nullable=False)  # DRAFT, PUBLISHED, CLOSED
+    blueprint_data = Column(JSON, nullable=True)
+    blueprint_version = Column(Integer, default=0, server_default=text("0"), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
     organization = relationship("Organization", foreign_keys=[organization_id])
 
 class Candidate(Base):
     __tablename__ = "candidates"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), default="Unknown Candidate")
-    email = Column(String(150), unique=True, index=True)
+    email = Column(String(150), index=True)
     role = Column(String(100))
     status = Column(String(50), default=CandidateStatus.Applied)
     stage = Column(String(50), default=CandidateStage.Resume_Screening)
@@ -153,6 +166,13 @@ class Candidate(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     organization = relationship("Organization", foreign_keys=[organization_id])
+
+    # Email uniqueness is per organization and normalization-aware (LOWER(TRIM(email))), enforced by the engine.
+    # The parenthesised text expression is valid for SQLite (3.9+) and MySQL 8.0.13+ functional key parts.
+    __table_args__ = (
+        UniqueConstraint("organization_id", "email", name="uix_org_candidate_email"),
+        Index("uix_org_cand_norm_email", "organization_id", text("(lower(trim(email)))"), unique=True),
+    )
 
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
@@ -522,6 +542,7 @@ class RoleReadySessionState(str, enum.Enum):
     INTERVIEW_EVALUATED = "INTERVIEW_EVALUATED"
     COMPLETED = "COMPLETED"
     ABANDONED = "ABANDONED"
+    TIMED_OUT = "TIMED_OUT"   # the 60-minute overall deadline ended the attempt before every section was completed
 
 
 class RecruitmentBatch(Base):
@@ -606,6 +627,20 @@ class RoleReadySession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
+    # Admin Recruitment Workflow (RECRUITMENT_ASSESSMENT): single attempt per registration, enforced by the DB.
+    registration_id = Column(Integer, ForeignKey("candidate_registrations.id", ondelete="SET NULL"), unique=True, index=True, nullable=True)
+    overall_deadline_at = Column(PreciseDateTime, nullable=True)
+    current_section_deadline_at = Column(PreciseDateTime, nullable=True)
+    last_heartbeat_at = Column(PreciseDateTime, nullable=True)
+    session_capability_hash = Column(String(64), nullable=True, index=True)
+    active_lease_hash = Column(String(64), nullable=True)
+    abandoned_at = Column(PreciseDateTime, nullable=True)
+    finalized_at = Column(PreciseDateTime, nullable=True)
+    failed_at = Column(PreciseDateTime, nullable=True)
+    incident_reference_id = Column(String(64), nullable=True, index=True)
+    sweeper_claimed_at = Column(PreciseDateTime, nullable=True)
+    sweeper_worker_id = Column(String(64), nullable=True)
+
     organization = relationship("Organization")
     student_profile = relationship("StudentProfile")
     candidate = relationship("Candidate")
@@ -646,7 +681,58 @@ class RoleReadyRoundAttempt(Base):
     session = relationship("RoleReadySession", back_populates="round_attempts")
 
 
+class CandidateRegistration(Base):
+    """Self-reported (unverified) candidate registration against a published assessment's shared link."""
+    __tablename__ = "candidate_registrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    registration_token_hash = Column(String(64), nullable=False, index=True)
+    job_description_id = Column(Integer, ForeignKey("job_descriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(150), nullable=False)
+    phone = Column(String(50), nullable=False)
+    email = Column(String(150), nullable=False)
+    blueprint_version = Column(Integer, nullable=True)  # blueprint version active at registration time
+    attempt_session_uuid = Column(String(64), unique=True, nullable=True)
+    status = Column(String(30), default="REGISTERED", nullable=False)  # REGISTERED, CONSUMED
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    job_description = relationship("JobDescription", foreign_keys=[job_description_id])
+    organization = relationship("Organization", foreign_keys=[organization_id])
+
+    __table_args__ = (
+        UniqueConstraint("job_description_id", "email", name="uix_jd_candidate_reg_email"),
+        Index("uix_jd_reg_norm_email", "job_description_id", text("(lower(trim(email)))"), unique=True),
+    )
 
 
+class JobBlueprintVersion(Base):
+    """Immutable archive of every blueprint version saved for a job role."""
+    __tablename__ = "job_blueprint_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_description_id = Column(Integer, ForeignKey("job_descriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    blueprint_data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("job_description_id", "version", name="uix_jd_blueprint_version"),
+    )
 
 
+class IncidentRecord(Base):
+    """Corroborated platform incident window used by post-outage reconciliation."""
+    __tablename__ = "incident_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    incident_reference_id = Column(String(64), unique=True, index=True, nullable=False)
+    outage_start_utc = Column(PreciseDateTime, nullable=False)
+    outage_resolved_utc = Column(PreciseDateTime, nullable=False)
+    affected_subsystems = Column(JSON, nullable=True)
+    telemetry_evidence_ref = Column(String(255), nullable=True)
+    telemetry_complete = Column(Boolean, default=True, server_default=text("1"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reconciled_at = Column(PreciseDateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

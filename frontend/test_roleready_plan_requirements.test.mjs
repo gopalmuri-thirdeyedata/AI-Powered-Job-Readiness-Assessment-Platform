@@ -21,8 +21,17 @@ describe('RoleReady implementation plan - frontend requirements', () => {
     });
 
     test('Timers hydrate from the server-authoritative remaining_seconds for all three rounds', () => {
-        const count = assessmentCode.split("typeof res.remaining_seconds === 'number'").length - 1;
-        assert.strictEqual(count, 3);
+        // one helper reads the server's figures; every load path (aptitude, coding, interview + its fallback, session restore) uses it
+        assert.strictEqual(assessmentCode.split("typeof res.remaining_seconds === 'number'").length - 1, 1);
+        assert.strictEqual(assessmentCode.split("typeof res.overall_remaining_seconds === 'number'").length - 1, 1);
+        assert.ok(assessmentCode.split('syncTiming(').length - 1 >= 6);
+    });
+
+    test('Canonical limits are shown: 20 minutes per section, 60 overall, equal split (no 15/30/15 left)', () => {
+        assert.ok(assessmentCode.includes('aptitude: 20 * 60') && assessmentCode.includes('coding: 20 * 60') && assessmentCode.includes('interview: 20 * 60'));
+        assert.ok(!assessmentCode.includes("mins: '15 Mins'") && !assessmentCode.includes("mins: '30 Mins'"));
+        assert.strictEqual(assessmentCode.split("mins: '20 Mins'").length - 1, 3);
+        assert.ok(assessmentCode.includes('aria-label="Overall time remaining"'), 'the overall 60-minute countdown is displayed');
     });
 
     test('REQ-15: brand palette tokens are unchanged', () => {

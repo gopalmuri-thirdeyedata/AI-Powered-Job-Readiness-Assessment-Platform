@@ -1,0 +1,14 @@
+{
+  "name": "prepwin-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser end-to-end tests for the Student Platform and Recruitment assessment workflows (real backend on a scratch database, real frontend, real Chrome).",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"specs/*.e2e.test.mjs\"",
+    "test:recruitment": "node --test specs/recruitment.e2e.test.mjs",
+    "test:student": "node --test specs/student.e2e.test.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.49.1"
+  }
+}

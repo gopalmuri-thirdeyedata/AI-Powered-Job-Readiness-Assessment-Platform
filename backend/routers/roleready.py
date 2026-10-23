@@ -23,6 +23,8 @@ import utils
 from routers.auth import require_hr_or_admin, get_current_tenant
 from routers.student import get_current_student_profile
 from services import roleready_service
+from services import assessment_clock as clock
+from services import assessment_policy as policy
 from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, extract_candidate_name_from_resume, persist_student_resume_version
 from services.rag_service import RAGService
 import secrets
@@ -61,6 +63,9 @@ def get_authorized_session(
 
     session = roleready_service.get_session_by_uuid(db, session_uuid)
     if not session:
+        raise HTTPException(status_code=404, detail="Assessment session not found.")
+    # Shared-link recruitment sittings are reachable only through their capability-based public API.
+    if session.workflow_type == "RECRUITMENT_ASSESSMENT":
         raise HTTPException(status_code=404, detail="Assessment session not found.")
 
     # 1. Check invitation token
@@ -169,6 +174,10 @@ class InterviewSubmissionSchema(BaseModel):
     transcript: Optional[List[Dict[str, Any]]] = None
     time_spent_seconds: Optional[int] = 0
     proctoring_violations: Optional[List[Dict[str, Any]]] = None
+
+class DraftSchema(BaseModel):
+    section: str
+    payload: Dict[str, Any] = {}
 
 class TerminateSessionSchema(BaseModel):
     reason: Optional[str] = "3/3 Malpractice Violations Recorded"
@@ -364,46 +373,54 @@ def get_student_assessment_history(
     completed_sessions = [s for s in sessions if _is_finished(s)]
     total_completed = len(completed_sessions)
 
-    # In-progress / unfinished session (most recent if any)
-    in_progress = next((s for s in sessions if not _is_finished(s)), None)
+    # In-progress / unfinished session (most recent if any); closed attempts (completed, timed out, abandoned) never reopen
+    in_progress = next((s for s in sessions if not _is_finished(s) and s.current_state not in roleready_service.TERMINAL_STATES), None)
 
     # Format session list
     records = []
     for s in sessions:
+        finished = _is_finished(s) or s.current_state in roleready_service.TERMINAL_STATES
         records.append({
             "id": s.id,
             "session_uuid": s.session_uuid,
             "target_role": s.target_role,
             "target_company": s.target_company,
             "current_state": s.current_state,
-            "is_completed": _is_finished(s),
+            "is_completed": finished,
+            "is_closed": s.current_state in roleready_service.TERMINAL_STATES,
+            "is_timed_out": s.current_state == models.RoleReadySessionState.TIMED_OUT,
             "is_disqualified": bool((s.final_report_data or {}).get("is_disqualified")),
             "termination_reason": (s.final_report_data or {}).get("termination_reason"),
-            "aptitude_score": round(float(s.aptitude_score or 0.0), 1),
-            "coding_score": round(float(s.coding_score or 0.0), 1),
-            "interview_score": round(float(s.interview_score or 0.0), 1),
-            "overall_readiness_score": round(float(s.overall_readiness_score or 0.0), 1),
+            **roleready_service.section_scores(s),                 # already two-decimal presentation values
+            # Only a completed attempt has an overall score; incomplete ones report null, never a placeholder zero
+            "overall_readiness_score": (round(float(roleready_service.reported_overall(s)), 2)
+                                        if roleready_service.reported_overall(s) is not None else None),
+            "scoring_model": policy.scoring_model_of(s.final_report_data) if s.current_state == models.RoleReadySessionState.COMPLETED else None,
             "started_at": s.started_at.isoformat() if s.started_at else None,
             "completed_at": s.completed_at.isoformat() if s.completed_at else None,
             "created_at": s.created_at.isoformat() if s.created_at else None,
-            "report_url": f"/assessment/{s.session_uuid}/report" if _is_finished(s) else None,
-            "continue_url": f"/assessment/{s.session_uuid}" if not _is_finished(s) else None,
+            "report_url": f"/assessment/{s.session_uuid}/report" if finished else None,
+            "continue_url": f"/assessment/{s.session_uuid}" if not finished else None,
         })
 
     # Latest assessment summary
     latest = records[0] if records else None
 
-    # Trends sorted chronologically (oldest to newest)
+    # Trends sorted chronologically (oldest to newest); only closed attempts have a meaningful trend point
     trends = []
     for s in reversed(sessions):
+        if s.current_state not in (models.RoleReadySessionState.COMPLETED, models.RoleReadySessionState.TIMED_OUT):
+            continue
+        sc = roleready_service.section_scores(s)
+        overall = roleready_service.reported_overall(s)
         trends.append({
             "date": s.created_at.strftime("%b %d") if s.created_at else "Assessment",
             "full_date": s.created_at.isoformat() if s.created_at else None,
             "role": s.target_role,
-            "aptitude": round(float(s.aptitude_score or 0.0), 1),
-            "coding": round(float(s.coding_score or 0.0), 1),
-            "interview": round(float(s.interview_score or 0.0), 1),
-            "overall": round(float(s.overall_readiness_score or 0.0), 1),
+            "aptitude": sc["aptitude_score"],
+            "coding": sc["coding_score"],
+            "interview": sc["interview_score"],
+            "overall": round(float(overall), 2) if overall is not None else None,
         })
 
     # Compute areas for improvement based on completed scores
@@ -488,19 +505,34 @@ def get_session_status(
         models.RoleReadySessionState.COMPLETED
     ]
 
+    overall_at = clock.aware(session.overall_deadline_at)
+    now = clock.now()
     return {
         "session_uuid": session.session_uuid,
         "target_role": session.target_role,
         "target_company": session.target_company,
         "current_state": session.current_state,
-        "aptitude_score": session.aptitude_score,
-        "coding_score": session.coding_score,
-        "interview_score": session.interview_score,
-        "overall_readiness_score": session.overall_readiness_score,
+        **roleready_service.section_scores(session),          # two decimals; null (not 0) for a section a timed-out attempt never reached
+        "overall_readiness_score": roleready_service.reported_overall(session),
         "coding_unlocked": coding_unlocked,
         "interview_unlocked": interview_unlocked,
-        "is_completed": session.current_state == models.RoleReadySessionState.COMPLETED
+        # A closed attempt (completed, timed out, abandoned) always routes to its report
+        "is_completed": session.current_state in roleready_service.TERMINAL_STATES,
+        "is_timed_out": session.current_state == models.RoleReadySessionState.TIMED_OUT,
+        "server_time": now.isoformat(),
+        "overall_deadline_at": overall_at.isoformat() if overall_at else None,
+        "overall_remaining_seconds": max(0, int((overall_at - now).total_seconds())) if overall_at else None,
     }
+
+
+@router.put("/session/{session_uuid}/draft")
+def save_session_draft(
+    payload: DraftSchema,
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """Autosave of in-progress work; scored by the server if the section or the 60-minute assessment ends first."""
+    return roleready_service.save_draft(db, session, payload.section, payload.payload)
 
 
 # ─── ROUND 1: APTITUDE ────────────────────────────────────────────────────────
@@ -929,6 +961,7 @@ def dispatch_batch_assessments(
         portal_base = _resolve_portal_base_url(request)
         portal_url = f"{portal_base}/portal/roleready?token={token}"
 
+
         results.append({
             "invitation_id": invitation.id,
             "candidate_id": cand.id,
@@ -986,10 +1019,8 @@ def get_admin_candidate_report(
         "target_company": session.target_company if session else "RoleReady",
         "jd_title": session.jd_title if session else cand.role,
         "assessment_state": session.current_state if session else "NOT_STARTED",
-        "overall_readiness_score": session.overall_readiness_score if session else 0.0,
-        "aptitude_score": session.aptitude_score if session else None,
-        "coding_score": session.coding_score if session else None,
-        "interview_score": session.interview_score if session else None,
+        "overall_readiness_score": roleready_service.reported_overall(session) if session else None,
+        **(roleready_service.section_scores(session) if session else {"aptitude_score": None, "coding_score": None, "interview_score": None}),
         "demonstrated_competencies": final_report.get("demonstrated_competencies", [
             "Technical Problem Solving", "Algorithmic Reasoning", "Professional Communication"
         ]),

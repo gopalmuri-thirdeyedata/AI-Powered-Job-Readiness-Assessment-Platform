@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Vapi from '@vapi-ai/web';
+import { VAPI_CONNECT_TIMEOUT_MS, classifyVapiError, disposeVapi, interviewSubmitErrorMessage, isClosedAttemptStatus, toDisplayText } from '../../utils/vapiSession';
 import {
     Clock,
     CheckCircle2,
@@ -48,7 +49,7 @@ import MicrophonePicker from '../../components/student-ui/MicrophonePicker';
 import { shouldWarnSilence } from '../../utils/micLevel';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
 import FullscreenGateModal from '../../components/FullscreenGateModal';
-import rolereadyApi from '../../services/rolereadyApi';
+import { createStudentAssessmentApi } from '../../services/assessmentApi';
 import API_URL from '../../apiConfig';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 
@@ -89,11 +90,14 @@ const SUBMIT_TIPS = [
     'Busy sandbox? Running every hidden test can take up to a minute.',
 ];
 
+// Canonical limits (services/assessment_policy.py): 20 minutes per section, 60 minutes overall. These are only the display
+// placeholder shown until the server answers; the countdown is always re-hydrated from the server's remaining_seconds.
 const ROUND_DURATIONS = {
-    aptitude: 15 * 60, // 15 mins
-    coding: 30 * 60,   // 30 mins
-    interview: 15 * 60 // 15 mins
+    aptitude: 20 * 60,
+    coding: 20 * 60,
+    interview: 20 * 60
 };
+const DRAFT_DEBOUNCE_MS = 4000;
 
 const MAX_MALPRACTICE_WARNINGS = 3;
 
@@ -110,6 +114,7 @@ const ProctorCameraFeed = ({
     isModelActive = false,
     detectionStatus = 'detected',
     violationCount = 0,
+    limit = MAX_MALPRACTICE_WARNINGS,
     className = "",
     showDiagnostics = true,
     compact = false
@@ -184,7 +189,7 @@ const ProctorCameraFeed = ({
                     </span>
 
                     <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-mono whitespace-nowrap">
-                        Warnings: <strong className={violationCount > 0 ? "text-amber-600 font-bold" : "text-slate-800"}>{violationCount}/3</strong>
+                        {limit ? 'Warnings' : 'Events'}: <strong className={violationCount > 0 ? "text-amber-600 font-bold" : "text-slate-800"}>{violationCount}{limit ? `/${limit}` : ''}</strong>
                     </span>
                 </div>
             </div>
@@ -256,9 +261,32 @@ const ProctorCameraFeed = ({
     );
 };
 
-const RoleReadyAssessment = () => {
-    const { sessionUuid } = useParams();
+/**
+ * The assessment workspace shared by the Student Platform and the Admin Recruitment shared-link workflow.
+ * Aptitude, Monaco coding (Python / Java), the Vapi voice interview, timers, drafts and proctoring are this one
+ * implementation; a workflow differs only through the `api` adapter (services/assessmentApi.js) it is given:
+ *   mode               'student' | 'recruitment'
+ *   skipInstructions   recruitment candidates already read and acknowledged the instructions: start at the device check
+ *   proctoringPolicy   'terminate' (student: three strikes end the attempt) | 'flag' (recruitment: events are recorded
+ *                      for the hiring team; a browser event alone never ends or invalidates an attempt)
+ *   onFinished(outcome) called instead of routing to the student report
+ */
+export const AssessmentWorkspace = ({
+    sessionUuid,
+    api,
+    mode = 'student',
+    skipInstructions = false,
+    proctoringPolicy = 'terminate',
+    onFinished = null,
+}) => {
     const navigate = useNavigate();
+    const isRecruitment = mode === 'recruitment';
+    const strikeLimit = proctoringPolicy === 'flag' ? null : MAX_MALPRACTICE_WARNINGS;
+
+    const finishAssessment = useCallback((outcome = 'completed') => {
+        if (onFinished) onFinished(outcome);
+        else navigate(`/assessment/${sessionUuid}/report`);
+    }, [onFinished, navigate, sessionUuid]);
 
     // ── Session & Overall Workflow State ─────────────────────────────
     const [sessionData, setSessionData] = useState(null);
@@ -315,6 +343,18 @@ const RoleReadyAssessment = () => {
 
         if (warningBannerTimerRef.current) clearTimeout(warningBannerTimerRef.current);
 
+        if (proctoringPolicy === 'flag') {
+            // Recruitment: record the event for the hiring team and keep the sitting alive. A client-side event alone is never
+            // treated as a verdict (no termination, no score forfeiture).
+            violationsRef.current = [...violationsRef.current, violationEntry];
+            setWarningBanner({
+                message: `Integrity event ${count}: ${reason}. It has been recorded and will be shared with the hiring team. Please stay in fullscreen on this assessment tab.`,
+                level: count >= MAX_MALPRACTICE_WARNINGS ? 'critical' : 'warning'
+            });
+            warningBannerTimerRef.current = setTimeout(() => setWarningBanner(null), 8000);
+            return;
+        }
+
         if (count === 1) {
             setWarningBanner({
                 message: `Warning 1/${MAX_MALPRACTICE_WARNINGS}: ${reason}. Please remain in fullscreen on this assessment tab.`,
@@ -343,7 +383,7 @@ const RoleReadyAssessment = () => {
             return;
         }
         violationsRef.current = [...violationsRef.current, violationEntry];
-    }, [currentStage]);
+    }, [currentStage, proctoringPolicy]);
 
     // ── Silent Real-Time YOLOv8n Vision Proctoring ────────────────────
     const {
@@ -358,6 +398,7 @@ const RoleReadyAssessment = () => {
     } = useFaceProctoring({
         enabled: currentStage !== 'instructions' && currentStage !== 'device_check' && !sessionData?.is_completed,
         externalStream: cameraStream,
+        getAuthHeaders: api.proctorHeaders || null,
         onViolation: (reason) => {
             handleAnyViolation(reason);
         }
@@ -409,6 +450,28 @@ const RoleReadyAssessment = () => {
     // ── Round Timers ─────────────────────────────────────────────────
     const [timeLeft, setTimeLeft] = useState(ROUND_DURATIONS.aptitude);
     const [roundStartTime, setRoundStartTime] = useState(Date.now());
+    const [overallLeft, setOverallLeft] = useState(null);
+    const overallDeadlineRef = useRef(null);
+
+    // The server is the only clock that counts: every response re-hydrates both countdowns (the on-screen ticks are display only).
+    const syncTiming = useCallback((res) => {
+        if (!res) return;
+        if (typeof res.remaining_seconds === 'number') setTimeLeft(res.remaining_seconds);
+        if (typeof res.overall_remaining_seconds === 'number') {
+            overallDeadlineRef.current = Date.now() + res.overall_remaining_seconds * 1000;
+            setOverallLeft(res.overall_remaining_seconds);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (overallDeadlineRef.current === null && overallLeft === null) return undefined;
+        const tick = setInterval(() => {
+            if (overallDeadlineRef.current !== null) {
+                setOverallLeft(Math.max(0, Math.round((overallDeadlineRef.current - Date.now()) / 1000)));
+            }
+        }, 1000);
+        return () => clearInterval(tick);
+    }, [overallLeft === null]);
 
     useEffect(() => {
         if (currentStage === 'instructions' || currentStage === 'device_check' || sessionData?.is_completed) return;
@@ -467,9 +530,16 @@ const RoleReadyAssessment = () => {
     const [vapiTranscript, setVapiTranscript] = useState([]);
     const [vapiIsMuted, setVapiIsMuted] = useState(false);
     const [currentSpeaker, setCurrentSpeaker] = useState(null); // 'ai' | 'user'
-    const [vapiConnectionError, setVapiConnectionError] = useState(null);
+    const [vapiConnectionError, setVapiConnectionErrorRaw] = useState(null);
+    // Whatever the SDK or API hands over, only text is ever stored: an object rendered in JSX would white-screen the candidate.
+    const setVapiConnectionError = useCallback((value) => setVapiConnectionErrorRaw(
+        value == null ? null : toDisplayText(value, 'The voice connection failed. Choose Retry Connection.')), []);
     const [showEndInterviewModal, setShowEndInterviewModal] = useState(false);
+    const [writtenFallback, setWrittenFallback] = useState(false);
     const vapiRef = useRef(null);
+    const vapiConnectTimerRef = useRef(null);
+    const interviewSubmitLockRef = useRef(false);     // synchronous guard: state updates are too late to stop a double submit
+    const [interviewSubmitError, setInterviewSubmitError] = useState(null);
     const vapiTranscriptScrollRef = useRef(null);
 
     // ── Microphone: chosen device, live level, and "we can hear you" ──────
@@ -633,17 +703,24 @@ const RoleReadyAssessment = () => {
     // ── Session Loader & State Restoration ───────────────────────────
     const fetchSession = useCallback(async () => {
         try {
-            const data = await rolereadyApi.getSessionStatus(sessionUuid);
+            const data = await api.getSession();
             setSessionData(data);
+            syncTiming(data);
 
             if (data.is_completed) {
-                navigate(`/assessment/${sessionUuid}/report`);
+                finishAssessment('closed');
                 return;
             }
 
             // Restore correct round state
             if (data.current_state === 'NOT_STARTED') {
-                setCurrentStage('instructions');
+                if (skipInstructions) {
+                    // Recruitment: the instructions were read and acknowledged on the previous page; go straight to the device check.
+                    setCurrentStage('device_check');
+                    initHardware();
+                } else {
+                    setCurrentStage('instructions');
+                }
             } else if (data.interview_unlocked) {
                 setCurrentStage('interview');
                 setTimeLeft(ROUND_DURATIONS.interview);
@@ -666,7 +743,7 @@ const RoleReadyAssessment = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [sessionUuid, navigate, initHardware]);
+    }, [api, finishAssessment, initHardware, skipInstructions, syncTiming]);
 
     useEffect(() => {
         fetchSession();
@@ -675,10 +752,10 @@ const RoleReadyAssessment = () => {
     // ── Round 1: Aptitude Operations ─────────────────────────────────
     const loadAptitude = async () => {
         try {
-            const res = await rolereadyApi.startAptitude(sessionUuid);
+            const res = await api.startAptitude();
             setAptitudeQuestions(res.questions || []);
             setRoundStartTime(Date.now());
-            if (typeof res.remaining_seconds === 'number') setTimeLeft(res.remaining_seconds);
+            syncTiming(res);
         } catch (err) {
             console.error("Failed to load aptitude questions:", err);
         }
@@ -699,7 +776,7 @@ const RoleReadyAssessment = () => {
         const submitStartedAt = Date.now();
 
         try {
-            await rolereadyApi.submitAptitude(sessionUuid, aptitudeAnswers, timeSpent, violations);
+            await api.submitAptitude(aptitudeAnswers, timeSpent, violations);
             await holdAnimation(submitStartedAt);
             setSubmitDone(true);
             await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
@@ -709,10 +786,11 @@ const RoleReadyAssessment = () => {
             setCurrentStage('coding');
             setTimeLeft(ROUND_DURATIONS.coding);
             const [updated] = await Promise.all([
-                rolereadyApi.getSessionStatus(sessionUuid),
+                api.getSession(),
                 loadCoding()
             ]);
             setSessionData(updated);
+            if (updated.is_completed) finishAssessment('closed');   // the overall deadline ended the attempt meanwhile
         } catch (err) {
             console.error("Aptitude submission error:", err);
             alert(err.response?.data?.detail || "Aptitude submission failed. Please retry.");
@@ -725,11 +803,11 @@ const RoleReadyAssessment = () => {
     // ── Round 2: Coding Operations ───────────────────────────────────
     const loadCoding = async () => {
         try {
-            const res = await rolereadyApi.startCoding(sessionUuid);
+            const res = await api.startCoding();
             const probs = res.problems || [];
             setCodingProblems(probs);
             setRoundStartTime(Date.now());
-            if (typeof res.remaining_seconds === 'number') setTimeLeft(res.remaining_seconds);
+            syncTiming(res);
 
             const initialSols = {};
             probs.forEach(p => {
@@ -805,7 +883,7 @@ const RoleReadyAssessment = () => {
         setCodeOutput(null);
 
         try {
-            const res = await rolereadyApi.runCodeTest(sessionUuid, probId, sol.code, sol.language || selectedLanguage);
+            const res = await api.runCode(probId, sol.code, sol.language || selectedLanguage);
             setCodeOutput(res);
         } catch (err) {
             console.error("Run code error:", err);
@@ -828,14 +906,21 @@ const RoleReadyAssessment = () => {
         const submitStartedAt = Date.now();
 
         try {
-            const res = await rolereadyApi.submitCoding(sessionUuid, codeSolutions, timeSpent, violations);
+            const res = await api.submitCoding(codeSolutions, timeSpent, violations);
             await holdAnimation(submitStartedAt);
             setSubmitDone(true);
             await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
             // Show a clear "submitted" confirmation with the per-problem results; the student then
             // continues to the interview (which is provisioned only when they do).
             setCodingSubmitResult(res || { results: [] });
-            try { setSessionData(await rolereadyApi.getSessionStatus(sessionUuid)); } catch (e) { /* status refresh is best effort */ }
+            try {
+                const updated = await api.getSession();
+                setSessionData(updated);
+                if (updated?.is_completed) {
+                    finishAssessment('closed');
+                    return;
+                }
+            } catch (e) { /* status refresh is best effort */ }
         } catch (err) {
             console.error("Coding submission error:", err);
             const status = err.response?.status;
@@ -869,9 +954,9 @@ const RoleReadyAssessment = () => {
     // ── Vapi Lifecycle Cleanup ───────────────────────────────────────
     useEffect(() => {
         return () => {
-            if (vapiRef.current) {
-                try { vapiRef.current.stop(); } catch (e) {}
-            }
+            clearTimeout(vapiConnectTimerRef.current);
+            disposeVapi(vapiRef.current);
+            vapiRef.current = null;
         };
     }, []);
 
@@ -884,17 +969,28 @@ const RoleReadyAssessment = () => {
         }
 
         try {
-            if (vapiRef.current) {
-                try { vapiRef.current.stop(); } catch (e) {}
-            }
+            clearTimeout(vapiConnectTimerRef.current);
+            disposeVapi(vapiRef.current);          // stop the previous call AND detach its listeners (no stale call-end later)
 
             const vapi = new Vapi(VAPI_PUBLIC_KEY);
             vapiRef.current = vapi;
+            const current = () => vapiRef.current === vapi;      // events from a replaced instance are ignored
             setVapiCallStatus('connecting');
             setVapiSpeakingState('connecting');
             setVapiConnectionError(null);
 
+            // A connection that never completes must not leave the candidate on a spinner with no way out.
+            vapiConnectTimerRef.current = setTimeout(() => {
+                if (!current()) return;
+                disposeVapi(vapi);
+                vapiRef.current = null;
+                setVapiCallStatus('error');
+                setVapiConnectionError('The voice connection timed out. Choose Retry Connection.');
+            }, VAPI_CONNECT_TIMEOUT_MS);
+
             vapi.on('call-start', () => {
+                if (!current()) return;
+                clearTimeout(vapiConnectTimerRef.current);
                 applyMicToCall();
                 setVapiCallStatus('active');
                 setVapiSpeakingState('ai_speaking');
@@ -902,22 +998,26 @@ const RoleReadyAssessment = () => {
             });
 
             vapi.on('speech-start', () => {
+                if (!current()) return;
                 listeningSinceRef.current = 0;
                 setVapiSpeakingState('ai_speaking');
                 setCurrentSpeaker('ai');
             });
 
             vapi.on('speech-end', () => {
+                if (!current()) return;
                 listeningSinceRef.current = Date.now();
                 setVapiSpeakingState('listening');
                 setCurrentSpeaker(null);
             });
 
             vapi.on('volume-level', (vol) => {
+                if (!current()) return;
                 setVapiVolume(vol || 0);
             });
 
             vapi.on('message', (msg) => {
+                if (!current()) return;
                 if (msg.type === 'transcript' && msg.transcriptType === 'final') {
                     const role = (msg.role === 'assistant' || msg.role === 'ai') ? 'ai' : 'user';
                     const newEntry = {
@@ -949,24 +1049,31 @@ const RoleReadyAssessment = () => {
             });
 
             vapi.on('call-end', () => {
+                if (!current()) return;
+                clearTimeout(vapiConnectTimerRef.current);
                 setVapiCallStatus('ended');
                 setVapiSpeakingState('completed');
                 setCurrentSpeaker(null);
             });
 
-            vapi.on('error', (err) => {
+            const failCall = (err) => {
+                if (!current()) return;
+                clearTimeout(vapiConnectTimerRef.current);
                 console.error("[RoleReady Vapi Error]:", err);
                 setVapiCallStatus('error');
-                const errMsg = err?.message || err?.error?.message || (typeof err === 'string' ? err : null);
-                setVapiConnectionError(errMsg || "Failed to establish voice session with Vapi.");
+                setVapiConnectionError(classifyVapiError(err).message);      // e.g. an explicit microphone-permission message
                 setCurrentSpeaker(null);
-            });
+            };
+            vapi.on('error', failCall);
+            // Daily reports a blocked / missing microphone through camera-error, not error: treat it as a failed connection too.
+            vapi.on('camera-error', failCall);
 
             vapi.start(assistantTarget);
         } catch (err) {
             console.error("[RoleReady Vapi Init Error]:", err);
+            clearTimeout(vapiConnectTimerRef.current);
             setVapiCallStatus('error');
-            setVapiConnectionError(err.message || "Failed to initialize WebRTC voice call.");
+            setVapiConnectionError(classifyVapiError(err).message);
             setCurrentSpeaker(null);
         }
     }, [applyMicToCall]);
@@ -987,15 +1094,16 @@ const RoleReadyAssessment = () => {
         setVapiCallStatus('connecting');
         setVapiConnectionError(null);
         try {
-            const res = await rolereadyApi.initVapiSession(sessionUuid);
-            const manualId = localStorage.getItem('vapi_manual_id');
+            const res = await api.initVapi();
+            // The assistant-ID override is a Student Platform developer aid; recruitment candidates never get one.
+            const manualId = isRecruitment ? null : localStorage.getItem('vapi_manual_id');
             const targetId = manualId || res.assistantId || import.meta.env.VITE_VAPI_ASSISTANT_ID;
             const targetConfig = manualId ? null : (res.assistantConfig || null);
             setVapiAssistantId(targetId);
             setVapiAssistantConfig(targetConfig);
             setInterviewQuestions(res.questions || []);
             setRoundStartTime(Date.now());
-            if (typeof res.remaining_seconds === 'number') setTimeLeft(res.remaining_seconds);
+            syncTiming(res);
 
             // Prefer dynamic assistantConfig object if available so WebRTC call connects directly
             // even across different Vapi org keys without "assistantId does not exist" errors
@@ -1008,7 +1116,7 @@ const RoleReadyAssessment = () => {
             }
         } catch (err) {
             console.error("Failed to load Vapi interview session:", err);
-            const targetId = localStorage.getItem('vapi_manual_id') || import.meta.env.VITE_VAPI_ASSISTANT_ID;
+            const targetId = (isRecruitment ? null : localStorage.getItem('vapi_manual_id')) || import.meta.env.VITE_VAPI_ASSISTANT_ID;
             if (targetId) {
                 setVapiAssistantId(targetId);
                 startVapiCall(targetId);
@@ -1017,10 +1125,10 @@ const RoleReadyAssessment = () => {
                 setVapiConnectionError(err.response?.data?.detail || "Could not provision Vapi session from backend.");
             }
             try {
-                const fallback = await rolereadyApi.startInterview(sessionUuid);
+                const fallback = await api.startInterview();
                 setInterviewQuestions(fallback.questions || []);
                 setRoundStartTime(Date.now());
-                if (typeof fallback.remaining_seconds === 'number') setTimeLeft(fallback.remaining_seconds);
+                syncTiming(fallback);
             } catch (fbErr) {
                 console.error("Interview fallback error:", fbErr);
             }
@@ -1118,14 +1226,16 @@ const RoleReadyAssessment = () => {
     };
 
     const handleSubmitInterview = async () => {
-        if (isSubmittingInterview) return;
+        if (interviewSubmitLockRef.current) return;       // double click / timer + button race: exactly one submission in flight
+        interviewSubmitLockRef.current = true;
         setIsSubmittingInterview(true);
+        setInterviewSubmitError(null);
         const timeSpent = Math.max(1, Math.round((Date.now() - roundStartTime) / 1000));
         const submitStartedAt = Date.now();
 
-        if (vapiRef.current) {
-            try { vapiRef.current.stop(); } catch (e) {}
-        }
+        clearTimeout(vapiConnectTimerRef.current);
+        disposeVapi(vapiRef.current);                     // the call ends here: stop it and detach its listeners
+        vapiRef.current = null;
 
         try {
             const formattedAnswers = segmentInterviewTranscript(
@@ -1134,21 +1244,30 @@ const RoleReadyAssessment = () => {
                 interviewResponses
             );
 
-            await rolereadyApi.submitInterview(sessionUuid, formattedAnswers, timeSpent, violations, vapiTranscript);
+            await api.submitInterview(formattedAnswers, timeSpent, violations, vapiTranscript);
             await holdAnimation(submitStartedAt);
             setSubmitDone(true);
             await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
-            markStudentTaskCompleted();
-            navigate(`/assessment/${sessionUuid}/report`);
-        } catch (err) {
-            console.error("Interview submission error:", err);
-            await holdAnimation(submitStartedAt);
-            markStudentTaskCompleted();
-            navigate(`/assessment/${sessionUuid}/report`);
-        } finally {
+            if (!isRecruitment) markStudentTaskCompleted();
+            finishAssessment('completed');                // the server accepted the submission (the lock stays set: it is final)
             setIsSubmittingInterview(false);
             setSubmitDone(false);
             setShowEndInterviewModal(false);
+        } catch (err) {
+            console.error("Interview submission error:", err);
+            if (isClosedAttemptStatus(err?.response?.status)) {
+                // The server already closed the attempt (deadline / closed / already submitted): leave the interview.
+                if (!isRecruitment) markStudentTaskCompleted();
+                finishAssessment('closed');
+                setIsSubmittingInterview(false);
+                setShowEndInterviewModal(false);
+                return;
+            }
+            // Not recorded (network, 5xx, 401/403): never present this as a completed assessment. Keep the screen and allow a retry.
+            interviewSubmitLockRef.current = false;
+            setIsSubmittingInterview(false);
+            setInterviewSubmitError(interviewSubmitErrorMessage(err));
+            setShowEndInterviewModal(true);
         }
     };
 
@@ -1161,9 +1280,9 @@ const RoleReadyAssessment = () => {
 
     const handleAutoSubmitDueToMalpractice = async (reason, allViolations = violations) => {
         // Instantly shut off media tracks and Vapi call
-        if (vapiRef.current) {
-            try { vapiRef.current.stop(); } catch (e) {}
-        }
+        clearTimeout(vapiConnectTimerRef.current);
+        disposeVapi(vapiRef.current);
+        vapiRef.current = null;
         if (cameraStream) {
             try { cameraStream.getTracks().forEach(t => t.stop()); } catch (e) {}
         }
@@ -1171,14 +1290,14 @@ const RoleReadyAssessment = () => {
         try {
             // Never let a slow network keep the candidate on the modal: cap the wait at 4s.
             await Promise.race([
-                rolereadyApi.terminateSession(sessionUuid, reason, allViolations, currentStage),
+                api.terminate(reason, allViolations, currentStage),
                 new Promise(resolve => setTimeout(resolve, 4000))
             ]);
         } catch (err) {
             console.error("Fast malpractice termination error:", err);
         } finally {
             markStudentTaskCompleted();
-            navigate(`/assessment/${sessionUuid}/report`);
+            finishAssessment('terminated');
         }
     };
 
@@ -1201,14 +1320,19 @@ const RoleReadyAssessment = () => {
             }
 
             // Step 3: Initialize Aptitude round on server
-            await rolereadyApi.startAptitude(sessionUuid);
-            const updated = await rolereadyApi.getSessionStatus(sessionUuid);
+            // (Recruitment: this is the explicit start. The attempt, its rules acknowledgement and the 60-minute deadline are created
+            // by the server only now.)
+            const started = await api.startAptitude();          // ONE start request: its response already carries the questions
+            const updated = await api.getSession();
             setSessionData(updated);
+            syncTiming(updated);
 
             // Step 4: Advance to Aptitude round workspace
             setCurrentStage('aptitude');
             setTimeLeft(ROUND_DURATIONS.aptitude);
-            await loadAptitude();
+            setAptitudeQuestions(started.questions || []);
+            setRoundStartTime(Date.now());
+            syncTiming(started);
         } catch (err) {
             console.error("Failed to start assessment:", err);
             setLaunchError(err.response?.data?.detail || err.message || "Could not launch assessment session. Please retry.");
@@ -1216,6 +1340,23 @@ const RoleReadyAssessment = () => {
             setIsStartingAssessment(false);
         }
     };
+
+    // ── Draft autosave: partial work is scored by the server if the section or the whole assessment ends before submission ──
+    const submittingAny = isSubmittingApt || isSubmittingCoding || isSubmittingInterview;
+    useEffect(() => {
+        if (!['aptitude', 'coding', 'interview'].includes(currentStage) || submittingAny || sessionData?.is_completed) return undefined;
+        const timer = setTimeout(() => {
+            let payload = null;
+            if (currentStage === 'aptitude') payload = { answers: aptitudeAnswers };
+            else if (currentStage === 'coding') payload = { solutions: codeSolutions };
+            else payload = {
+                answers: segmentInterviewTranscript(interviewQuestions, vapiTranscript, interviewResponses),
+                transcript: vapiTranscript.map(({ role, text }) => ({ role, text })),
+            };
+            Promise.resolve(api.saveDraft(currentStage, payload, violations)).catch(() => {});   // best effort; never blocks the candidate
+        }, DRAFT_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+    }, [api, currentStage, aptitudeAnswers, codeSolutions, interviewResponses, vapiTranscript, violations, submittingAny, sessionData?.is_completed]);
 
     // ── Loading & Error Displays ─────────────────────────────────────
     if (isLoading) {
@@ -1235,12 +1376,14 @@ const RoleReadyAssessment = () => {
                 </div>
                 <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Unable to Access Assessment</h2>
                 <p className="text-sm mt-1.5 max-w-md text-slate-600 leading-relaxed">{error}</p>
-                <button
-                    onClick={() => navigate('/assessment/setup')}
-                    className="mt-6 px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all cursor-pointer"
-                >
-                    Return to Assessment Setup
-                </button>
+                {!isRecruitment && (
+                    <button
+                        onClick={() => navigate('/assessment/setup')}
+                        className="mt-6 px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all cursor-pointer"
+                    >
+                        Return to Assessment Setup
+                    </button>
+                )}
             </div>
         );
     }
@@ -1413,7 +1556,13 @@ const RoleReadyAssessment = () => {
                                         : 'bg-slate-50 text-slate-800 border-slate-200'
                             }`}>
                                 <Clock className={`w-3.5 h-3.5 ${timeLeft <= 120 ? 'text-red-600' : timeLeft <= 300 ? 'text-amber-600' : 'text-emerald-600'}`} />
-                                <span>{formatTimer(timeLeft)}</span>
+                                <span aria-label="Section time remaining">{formatTimer(timeLeft)}</span>
+                            </div>
+                        )}
+                        {currentStage !== 'instructions' && currentStage !== 'device_check' && overallLeft !== null && (
+                            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-mono text-xs font-bold border bg-slate-50 text-slate-600 border-slate-200" title="Time left for the whole assessment (60 minutes)">
+                                <span className="text-[10px] uppercase tracking-wider text-slate-400">Total</span>
+                                <span aria-label="Overall time remaining">{formatTimer(overallLeft)}</span>
                             </div>
                         )}
 
@@ -1427,7 +1576,7 @@ const RoleReadyAssessment = () => {
                                         : 'bg-red-50 text-red-700 border-red-300 animate-pulse motion-reduce:animate-none'
                             }`}>
                                 <Shield className="w-3.5 h-3.5" />
-                                <span>Warnings: {violationCount}/{MAX_MALPRACTICE_WARNINGS}</span>
+                                <span>{strikeLimit ? `Warnings: ${violationCount}/${strikeLimit}` : `Integrity events: ${violationCount}`}</span>
                             </div>
                         )}
                     </div>
@@ -1495,9 +1644,9 @@ const RoleReadyAssessment = () => {
                             <div className="relative" aria-hidden="true">
                                 <div className="flex h-2 rounded-full overflow-hidden gap-0.5 bg-slate-100">
                                     {[
-                                        { w: '25%', c: 'bg-emerald-500' },
-                                        { w: '50%', c: 'bg-cyan-500' },
-                                        { w: '25%', c: 'bg-amber-500' },
+                                        { w: '33.3%', c: 'bg-emerald-500' },
+                                        { w: '33.3%', c: 'bg-cyan-500' },
+                                        { w: '33.3%', c: 'bg-amber-500' },
                                     ].map((seg, i) => (
                                         <motion.div
                                             key={i}
@@ -1514,9 +1663,9 @@ const RoleReadyAssessment = () => {
                             {/* 3-Round Timeline Cards */}
                             <div className="relative grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {[
-                                    { label: 'Round 1', mins: '15 Mins', title: 'Aptitude & Reasoning', Icon: BrainCircuit, desc: 'Role-tailored domain logic, psychometrics, and quantitative problem solving questions.', hover: 'hover:border-emerald-300 hover:shadow-emerald-100', lab: 'text-emerald-700', pill: 'bg-emerald-100 text-emerald-800', ic: 'text-emerald-600' },
-                                    { label: 'Round 2', mins: '30 Mins', title: 'Sandboxed Coding', Icon: Code2, desc: 'Real coding problems executed in an isolated runtime container against public and hidden test cases.', hover: 'hover:border-cyan-300 hover:shadow-cyan-100', lab: 'text-cyan-700', pill: 'bg-cyan-100 text-cyan-800', ic: 'text-cyan-600' },
-                                    { label: 'Round 3', mins: '15 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
+                                    { label: 'Round 1', mins: '20 Mins', title: 'Aptitude & Reasoning', Icon: BrainCircuit, desc: 'Role-tailored domain logic, psychometrics, and quantitative problem solving questions. Counts for one third of your overall score.', hover: 'hover:border-emerald-300 hover:shadow-emerald-100', lab: 'text-emerald-700', pill: 'bg-emerald-100 text-emerald-800', ic: 'text-emerald-600' },
+                                    { label: 'Round 2', mins: '20 Mins', title: 'Sandboxed Coding', Icon: Code2, desc: 'Real coding problems executed in an isolated runtime container against public and hidden test cases.', hover: 'hover:border-cyan-300 hover:shadow-cyan-100', lab: 'text-cyan-700', pill: 'bg-cyan-100 text-cyan-800', ic: 'text-cyan-600' },
+                                    { label: 'Round 3', mins: '20 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
                                 ].map((r, i) => (
                                     <Enter
                                         key={r.label}
@@ -1996,7 +2145,7 @@ const RoleReadyAssessment = () => {
                                     suspectLabel={suspectLabel}
                                     isModelActive={isModelActive}
                                     detectionStatus={detectionStatus}
-                                    violationCount={violationCount}
+                                    violationCount={violationCount} limit={strikeLimit}
                                     className="w-full"
                                 />
 
@@ -2019,10 +2168,10 @@ const RoleReadyAssessment = () => {
                                                 ? 'bg-amber-50 text-amber-800 border-amber-300' 
                                                 : 'bg-red-50 text-red-800 border-red-300'
                                     }`}>
-                                        {violationCount}/3 Strikes
+                                        {strikeLimit ? `${violationCount}/${strikeLimit} Strikes` : `${violationCount} recorded`}
                                     </span>
                                 </div>
-                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                {strikeLimit && <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                                     <div 
                                         className={`h-full transition-all duration-300 ${
                                             violationCount === 0 
@@ -2034,13 +2183,23 @@ const RoleReadyAssessment = () => {
                                                         : 'w-full bg-red-600'
                                         }`} 
                                     />
-                                </div>
-                                <p className="text-[11px] text-slate-500 leading-tight">
-                                    {violationCount === 0 && "No violations detected. Session running in good standing."}
-                                    {violationCount === 1 && "Warning 1 recorded. Please do not switch tabs or minimize window."}
-                                    {violationCount === 2 && "Final warning! 1 more strike will automatically submit your test."}
-                                    {violationCount >= 3 && "Maximum strikes exceeded. Assessment terminated."}
-                                </p>
+                                </div>}
+                                {/* Recruitment ('flag' policy) never ends a sitting on a browser event: no strikes, no "terminated" wording. */}
+                                {!strikeLimit && (
+                                    <p className="text-[11px] text-slate-500 leading-tight">
+                                        {violationCount === 0
+                                            ? "No integrity events detected."
+                                            : "Integrity events are recorded for the hiring team. Your assessment continues; please stay in fullscreen on this tab."}
+                                    </p>
+                                )}
+                                {strikeLimit && (
+                                    <p className="text-[11px] text-slate-500 leading-tight">
+                                        {violationCount === 0 && "No violations detected. Session running in good standing."}
+                                        {violationCount === 1 && "Warning 1 recorded. Please do not switch tabs or minimize window."}
+                                        {violationCount === 2 && "Final warning! 1 more strike will automatically submit your test."}
+                                        {violationCount >= 3 && "Maximum strikes exceeded. Assessment terminated."}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Question Palette Widget */}
@@ -2270,7 +2429,7 @@ const RoleReadyAssessment = () => {
                                                 suspectLabel={suspectLabel}
                                                 isModelActive={isModelActive}
                                                 detectionStatus={detectionStatus}
-                                                violationCount={violationCount}
+                                                violationCount={violationCount} limit={strikeLimit}
                                                 compact={true}
                                             />
                                         </div>
@@ -2305,10 +2464,12 @@ const RoleReadyAssessment = () => {
                                                 </p>
 
                                                 <div className="space-y-2.5 text-xs pt-1">
-                                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                                        <span className="font-bold text-slate-800 block mb-1">Constraints:</span>
-                                                        <span className="font-mono text-slate-700">{activeProblem.constraints}</span>
-                                                    </div>
+                                                    {String(activeProblem.constraints || '').trim() && (
+                                                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                                            <span className="font-bold text-slate-800 block mb-1">Constraints:</span>
+                                                            <span className="font-mono text-slate-700">{activeProblem.constraints}</span>
+                                                        </div>
+                                                    )}
 
                                                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                                                         <span className="font-bold text-slate-800 block mb-1">Input Format:</span>
@@ -2551,7 +2712,7 @@ const RoleReadyAssessment = () => {
                                                         suspectLabel={suspectLabel}
                                                         isModelActive={isModelActive}
                                                         detectionStatus={detectionStatus}
-                                                        violationCount={violationCount}
+                                                        violationCount={violationCount} limit={strikeLimit}
                                                         className="w-full h-full object-cover"
                                                     />
                                                     <div className="absolute top-3 left-3 bg-gray-900/80 backdrop-blur-sm px-2.5 py-1 rounded text-xs font-medium z-10 text-white border border-white/10 flex items-center gap-1.5">
@@ -2706,7 +2867,7 @@ const RoleReadyAssessment = () => {
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const manualId = localStorage.getItem('vapi_manual_id');
+                                                    const manualId = isRecruitment ? null : localStorage.getItem('vapi_manual_id');
                                                     const target = manualId || vapiAssistantConfig || vapiAssistantId;
                                                     if (target) startVapiCall(target);
                                                     else loadInterview();
@@ -2715,7 +2876,15 @@ const RoleReadyAssessment = () => {
                                             >
                                                 Retry Connection
                                             </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setWrittenFallback(true)}
+                                                className="ml-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                                            >
+                                                Answer in writing instead
+                                            </button>
 
+                                            {!isRecruitment && (
                                             <div className="mt-4 pt-4 border-t border-gray-800 text-left">
                                                 <p className="text-xs text-gray-400 mb-1.5 font-medium">Assistant ID Override (Optional):</p>
                                                 <input
@@ -2733,6 +2902,39 @@ const RoleReadyAssessment = () => {
                                                 />
                                                 <p className="text-[10px] text-gray-500">Saved ID will be used on Retry</p>
                                             </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Written fallback: only reachable after the voice connection failed; voice stays the default */}
+                                {writtenFallback && vapiCallStatus === 'error' && (
+                                    <div className="absolute inset-0 bg-[#0a0a0a] z-50 overflow-y-auto p-4 sm:p-8">
+                                        <div className="max-w-3xl mx-auto space-y-4">
+                                            <h3 className="text-base font-bold text-white">Written interview answers</h3>
+                                            <p className="text-xs text-gray-400">The voice connection could not be established. Answer each question in writing, then choose Finish interview. Be specific: explain your reasoning, trade-offs and edge cases.</p>
+                                            {interviewQuestions.map((q, i) => (
+                                                <div key={q.id || i} className="bg-[#161616] border border-gray-800 rounded-xl p-4 space-y-2">
+                                                    <p className="text-xs font-bold text-blue-400">Question {i + 1}{q.category ? ` · ${q.category}` : ''}</p>
+                                                    <p className="text-sm text-white leading-relaxed">{q.question}</p>
+                                                    <textarea
+                                                        rows={5}
+                                                        maxLength={8000}
+                                                        value={interviewResponses[String(q.id)] || ''}
+                                                        onChange={(e) => handleInterviewResponseChange(q.id, e.target.value)}
+                                                        aria-label={`Written answer to question ${i + 1}`}
+                                                        className="w-full bg-gray-950 border border-gray-800 text-white text-xs p-3 rounded-lg focus:border-blue-500 outline-none"
+                                                        placeholder="Type your answer here..."
+                                                    />
+                                                </div>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowEndInterviewModal(true)}
+                                                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                                            >
+                                                Finish interview
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -2764,6 +2966,11 @@ const RoleReadyAssessment = () => {
                             </div>
                         ) : (
                             <>
+                                {interviewSubmitError && (
+                                    <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs text-left">
+                                        {interviewSubmitError}
+                                    </div>
+                                )}
                                 <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1.5 text-left border border-slate-100">
                                     <div className="flex justify-between">
                                         <span className="text-slate-500">Live Transcript Items:</span>
@@ -2799,6 +3006,13 @@ const RoleReadyAssessment = () => {
         </div>
         </MotionConfig>
     );
+};
+
+/** Student Platform entry: the shared workspace on the authenticated student API (route /assessment/:sessionUuid). */
+const RoleReadyAssessment = () => {
+    const { sessionUuid } = useParams();
+    const api = useMemo(() => createStudentAssessmentApi(sessionUuid), [sessionUuid]);
+    return <AssessmentWorkspace sessionUuid={sessionUuid} api={api} />;
 };
 
 export default RoleReadyAssessment;

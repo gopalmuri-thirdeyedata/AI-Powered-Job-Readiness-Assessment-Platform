@@ -17,6 +17,7 @@ load_dotenv()
 
 import models, database, utils
 from routers import auth, assessments, resume, dashboard, settings, interview, proctor, platform, organization, student, college, roleready
+from routers import job_assessments, public_assessment, admin_results
 
 # Validate JWT secret configuration on startup (fails safely in production if secret is weak/default)
 utils.validate_jwt_secret()
@@ -319,6 +320,61 @@ def ensure_default_platform_admin():
     except Exception as e:
         print(f"[Startup Note] Platform Admin initialization: {e}")
 
+# Recruitment workflow: schema guard + background sweeper (immediate catch-up on startup, then every 60s)
+import asyncio
+import logging
+
+_sweeper_stop = None
+_sweeper_task = None
+
+
+def _recruitment_schema_ready() -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    try:
+        insp = sa_inspect(database.engine)
+        needed = {"share_token", "blueprint_data", "status"}
+        have_jd = {c["name"] for c in insp.get_columns("job_descriptions")}
+        have_sess = {c["name"] for c in insp.get_columns("roleready_sessions")}
+        return needed <= have_jd and "registration_id" in have_sess and "overall_deadline_at" in have_sess
+    except Exception:
+        return False
+
+
+@app.on_event("startup")
+async def start_assessment_sweeper():
+    global _sweeper_stop, _sweeper_task
+    if not _recruitment_schema_ready():
+        logging.getLogger("prepwin").warning(
+            "Recruitment workflow schema is not migrated. Run `python migrate_recruitment_workflow.py` "
+            "(it takes a verified backup first). The assessment sweeper is NOT started.")
+        return
+    if os.getenv("ASSESSMENT_SWEEPER_ENABLED", "true").strip().lower() in ("0", "false", "no"):
+        return
+    from services import assessment_sweeper_service as sweeper_service
+    from starlette.concurrency import run_in_threadpool
+    try:
+        # Reconcile any recorded-but-unreconciled outage first so affected candidates are never mislabelled.
+        def _reconcile():
+            with database.SessionLocal() as db:
+                return sweeper_service.reconcile_infrastructure_failures(db)
+        await run_in_threadpool(_reconcile)
+    except Exception as exc:
+        logging.getLogger("prepwin").warning("Startup incident reconciliation skipped: %s", type(exc).__name__)
+    _sweeper_stop = asyncio.Event()
+    _sweeper_task = asyncio.create_task(sweeper_service.sweeper_loop(_sweeper_stop))
+
+
+@app.on_event("shutdown")
+async def stop_assessment_sweeper():
+    if _sweeper_stop is not None:
+        _sweeper_stop.set()
+    if _sweeper_task is not None:
+        try:
+            await asyncio.wait_for(_sweeper_task, timeout=5)
+        except Exception:
+            pass
+
+
 # Health Check Endpoints (Phase 20)
 @app.get("/health/live", tags=["health"])
 def health_live():
@@ -352,6 +408,9 @@ app.include_router(proctor.router)
 app.include_router(student.router)
 app.include_router(college.router)
 app.include_router(roleready.router)
+app.include_router(job_assessments.router)
+app.include_router(public_assessment.router)
+app.include_router(admin_results.router)
 
 @app.get("/")
 def read_root():

@@ -137,6 +137,15 @@ export default function useStudentTaskStatus(user = null) {
             return;
         }
 
+        // Hiring staff have no student task: asking the student endpoint with an admin token is pointless
+        try {
+            const cachedRole = JSON.parse(localStorage.getItem('user_profile') || '{}')?.role;
+            if (['PLATFORM_ADMIN', 'ORGANIZATION_ADMIN', 'HR'].includes(cachedRole)) {
+                setIsLoading(false);
+                return;
+            }
+        } catch { /* unreadable cache: fall through to the normal check */ }
+
         try {
             const data = await studentApi.getAssessmentHistory();
             const completedCount = Number(data?.total_completed || 0);
