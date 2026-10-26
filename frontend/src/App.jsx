@@ -7,7 +7,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 import CandidateLayout from './layouts/CandidateLayout';
 import StudentLayout from './layouts/StudentLayout';
 import CollegeLayout from './layouts/CollegeLayout';
-import ClerkAdminGuard from './components/ClerkAdminGuard';
+import AdminGuard from './components/AdminGuard';
 import RoleReadyAuthGuard from './components/RoleReadyAuthGuard';
 import Home from './pages/Home';
 
@@ -38,6 +38,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const JobRolesPage = lazy(() => import('./pages/admin/JobRolesPage'));
 const SharedLinksPage = lazy(() => import('./pages/admin/SharedLinksPage'));
 const CandidateResultsPage = lazy(() => import('./pages/admin/CandidateResultsPage'));
+const UserManagementPage = lazy(() => import('./pages/admin/UserManagementPage'));
 
 // Candidate Portal Pages (Lazy Loaded)
 const CandidateLogin = lazy(() => import('./pages/candidate/CandidateLogin'));
@@ -49,7 +50,6 @@ const VapiInterview = lazy(() => import('./pages/candidate/VapiInterview'));
 const VapiTest = lazy(() => import('./pages/VapiTest'));
 
 // Student Career Pages (Lazy Loaded)
-const StudentLogin = lazy(() => import('./pages/student/StudentLogin'));
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
 const StudentResumeUpload = lazy(() => import('./pages/student/StudentResumeUpload'));
 const StudentResumeFormatter = lazy(() => import('./pages/student/StudentResumeFormatter'));
@@ -81,9 +81,11 @@ function App() {
             <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1220] text-slate-900 dark:text-slate-100 transition-colors">
                 <Suspense fallback={<PageLoadingSpinner />}>
                     <Routes>
-                        {/* Public Home */}
+                        {/* Primary Authentication Entry Points */}
                         <Route path="/" element={<Home />} />
-                        <Route path="/login" element={<Home />} />
+                        {/* One login for Admin and Student. There is no public sign-up: administrators create the accounts. */}
+                        <Route path="/login" element={<Navigate to="/?auth=login" replace />} />
+                        <Route path="/admin/login" element={<Navigate to="/?auth=login" replace />} />
 
                         {/* Shared-link recruitment assessment (public, capability based) */}
                         <Route path="/assessment/join/:shareToken" element={<SharedAssessmentEntry />} />
@@ -97,12 +99,13 @@ function App() {
                         <Route path="/portal/roleready" element={<CandidateInvitationPortal />} />
                         <Route path="/portal/roleready/:invitationToken" element={<CandidateInvitationPortal />} />
 
-                        {/* Admin Dashboard Routes - Protected by Clerk */}
-                        <Route element={<ClerkAdminGuard><DashboardLayout /></ClerkAdminGuard>}>
+                        {/* Admin Dashboard Routes - Protected by the server-verified admin session */}
+                        <Route element={<AdminGuard><DashboardLayout /></AdminGuard>}>
                             <Route path="/admin/dashboard" element={<Dashboard />} />
                             <Route path="/admin/job-roles" element={<JobRolesPage />} />
                             <Route path="/admin/shared-links" element={<SharedLinksPage />} />
                             <Route path="/admin/candidate-results" element={<CandidateResultsPage />} />
+                            <Route path="/admin/users" element={<UserManagementPage />} />
                             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                             <Route path="/dashboard" element={<Navigate to="/admin/dashboard" replace />} />
                             {/* Modules outside the recruitment workflow were removed from the admin UI: old URLs land on the workspace */}
@@ -132,7 +135,7 @@ function App() {
                         </Route>
 
                         {/* Student Routes - Active Assessment & Placement Hub */}
-                        <Route path="/student/login" element={<Navigate to="/?auth=student" replace />} />
+                        <Route path="/student/login" element={<Navigate to="/?auth=login" replace />} />
                         <Route path="/student" element={<Navigate to="/student/dashboard" replace />} />
                         <Route path="/student/dashboard" element={<StudentLayout />}>
                             <Route index element={<StudentDashboard />} />

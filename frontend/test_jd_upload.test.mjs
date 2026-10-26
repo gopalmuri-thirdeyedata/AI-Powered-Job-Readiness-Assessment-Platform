@@ -43,8 +43,7 @@ describe('Job description file validation (client side; the server repeats it)',
 describe('Upload API client', () => {
     beforeEach(() => { (globalThis.__axiosCalls ||= []).length = 0; globalThis.__axiosResponse = { text: 'Backend Engineer', filename: 'jd.txt' }; });
 
-    test('4. sends the file as multipart to the admin endpoint with the admin JWT and no JSON content type', async () => {
-        globalThis.localStorage = { getItem: (k) => ({ token: 'ADMIN-JWT', prepwin_org_id: '7' })[k] ?? null };
+    test('4. sends the file as multipart to the admin endpoint with cookie auth (no bearer header) and no JSON content type', async () => {
         const { adminApi } = await loadModule('src/services/recruitmentApi.js');
         const file = new File(['Backend Engineer'], 'jd.txt', { type: 'text/plain' });
         const res = await adminApi.extractDescription(file, { onUploadProgress: () => {} });
@@ -52,12 +51,10 @@ describe('Upload API client', () => {
         assert.equal(call.method, 'post');
         assert.equal(call.url, 'http://api.test/api/admin/job-roles/extract-description');
         assert.ok(call.body instanceof FormData && call.body.get('file').name === 'jd.txt');
-        assert.equal(call.headers.Authorization, 'Bearer ADMIN-JWT');
-        assert.equal(call.headers['X-Organization-Id'], '7');
+        assert.ok(!('Authorization' in call.headers), 'the HttpOnly session cookie is the credential; no bearer header');
         assert.ok(!('Content-Type' in call.headers), 'axios/the browser must set the multipart boundary');
         assert.ok(call.timeout >= 30000);
         assert.equal(res.text, 'Backend Engineer');
-        delete globalThis.localStorage;
     });
 });
 

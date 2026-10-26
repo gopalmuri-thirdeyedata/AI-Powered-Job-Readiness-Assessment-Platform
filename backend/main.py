@@ -17,7 +17,7 @@ load_dotenv()
 
 import models, database, utils
 from routers import auth, assessments, resume, dashboard, settings, interview, proctor, platform, organization, student, college, roleready
-from routers import job_assessments, public_assessment, admin_results
+from routers import job_assessments, public_assessment, admin_results, users
 
 # Validate JWT secret configuration on startup (fails safely in production if secret is weak/default)
 utils.validate_jwt_secret()
@@ -165,10 +165,11 @@ def get_recruiter_resume(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # Log sanitized error without returning sensitive request bodies in client responses
+    # Never echo the submitted values back (they can be passwords) and keep the body JSON-serializable.
+    safe = [{k: (str(v) if k == "ctx" else v) for k, v in err.items() if k != "input"} for err in exc.errors()]
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()},
+        content={"detail": safe},
     )
 
 # Database Init
@@ -202,6 +203,13 @@ try:
     migrate_share_link_expiry.apply(database.engine)
 except Exception as _exc:  # never block startup; the schema guard below / the migration script report it
     print(f"[Startup Note] share-link expiry column check: {_exc}")
+
+# Local-auth columns (users.full_name/phone/created_at/last_login_at) and the auth_sessions table: nullable ADD COLUMNs, idempotent.
+try:
+    import migrate_local_auth
+    migrate_local_auth.apply(database.engine)
+except Exception as _exc:  # never block startup; `python migrate_local_auth.py` reports the same problem
+    print(f"[Startup Note] local-auth schema check: {_exc}")
 
 # CORS Configuration — Production Environment Driven
 cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
@@ -266,24 +274,26 @@ def ensure_default_platform_admin():
 
             # 2. Ensure Platform Admin user exists
             admin_email = "admin@thirdeyedata.ai"
-            default_pass = os.getenv("ADMIN_DEFAULT_PASSWORD", "ThirdEyeAdmin@2026!").strip()
+            # No default credential lives in the source. A first-run password must be supplied through the environment;
+            # without one the account is created locked (unusable hash) and `python scripts/set_admin_password.py` sets it.
+            initial_pass = os.getenv("ADMIN_INITIAL_PASSWORD", "").strip()
             admin = db.query(models.User).filter(func.lower(models.User.email) == admin_email).first()
             if not admin:
                 admin = models.User(
                     email=admin_email,
-                    role=models.UserRole.PLATFORM_ADMIN,
-                    hashed_password=utils.get_password_hash(default_pass),
+                    role=models.UserRole.SUPER_ADMIN,
+                    hashed_password=utils.get_password_hash(initial_pass) if initial_pass else utils.make_unusable_password_hash(),
                     is_active=True,
                     organization_id=default_org.id
                 )
                 db.add(admin)
                 db.commit()
                 db.refresh(admin)
-                print(f"[Startup] Provisioned Platform Admin: {admin_email}")
+                print(f"[Startup] Provisioned Platform Admin: {admin_email}" + ("" if initial_pass else " (locked: run scripts/set_admin_password.py to set its password)"))
             else:
                 updated = False
-                if admin.role != models.UserRole.PLATFORM_ADMIN:
-                    admin.role = models.UserRole.PLATFORM_ADMIN
+                if admin.role != models.UserRole.SUPER_ADMIN:
+                    admin.role = models.UserRole.SUPER_ADMIN
                     updated = True
                 if not admin.is_active:
                     admin.is_active = True
@@ -324,6 +334,10 @@ def ensure_default_platform_admin():
                 {"organization_id": default_org.id}, synchronize_session=False
             )
             db.commit()
+
+            # 5. Housekeeping: forget sessions that expired or were revoked more than 30 days ago
+            from services import local_auth
+            local_auth.purge_dead_sessions(db)
     except Exception as e:
         print(f"[Startup Note] Platform Admin initialization: {e}")
 
@@ -404,6 +418,7 @@ def health_ready():
 
 # Routers
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(platform.router)
 app.include_router(organization.router)
 app.include_router(assessments.router)

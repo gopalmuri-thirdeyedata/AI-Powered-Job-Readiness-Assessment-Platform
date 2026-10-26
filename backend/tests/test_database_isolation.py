@@ -15,13 +15,13 @@ import pytest
 from tests import db_guard
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIGURED = "sqlite:///hiringai.db"
+CONFIGURED = "sqlite:///PrepWin.db"
 
 
 # ------------------------------------------------------------------------------ the decision rule
 def test_no_explicit_database_means_a_throwaway_one(tmp_path):
     forced, reason = db_guard.choose_test_database({}, CONFIGURED, str(tmp_path))
-    assert forced and forced.startswith("sqlite:///") and str(tmp_path).replace("\\", "/") in forced and "hiringai.db" not in forced
+    assert forced and forced.startswith("sqlite:///") and str(tmp_path).replace("\\", "/") in forced and "PrepWin.db" not in forced
     assert "throw-away" in reason
 
 
@@ -51,8 +51,8 @@ def test_a_missing_env_file_does_not_disable_the_guard(tmp_path):
 
 def test_env_file_parsing(tmp_path):
     f = tmp_path / ".env"
-    f.write_text("# comment\nOTHER=1\nDATABASE_URL='sqlite:///hiringai.db'\nGEMINI_API_KEY=abc\n", encoding="utf-8")
-    assert db_guard.read_env_file_value(str(f)) == "sqlite:///hiringai.db"
+    f.write_text("# comment\nOTHER=1\nDATABASE_URL='sqlite:///PrepWin.db'\nGEMINI_API_KEY=abc\n", encoding="utf-8")
+    assert db_guard.read_env_file_value(str(f)) == "sqlite:///PrepWin.db"
 
 
 def test_apply_guard_sets_the_environment_only_when_it_redirects(tmp_path):
@@ -66,7 +66,7 @@ def test_apply_guard_sets_the_environment_only_when_it_redirects(tmp_path):
 # ------------------------------------------------------------------------------ this very test session
 def test_this_test_session_is_not_running_on_the_configured_database():
     import database
-    configured_file = os.path.join(BACKEND, "hiringai.db").replace("\\", "/")
+    configured_file = os.path.join(BACKEND, "PrepWin.db").replace("\\", "/")
     opted_in = os.environ.get(db_guard.OPT_IN, "").lower() in ("1", "true", "yes")
     assert opted_in or database.SQLALCHEMY_DATABASE_URL.replace("\\", "/") != f"sqlite:///{configured_file}", database.SQLALCHEMY_DATABASE_URL
 
@@ -99,10 +99,10 @@ def _md5(path):
 
 
 def test_a_bare_pytest_run_is_redirected_and_the_configured_database_is_untouched(tmp_path):
-    real = os.path.join(BACKEND, "hiringai.db")
+    real = os.path.join(BACKEND, "PrepWin.db")
     before = _md5(real)
     url = _run_probe(tmp_path, {})
-    assert url.startswith("sqlite:///") and "prepwin-tests" in url and "hiringai.db" not in url
+    assert url.startswith("sqlite:///") and "prepwin-tests" in url and "PrepWin.db" not in url
     assert _md5(real) == before
 
 

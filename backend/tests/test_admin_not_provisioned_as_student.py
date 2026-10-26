@@ -20,7 +20,7 @@ def test_hiring_admin_never_gets_a_student_profile_and_stays_an_admin():
         db.expire_all()
         assert db.query(models.StudentProfile).filter(models.StudentProfile.user_id == admin["user"].id).count() == 0
         me = client.get("/api/auth/me", headers=h.auth(admin["token"])).json()
-        assert me["role"] == "ORGANIZATION_ADMIN"
+        assert me["role"] in ("ADMIN", "ORGANIZATION_ADMIN")
         assert client.get("/api/admin/recruitment/overview-stats", headers=h.auth(admin["token"])).status_code == 200
     finally:
         db.close()

@@ -1,9 +1,9 @@
 """
 Phase 1 Final Security & Authorization Test Suite.
 Verifies all 14 required security scenarios:
-1. Student registers/provisions correctly (Model A pre-invite and Model B invite code).
-2. Student cannot provide arbitrary organization_id.
-3. Student cannot create themselves under another organization.
+1. Student accounts are provisioned only by an administrator (invite / User Management) and can then sign in; public registration is gone.
+2. Nobody can self-register or provide an arbitrary organization_id.
+3. A client-sent organization_id never moves a new account into another organization.
 4. Student can access own profile.
 5. Student cannot access another student's profile (cross-student blocked).
 6. Student can access own resume.
@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 import models, database, utils
 from main import app
+from tests import local_auth_helpers as lh
 
 client = TestClient(app)
 
@@ -265,79 +266,66 @@ def setup_security_data():
 
 
 def test_01_student_registers_and_provisions_correctly(setup_security_data):
-    """1. Student registers/provisions correctly via College Admin invite (Model A) or Invite Code (Model B)."""
-    # Clean up test email if exists
+    """1. Students are provisioned by an administrator (invite endpoint, or User Management) and then sign in locally."""
     db = database.SessionLocal()
-    for e in ["invited.student@college.edu", "codeslug.student@college.edu"]:
+    for e in ["invited.student@college.edu", "managed.student@college.edu"]:
         u = db.query(models.User).filter(models.User.email == e).first()
         if u:
             db.query(models.StudentProfile).filter(models.StudentProfile.user_id == u.id).delete()
             db.query(models.OrganizationMember).filter(models.OrganizationMember.user_id == u.id).delete()
             db.delete(u)
     db.commit()
+    db.close()
 
-    # Model A: College Admin invites a student
-    headers_admin = {"Authorization": f"Bearer {setup_security_data['token_org_admin']}"}
+    admin_token = utils.create_access_token({"sub": "admin.alpha@college.edu", "role": "ADMIN"})
+    headers_admin = {"Authorization": f"Bearer {admin_token}"}
+
+    # Model A: College Admin invites a student (with an initial password)
     invite_res = client.post(
         "/api/organization/users/invite",
         headers=headers_admin,
-        json={"email": "invited.student@college.edu", "role": "STUDENT"}
+        json={"email": "invited.student@college.edu", "role": "STUDENT", "password": "NewStudentPass123!"}
     )
     assert invite_res.status_code == 200, invite_res.text
+    assert "NewStudentPass123!" not in invite_res.text
 
-    # Student activates account by registering with their invited email
-    reg_res_a = client.post(
-        "/api/student/auth/register",
-        json={
-            "email": "invited.student@college.edu",
-            "password": "NewStudentPass123!",
-            "full_name": "Invited Student"
-        }
-    )
-    assert reg_res_a.status_code == 200, reg_res_a.text
-    token_data_a = reg_res_a.json()
-    assert "access" in token_data_a
-
-    # Verify student is bound to College Alpha
-    me_res = client.get("/api/student/profile", headers={"Authorization": f"Bearer {token_data_a['access']}"})
+    c, login_res = lh.login("invited.student@college.edu", "NewStudentPass123!")
+    assert login_res.json()["role"] == "STUDENT"
+    me_res = c.get("/api/student/profile")
     assert me_res.status_code == 200
     assert me_res.json()["organization_id"] == setup_security_data["org_a_id"]
 
-    # Model B: Student registers using College Beta invite code slug
-    reg_res_b = client.post(
-        "/api/student/auth/register",
-        json={
-            "email": "codeslug.student@college.edu",
-            "password": "NewStudentPass123!",
-            "full_name": "Code Slug Student",
-            "invite_code": "college-beta"
-        }
+    # User Management: the same, through the administrator API
+    create_res = client.post(
+        "/api/admin/users/",
+        headers=headers_admin,
+        json={"role": "STUDENT", "full_name": "Managed Student", "email": "managed.student@college.edu", "password": "NewStudentPass123!"}
     )
-    assert reg_res_b.status_code == 200, reg_res_b.text
-    token_data_b = reg_res_b.json()
-    me_res_b = client.get("/api/student/profile", headers={"Authorization": f"Bearer {token_data_b['access']}"})
-    assert me_res_b.status_code == 200
-    assert me_res_b.json()["organization_id"] == setup_security_data["org_b_id"]
+    assert create_res.status_code == 201, create_res.text
+    c2, _ = lh.login("managed.student@college.edu", "NewStudentPass123!")
+    me2 = c2.get("/api/student/profile")
+    assert me2.status_code == 200
+    assert me2.json()["organization_id"] == setup_security_data["org_a_id"]
 
 
 def test_02_student_cannot_provide_arbitrary_organization_id():
-    """2. Student cannot provide arbitrary organization_id (uninvited unknown student is rejected)."""
-    # Unknown student attempts to pass organization_id=1 without invite or code
-    res = client.post(
-        "/api/student/auth/register",
-        json={
-            "email": "malicious.student.1@random.com",
-            "password": "Password123!",
-            "organization_id": 1
-        }
-    )
-    assert res.status_code == 403
-    assert "registration rejected" in res.json()["detail"].lower()
+    """2. Nobody can self-register (the public registration/login endpoints are gone) or pass an organization_id without being an admin."""
+    for path in ("/api/student/auth/register", "/api/student/auth/login"):
+        res = client.post(path, json={"email": "malicious.student.1@random.com", "password": "Password123!", "organization_id": 1})
+        assert res.status_code in (404, 405), path
+    res = client.post("/api/admin/users/", json={
+        "role": "STUDENT", "full_name": "Mal", "email": "malicious.student.1@random.com", "password": "Password123!A", "organization_id": 1,
+    })
+    assert res.status_code == 401
+    db = database.SessionLocal()
+    try:
+        assert db.query(models.User).filter(models.User.email == "malicious.student.1@random.com").first() is None
+    finally:
+        db.close()
 
 
 def test_03_student_cannot_create_themselves_under_another_organization(setup_security_data):
-    """3. Student cannot create themselves under another organization (client-sent organization_id is ignored)."""
-    # Student provides valid invite code for College Beta, but maliciously sends organization_id=setup_security_data['org_a_id']
+    """3. A client-sent organization_id is ignored: an administrator's new account is bound to the administrator's own organization."""
     email = "tamper.student@test.com"
     db = database.SessionLocal()
     u = db.query(models.User).filter(models.User.email == email).first()
@@ -346,25 +334,26 @@ def test_03_student_cannot_create_themselves_under_another_organization(setup_se
         db.query(models.OrganizationMember).filter(models.OrganizationMember.user_id == u.id).delete()
         db.delete(u)
         db.commit()
+    db.close()
 
+    admin_token = utils.create_access_token({"sub": "admin.alpha@college.edu", "role": "ADMIN"})
     res = client.post(
-        "/api/student/auth/register",
+        "/api/admin/users/",
+        headers={"Authorization": f"Bearer {admin_token}"},
         json={
-            "email": email,
-            "password": "Password123!",
-            "full_name": "Tamper Test",
+            "role": "STUDENT", "full_name": "Tamper Test", "email": email, "password": "Password123!",
+            "organization_id": setup_security_data["org_b_id"],      # Attempting to place the account in the other college
             "invite_code": "college-beta",
-            "organization_id": setup_security_data["org_a_id"]  # Attempting to hijack Org A
         }
     )
-    assert res.status_code == 200
-    token = res.json()["access"]
+    assert res.status_code == 201, res.text
+    assert res.json()["user"]["organization_id"] == setup_security_data["org_a_id"]
 
-    # Verify that the server bound them STRICTLY to College Beta (from invite_code), NOT Org A
-    profile_res = client.get("/api/student/profile", headers={"Authorization": f"Bearer {token}"})
+    c, _ = lh.login(email, "Password123!")
+    profile_res = c.get("/api/student/profile")
     assert profile_res.status_code == 200
-    assert profile_res.json()["organization_id"] == setup_security_data["org_b_id"]
-    assert profile_res.json()["organization_id"] != setup_security_data["org_a_id"]
+    assert profile_res.json()["organization_id"] == setup_security_data["org_a_id"]
+    assert profile_res.json()["organization_id"] != setup_security_data["org_b_id"]
 
 
 def test_04_student_can_access_own_profile(setup_security_data):
@@ -433,12 +422,14 @@ def test_09_unauthenticated_user_receives_401():
 
 def test_10_existing_recruiter_authentication_still_works(setup_security_data):
     """10. Existing recruiter authentication still works."""
+    lh.reset_login_limits()
     login_res = client.post("/api/auth/login/", json={
-        "username": "hr.alpha@college.edu",
+        "email": "hr.alpha@college.edu",
         "password": "RecruiterPass123!"
     })
     assert login_res.status_code == 200
-    assert "access" in login_res.json()
+    assert login_res.json()["role"] == "ADMIN"
+    assert "access" not in login_res.json()
 
 
 def test_11_existing_candidate_authentication_still_works():

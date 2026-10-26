@@ -1,5 +1,5 @@
 // Starts the real backend (harness/serve.py, scratch database) and the real Vite frontend on free ports, and stops them again.
-// Nothing here touches backend/hiringai.db and nothing is deployed anywhere.
+// Nothing here touches backend/PrepWin.db and nothing is deployed anywhere.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -50,7 +50,7 @@ export async function startStack(opts = {}) {
   const apiPort = await freePort();
   const webPort = await freePort();
   const api = `http://127.0.0.1:${apiPort}`;
-  const web = `http://localhost:${webPort}`;
+  const web = `http://127.0.0.1:${webPort}`;   // same host as the API: the session cookie is SameSite=Lax
   const logs = { api: path.join(dir, 'api.log'), web: path.join(dir, 'web.log') };
   const children = [];
 
@@ -65,7 +65,7 @@ export async function startStack(opts = {}) {
   });
   children.push(backend);
 
-  const vite = spawn(process.execPath, [path.join(REPO, 'frontend', 'node_modules', 'vite', 'bin', 'vite.js'), '--port', String(webPort), '--strictPort', '--host', 'localhost'], {
+  const vite = spawn(process.execPath, [path.join(REPO, 'frontend', 'node_modules', 'vite', 'bin', 'vite.js'), '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'], {
     cwd: path.join(REPO, 'frontend'),
     env: { ...process.env, VITE_API_URL: api, VITE_VAPI_CONNECT_TIMEOUT_MS: String(opts.connectTimeoutMs || 8000) },
     stdio: ['ignore', fs.openSync(logs.web, 'w'), fs.openSync(logs.web, 'a')],

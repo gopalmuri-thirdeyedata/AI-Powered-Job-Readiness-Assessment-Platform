@@ -58,14 +58,13 @@ describe('Recruitment shared links: 24-hour expiry (admin UI)', () => {
         assert.match(expiryNote({ ...r, share_link_expires_at: null }, fmt), /No expiry .*24-hour window/, 'legacy links are labelled, not shown as expiring');
     });
 
-    test('creating a new link calls the dedicated, admin-authenticated endpoint', async () => {
-        globalThis.localStorage = { getItem: (k) => (k === 'token' ? 'ADMIN-JWT' : null), setItem() {}, removeItem() {} };
+    test('creating a new link calls the dedicated endpoint with the cookie session (no bearer header)', async () => {
         const { adminApi } = await loadModule('src/services/recruitmentApi.js');
         await adminApi.newShareLink(7);
         await adminApi.publishRole(7);
         const seen = globalThis.__axiosCalls.map((c) => `${c.method.toUpperCase()} ${c.url.replace('http://api.test', '')}`);
         assert.deepEqual(seen, ['POST /api/admin/job-roles/7/new-link', 'POST /api/admin/job-roles/7/publish']);
-        assert.ok(globalThis.__axiosCalls.every((c) => c.headers.Authorization === 'Bearer ADMIN-JWT'));
+        assert.ok(globalThis.__axiosCalls.every((c) => !('Authorization' in c.headers)), 'the HttpOnly session cookie is the admin credential');
     });
 
     test('overview prompts for a new link when the only link expired, and never offers an expired link for copying', async () => {

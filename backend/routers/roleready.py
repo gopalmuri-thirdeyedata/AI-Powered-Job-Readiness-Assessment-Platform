@@ -20,7 +20,8 @@ from jose import jwt, JWTError
 import models
 import database
 import utils
-from routers.auth import require_hr_or_admin, get_current_tenant
+from routers.auth import require_hr_or_admin, get_current_tenant, cookie_session_user
+from services import local_auth
 from routers.student import get_current_student_profile
 from services import roleready_service
 from services import assessment_clock as clock
@@ -38,6 +39,7 @@ router = APIRouter(
 
 def get_authorized_session(
     session_uuid: str,
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_invitation_token: Optional[str] = Header(None, alias="X-Invitation-Token"),
     db: Session = Depends(database.get_db)
@@ -55,7 +57,8 @@ def get_authorized_session(
         invite_token = authorization.strip()
 
     has_bearer = bool(authorization and authorization.startswith("Bearer "))
-    if not invite_token and not has_bearer:
+    has_cookie = bool(request.cookies.get(local_auth.SESSION_COOKIE))
+    if not invite_token and not has_bearer and not has_cookie:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required to access this assessment session."
@@ -84,58 +87,56 @@ def get_authorized_session(
                 detail="Invitation token is not authorized for this assessment session."
             )
 
-    # 2. Check JWT Bearer token
-    if authorization and authorization.startswith("Bearer "):
+    # 2. Check the caller's account: signed JWT Bearer token (API clients) or the session cookie (browsers)
+    user = None
+    if has_bearer:
         token_str = authorization.split(" ", 1)[1].strip()
         try:
             payload = jwt.decode(token_str, utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
-            email = payload.get("sub")
-            if not email:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload.")
-            
-            user = db.query(models.User).filter(models.User.email == email).first()
-            if not user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
-
-            # Platform Admin always has oversight access
-            if getattr(user, "role", None) == models.UserRole.PLATFORM_ADMIN:
-                roleready_service.finalize_expired_round(db, session)
-                return session
-
-            # If user is a student:
-            if getattr(user, "role", None) == models.UserRole.STUDENT or user.student_profile:
-                profile = db.query(models.StudentProfile).filter(models.StudentProfile.user_id == user.id).first()
-                if profile and session.student_profile_id == profile.id:
-                    roleready_service.finalize_expired_round(db, session)
-                    return session
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: You do not own this assessment session."
-                )
-
-            # If user is admin/hr:
-            if getattr(user, "role", None) in [models.UserRole.ORGANIZATION_ADMIN, models.UserRole.HR_ADMIN, models.UserRole.HR]:
-                if session.organization_id == user.organization_id:
-                    roleready_service.finalize_expired_round(db, session)
-                    return session
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: You do not have permission to access another organization's assessment session."
-                )
-
-            # Any other authenticated role that does not have authorization
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: You do not have permission to access this assessment session."
-            )
-
         except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate authentication credentials."
             )
+        email = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload.")
+        user = db.query(models.User).filter(models.User.email == email).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
+    elif has_cookie:
+        # Browser sessions: the HttpOnly session cookie (same rules as every other endpoint: expiry, revocation, CSRF)
+        user = cookie_session_user(request, db)
 
-    # If neither valid invitation token nor valid user token was accepted:
+    if user is not None:
+        # If user is a student:
+        if getattr(user, "role", None) == models.UserRole.STUDENT:
+            profile = db.query(models.StudentProfile).filter(models.StudentProfile.user_id == user.id).first()
+            if profile and session.student_profile_id == profile.id:
+                roleready_service.finalize_expired_round(db, session)
+                return session
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not own this assessment session."
+            )
+
+        # If user is an administrator:
+        if models.is_admin_role(getattr(user, "role", None)):
+            if session.organization_id == user.organization_id or session.organization_id is None:
+                roleready_service.finalize_expired_round(db, session)
+                return session
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to access another organization's assessment session."
+            )
+
+        # Any other authenticated role that does not have authorization
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You do not have permission to access this assessment session."
+        )
+
+    # If neither valid invitation token nor valid user credentials were accepted:
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required to access this assessment session."

@@ -43,18 +43,17 @@ const GlobalSettings = () => {
     const [inviteError, setInviteError] = useState(null);
     const [currentUserProfile, setCurrentUserProfile] = useState(() => {
         try {
-            return JSON.parse(localStorage.getItem('user_profile') || '{}');
+            return JSON.parse(localStorage.getItem('admin_user') || localStorage.getItem('user_profile') || '{}');
         } catch {
             return {};
         }
     });
 
+
     const fetchTeam = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
         setLoadingTeam(true);
         try {
-            const headers = { 'Authorization': `Bearer ${token}` };
+            const headers = {};
             const [orgRes, teamRes] = await Promise.all([
                 fetch(`${API_URL}/api/organization/`, { headers }),
                 fetch(`${API_URL}/api/organization/users`, { headers })
@@ -86,13 +85,11 @@ const GlobalSettings = () => {
         setInviting(true);
         setInviteError(null);
         setInviteSuccess(null);
-        const token = localStorage.getItem('token');
         try {
             const res = await fetch(`${API_URL}/api/organization/users/invite`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ email: inviteEmail.trim() })
             });
@@ -124,11 +121,9 @@ const GlobalSettings = () => {
     };
 
     const handleRemoveMember = async (memberId) => {
-        const token = localStorage.getItem('token');
         try {
             const res = await fetch(`${API_URL}/api/organization/users/${memberId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                method: 'DELETE'
             });
             if (res.ok) {
                 setTeamMembers(prev => prev.filter(m => m.id !== memberId && m.user_id !== memberId));
@@ -189,10 +184,7 @@ const GlobalSettings = () => {
     });
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        fetch(`${API_URL}/api/settings/`, {
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        })
+        fetch(`${API_URL}/api/settings/`)
             .then(res => res.json())
             .then(data => {
                 if (data) {
@@ -237,8 +229,7 @@ const GlobalSettings = () => {
             const res = await fetch(`${API_URL}/api/settings/`, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ config: formData })
             });
@@ -507,15 +498,15 @@ const GlobalSettings = () => {
                                     </div>
                                 )}
 
-                                {/* Invite HR Form (For Org Admin & Platform Admin) */}
-                                {(currentUserProfile.role === 'ORGANIZATION_ADMIN' || currentUserProfile.role === 'PLATFORM_ADMIN') && (
+                                {/* Invite Admin Form */}
+                                {(currentUserProfile.role === 'ADMIN' || currentUserProfile.role === 'SUPER_ADMIN') && (
                                     <div className="bg-white border border-green-200 rounded-xl p-5 shadow-xs">
                                         <h4 className="text-sm font-bold text-gray-900 mb-1 flex items-center gap-2">
                                             <UserPlus size={16} className="text-[#5d8c2c]" />
-                                            Invite HR Recruiter
+                                            Invite Team Administrator
                                         </h4>
                                         <p className="text-xs text-gray-500 mb-4">
-                                            Invite a new HR recruiter to your organization. They will receive an invitation and log in via Clerk Email OTP.
+                                            Invite an administrator to your organization. They will receive an invitation and log in via the Admin Login portal.
                                         </p>
 
                                         {inviteError && (
@@ -535,7 +526,7 @@ const GlobalSettings = () => {
                                             <input
                                                 type="email"
                                                 required
-                                                placeholder="hr.recruiter@company.com"
+                                                placeholder="colleague@company.com"
                                                 value={inviteEmail}
                                                 onChange={(e) => setInviteEmail(e.target.value)}
                                                 className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none font-medium"
@@ -587,12 +578,8 @@ const GlobalSettings = () => {
                                                                 )}
                                                             </td>
                                                             <td className="px-4 py-3.5">
-                                                                <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-                                                                    member.role === 'ORGANIZATION_ADMIN'
-                                                                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                                                                        : 'bg-green-100 text-green-800 border border-green-200'
-                                                                }`}>
-                                                                    {member.role === 'ORGANIZATION_ADMIN' ? 'Org Admin' : 'HR'}
+                                                                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200">
+                                                                    Admin
                                                                 </span>
                                                             </td>
                                                             <td className="px-4 py-3.5">
@@ -610,7 +597,7 @@ const GlobalSettings = () => {
                                                             </td>
                                                             <td className="px-4 py-3.5 text-right">
                                                                 {member.user_id !== currentUserProfile.user_id && 
-                                                                 (currentUserProfile.role === 'PLATFORM_ADMIN' || currentUserProfile.role === 'ORGANIZATION_ADMIN') && (
+                                                                 (currentUserProfile.role === 'ADMIN' || currentUserProfile.role === 'SUPER_ADMIN') && (
                                                                     <button
                                                                         onClick={() => requestRemoveMember(member.id, member.email)}
                                                                         className="px-2.5 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1.5 ml-auto border border-red-200 cursor-pointer"

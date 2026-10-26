@@ -12,31 +12,26 @@ import {
     ArrowUpRight,
 } from 'lucide-react';
 
+import { useAuth } from '../auth/useAuth';
+import { isAdminRole } from '../auth/roles';
+
 const CollegeLayout = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const [userProfile, setUserProfile] = useState(null);
+    const { user, role, isLoaded, signOut } = useAuth();
+    const userProfile = user || {};
 
+    // The placement office is an administrator workspace: anything else goes to the single login (the API enforces this too)
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            navigate('/login');
-            return;
+        if (isLoaded && !isAdminRole(role)) {
+            navigate('/?auth=login', { replace: true });
         }
+    }, [isLoaded, role, navigate]);
 
-        try {
-            const stored = JSON.parse(localStorage.getItem('user_profile') || '{}');
-            setUserProfile(stored);
-        } catch {
-            // ignore
-        }
-    }, [navigate]);
-
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user_profile');
-        navigate('/login');
+    const handleLogout = async () => {
+        await signOut();
+        navigate('/?auth=login', { replace: true });
     };
 
     const navItems = [

@@ -26,7 +26,7 @@ def tenants(db):
     a = h.make_admin(db)
     b = h.make_admin(db)
     hr_a = h.make_admin(db, org=a["org"], member_role="HR", user_role=models.UserRole.HR)
-    platform = h.make_admin(db, org=a["org"], user_role=models.UserRole.PLATFORM_ADMIN)
+    platform = h.make_admin(db, org=a["org"], member_role="PLATFORM_ADMIN", tag=f"platform.{h.new_tag()}", user_role=models.UserRole.SUPER_ADMIN)
     yield {"a": a, "b": b, "hr_a": hr_a, "platform": platform}
     h.cleanup_orgs(db, [a["org"].id, b["org"].id])
 

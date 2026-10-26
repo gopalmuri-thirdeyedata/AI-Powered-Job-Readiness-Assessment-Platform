@@ -1,10 +1,8 @@
 import axios from 'axios';
 import API_URL from '../apiConfig';
 
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-};
+// Authentication is the HttpOnly session cookie (+ CSRF header) added by the auth client; no per-request credentials here.
+const getAuthHeaders = () => ({});
 
 const collegeApi = {
     // Phase 9: College Cohort Overview & Analytics

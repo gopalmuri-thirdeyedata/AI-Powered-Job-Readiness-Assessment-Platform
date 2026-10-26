@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from pydantic import BaseModel, EmailStr
 import re
+from typing import Optional
 
 import models
 import database
 from routers.auth import require_platform_admin
-from services import clerk_service
+from services import local_auth
 from routers.settings import DEFAULT_CONFIG
 
 router = APIRouter(
@@ -18,6 +19,9 @@ router = APIRouter(
 class CreateOrganizationSchema(BaseModel):
     name: str
     admin_email: EmailStr
+    # Optional initial password for the first Organization Admin. Without it the account exists but cannot sign in
+    # until an administrator sets a password (POST /api/admin/users/{id}/reset-password).
+    admin_password: Optional[str] = None
 
 class UpdateOrganizationStatusSchema(BaseModel):
     status: str # 'active' or 'deactivated'
@@ -60,7 +64,6 @@ def list_organizations(
             "admin_email": admin_email,
             "member_count": member_count,
             "candidate_count": candidate_count,
-            "clerk_org_id": org.clerk_org_id,
             "created_at": org.created_at.isoformat() if org.created_at else None,
             "updated_at": org.updated_at.isoformat() if org.updated_at else None
         })
@@ -89,15 +92,15 @@ def create_organization(
         slug = f"{base_slug}-{counter}"
         counter += 1
 
-    # Attempt to provision in Clerk if configured
-    clerk_org = clerk_service.create_clerk_organization(org_name, slug)
-    clerk_org_id = clerk_org.get("id") if clerk_org else None
+    if payload.admin_password is not None:
+        problems = local_auth.password_policy_errors(payload.admin_password, admin_email)
+        if problems:
+            raise HTTPException(status_code=422, detail=problems)
 
     # Create local organization
     org = models.Organization(
         name=org_name,
         slug=slug,
-        clerk_org_id=clerk_org_id,
         status="active"
     )
     db.add(org)
@@ -111,7 +114,7 @@ def create_organization(
         target_user = models.User(
             email=admin_email,
             role=models.UserRole.ORGANIZATION_ADMIN,
-            hashed_password=utils.get_password_hash("clerk_managed_user"),
+            hashed_password=(utils.get_password_hash(payload.admin_password) if payload.admin_password else utils.make_unusable_password_hash()),
             is_active=True,
             organization_id=org.id
         )
@@ -143,14 +146,7 @@ def create_organization(
     db.add(org_settings)
     db.commit()
 
-    # Dispatch Clerk Invitation if configured
-    invite_status = "invited"
-    if clerk_org_id:
-        clerk_inv = clerk_service.invite_to_clerk_organization(clerk_org_id, admin_email, role="org:admin")
-        if not clerk_inv:
-            clerk_service.create_clerk_invitation(admin_email)
-    else:
-        clerk_service.create_clerk_invitation(admin_email)
+    credential_status = "password_set" if payload.admin_password else "password_required"
 
     return {
         "message": f"Organization '{org.name}' created successfully.",
@@ -160,7 +156,7 @@ def create_organization(
             "slug": org.slug,
             "status": org.status,
             "admin_email": admin_email,
-            "invitation_status": invite_status
+            "credential_status": credential_status
         }
     }
 
@@ -194,7 +190,6 @@ def get_organization_detail(
         "name": org.name,
         "slug": org.slug,
         "status": org.status,
-        "clerk_org_id": org.clerk_org_id,
         "created_at": org.created_at.isoformat() if org.created_at else None,
         "metrics": {
             "members": len(members),

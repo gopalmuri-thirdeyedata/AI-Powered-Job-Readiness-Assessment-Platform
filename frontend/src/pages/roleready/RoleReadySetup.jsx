@@ -24,7 +24,7 @@ import {
     Check,
     HelpCircle
 } from 'lucide-react';
-import { useUser } from '@clerk/clerk-react';
+import { useUser } from '../../auth/useAuth';
 import rolereadyApi from '../../services/rolereadyApi';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
 import WalkthroughTour from '../../components/WalkthroughTour';

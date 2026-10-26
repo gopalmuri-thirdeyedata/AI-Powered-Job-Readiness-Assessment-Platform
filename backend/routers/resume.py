@@ -43,8 +43,8 @@ def require_recruiter_user(current_user: models.User = Depends(get_current_user)
 
 def _get_tenant_org_id(current_user: models.User, db: Session) -> Optional[int]:
     """Resolves current organization ID for multi-tenant data isolation."""
-    if getattr(current_user, "role", None) == models.UserRole.PLATFORM_ADMIN:
-        return getattr(current_user, "organization_id", None)
+    if getattr(current_user, "organization_id", None):
+        return current_user.organization_id
     
     member = None
     if hasattr(current_user, "id") and current_user.id:
@@ -55,9 +55,6 @@ def _get_tenant_org_id(current_user: models.User, db: Session) -> Optional[int]:
 
     if member:
         return member.organization_id
-
-    if getattr(current_user, "role", None) in (models.UserRole.HR_ADMIN, models.UserRole.SUPER_ADMIN):
-        return getattr(current_user, "organization_id", 1) or 1
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

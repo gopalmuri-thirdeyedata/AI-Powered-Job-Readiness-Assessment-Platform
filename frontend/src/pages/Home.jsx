@@ -21,9 +21,10 @@ import {
     Award,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth } from '../auth/useAuth';
+import { isAdminRole } from '../auth/roles';
 import PublicNavbar from '../components/PublicNavbar';
-import ClerkAuthModal from '../components/ClerkAuthModal';
+import LoginModal from '../components/LoginModal';
 import HeroPreview from '../components/home/HeroPreview';
 import ReportPreview from '../components/home/ReportPreview';
 import ProctorDemo from '../components/home/ProctorDemo';
@@ -51,7 +52,7 @@ const STATS = [
 
 const TECH = [
     'Google Gemini', 'Vapi Voice AI', 'Piston Sandbox', 'Monaco Editor', 'YOLOv8 Proctoring',
-    'Clerk Auth', 'Multi-Tenant Isolation', 'STAR Rubrics', 'Hidden Test Suites', 'PDF Reports',
+    'Secure Sign-In', 'Multi-Tenant Isolation', 'STAR Rubrics', 'Hidden Test Suites', 'PDF Reports',
 ];
 
 const ROUND_CARDS = [
@@ -171,11 +172,9 @@ const Faq = ({ item, open, onToggle, id }) => (
 const Home = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { user, isLoaded } = useUser();
+    const { user, role, isLoaded } = useAuth();
     const reduce = useReducedMotion();
-    const [isClerkOpen, setIsClerkOpen] = useState(false);
-    const [authModalMode, setAuthModalMode] = useState('student'); // 'student' | 'admin'
-    const [authModalAuthType, setAuthModalAuthType] = useState('signIn'); // 'signIn' | 'signUp'
+    const [isLoginOpen, setIsLoginOpen] = useState(false);
     const [openFaq, setOpenFaq] = useState(0);
     const heroRef = useRef(null);
     const [showStickyCta, setShowStickyCta] = useState(false);
@@ -191,80 +190,36 @@ const Home = () => {
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
 
-    // Signed out: drop any stale student credentials so the page never shows a ghost session
-    useEffect(() => {
-        if (isLoaded && !user) {
-            ['studentToken', 'student_user_email', 'student_completed_assessment'].forEach(k => {
-                try { localStorage.removeItem(k); } catch { /* storage unavailable */ }
-            });
-        }
-    }, [isLoaded, user]);
-
-    // Automatically route authenticated users directly to their corresponding workspace
+    // Signed in: students go straight to their dashboard; admins go to theirs when they asked to sign in (?auth=login)
     useEffect(() => {
         if (!isLoaded || !user) return;
-
-        const authParam = searchParams.get('auth');
-        const profile = (() => {
-            try {
-                return JSON.parse(localStorage.getItem('user_profile') || '{}');
-            } catch {
-                return {};
-            }
-        })();
-
-        if (authParam === 'admin' || ['ORGANIZATION_ADMIN', 'HR', 'PLATFORM_ADMIN'].includes(profile.role)) {
+        if (role === 'STUDENT') {
+            navigate('/student/dashboard', { replace: true });
+        } else if (isAdminRole(role) && searchParams.get('auth')) {
             navigate('/admin/dashboard', { replace: true });
-        } else {
-            // Default authenticated student destination: Assessment Setup (JD & Resume upload)
-            navigate('/assessment/setup', { replace: true });
         }
-    }, [user, isLoaded, searchParams, navigate]);
+    }, [user, role, isLoaded, searchParams, navigate]);
 
-    // Handle deep-linked auth requests (e.g. redirected from protected guards)
+    // Deep-linked sign-in requests (e.g. redirected from protected guards). There is no public sign-up.
     useEffect(() => {
         const authParam = searchParams.get('auth');
-        if (authParam === 'student') {
-            setAuthModalMode('student');
-            setAuthModalAuthType('signIn');
-            if (!user) setIsClerkOpen(true);
-        } else if (authParam === 'signup' || authParam === 'register') {
-            setAuthModalMode('student');
-            setAuthModalAuthType('signUp');
-            if (!user) setIsClerkOpen(true);
-        } else if (authParam === 'admin') {
-            setAuthModalMode('admin');
-            setAuthModalAuthType('signIn');
-            if (!user) setIsClerkOpen(true);
+        if (isLoaded && !user && ['login', 'student', 'admin'].includes(authParam || '')) {
+            setIsLoginOpen(true);
         }
-    }, [searchParams, user]);
+    }, [searchParams, user, isLoaded]);
 
-    const openStudentSignIn = () => {
-        if (user) {
-            navigate('/assessment/setup');
-        } else {
-            setAuthModalMode('student');
-            setAuthModalAuthType('signIn');
-            setIsClerkOpen(true);
-        }
-    };
-
-    const openAdminSignIn = () => {
-        const token = localStorage.getItem('token');
-        let profile = null;
-        try { profile = JSON.parse(localStorage.getItem('user_profile') || '{}'); } catch {}
-        if (token && profile && ['PLATFORM_ADMIN', 'ORGANIZATION_ADMIN', 'HR'].includes(profile.role)) {
-            navigate('/admin/dashboard');
-            return;
-        }
-        if (user) {
+    // One login for everyone: the server decides the destination from the stored role
+    const openSignIn = () => {
+        if (user && role === 'STUDENT') {
+            navigate('/student/dashboard');
+        } else if (user && isAdminRole(role)) {
             navigate('/admin/dashboard');
         } else {
-            setAuthModalMode('admin');
-            setAuthModalAuthType('signIn');
-            setIsClerkOpen(true);
+            setIsLoginOpen(true);
         }
     };
+    const openStudentSignIn = openSignIn;
+    const openAdminSignIn = openSignIn;
 
     return (
         <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-emerald-100 selection:text-emerald-900 overflow-x-hidden">
@@ -275,18 +230,11 @@ const Home = () => {
                 style={{ scaleX: reduce ? 0 : progress }}
             />
 
-            {/* Clerk Auth Modal parameterized by entry mode and authType */}
-            <ClerkAuthModal
-                isOpen={isClerkOpen}
-                onClose={() => setIsClerkOpen(false)}
-                mode={authModalMode}
-                initialAuthType={authModalAuthType}
-                redirectUrl={authModalMode === 'student' ? '/assessment/setup' : '/admin/dashboard'}
-            />
+            {/* Single login (Admin and Student) */}
+            <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
 
             <PublicNavbar
-                onOpenStudentSignIn={openStudentSignIn}
-                onOpenAdminSignIn={openAdminSignIn}
+                onOpenSignIn={openSignIn}
             />
 
             {/* ═══════════════════ HERO ═══════════════════ */}

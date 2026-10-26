@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Sun, Moon, LogOut, Menu, X, User, LayoutDashboard } from 'lucide-react';
-import { useClerk, useUser } from '@clerk/clerk-react';
+import { useAuth } from '../auth/useAuth';
 import { useTheme } from '../context/ThemeContext';
 import useStudentTaskStatus, { clearStudentTaskCompleted } from '../hooks/useStudentTaskStatus';
 
@@ -18,8 +18,7 @@ import useStudentTaskStatus, { clearStudentTaskCompleted } from '../hooks/useStu
  */
 const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, showHome = false }) => {
     const navigate = useNavigate();
-    const { user } = useUser();
-    const clerk = useClerk();
+    const { user, signOut } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const { hasCompletedTask } = useStudentTaskStatus(user);
@@ -27,13 +26,8 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
     const handleSignOut = async () => {
         try {
             clearStudentTaskCompleted();
-            localStorage.removeItem('token');
-            localStorage.removeItem('studentToken');
             localStorage.removeItem('invitationToken');
-            localStorage.removeItem('user_profile');
-            if (clerk && clerk.signOut) {
-                await clerk.signOut();
-            }
+            await signOut();
         } catch (err) {
             console.error("Sign out error:", err);
         } finally {
@@ -133,7 +127,7 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
                 ) : (
                     <button
                         type="button"
-                        onClick={() => navigate('/?auth=student')}
+                        onClick={() => navigate('/?auth=login')}
                         className="h-9 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer shrink-0"
                     >
                         Sign In
@@ -202,11 +196,11 @@ const RoleReadyNavbar = ({ title = "Student Assessment", showDashboard = true, s
                                 type="button"
                                 onClick={() => {
                                     setMobileMenuOpen(false);
-                                    navigate('/?auth=student');
+                                    navigate('/?auth=login');
                                 }}
                                 className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-2 cursor-pointer"
                             >
-                                <span>Student Sign In</span>
+                                <span>Sign In</span>
                             </button>
                         )}
                     </div>

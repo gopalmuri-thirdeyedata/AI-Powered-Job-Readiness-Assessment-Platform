@@ -12,14 +12,15 @@ import schemas
 import database
 import utils
 from main import app
+from tests import local_auth_helpers as lh
 
 
 class TestGoogleAuthAuthorization(unittest.TestCase):
     """
     Dedicated Security Regression Test Suite:
-    Verifies that Google OAuth / Email OTP authentication alone NEVER grants
-    Platform Admin, Organization Admin, HR, or Portal access without an explicit,
-    server-side provisioned membership in the database.
+    Verifies that only an explicitly provisioned account (admin-created, local password) ever
+    obtains Platform Admin, Organization Admin, HR, or Portal access: an unknown e-mail (even one
+    from a company domain) is rejected, and tenant boundaries hold for provisioned users.
     """
 
     @classmethod
@@ -34,8 +35,7 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         cls.org_a = models.Organization(
             name="Company A Corp",
             slug="company-a-corp",
-            status="active",
-            clerk_org_id="clerk_org_comp_a"
+            status="active"
         )
         db.add(cls.org_a)
 
@@ -43,8 +43,7 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         cls.org_b = models.Organization(
             name="Company B Ltd",
             slug="company-b-ltd",
-            status="active",
-            clerk_org_id="clerk_org_comp_b"
+            status="active"
         )
         db.add(cls.org_b)
         db.commit()
@@ -55,26 +54,22 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
 
         # 1. Platform Admin user
         cls.platform_admin_email = "test_platform_admin@testtenant.com"
-        cls.platform_admin_clerk_id = "clerk_test_plat_admin_123"
         cls.plat_admin = models.User(
             email=cls.platform_admin_email,
             role=models.UserRole.PLATFORM_ADMIN,
-            hashed_password=utils.get_password_hash("test_pass"),
-            is_active=True,
-            clerk_user_id=cls.platform_admin_clerk_id
+            hashed_password=utils.get_password_hash(lh.TEST_PASSWORD),
+            is_active=True
         )
         db.add(cls.plat_admin)
 
         # 2. Company A Org Admin
         cls.org_a_admin_email = "admin@companya.com"
-        cls.org_a_admin_clerk_id = "clerk_test_admin_a_google"
         cls.admin_a = models.User(
             email=cls.org_a_admin_email,
             role=models.UserRole.ORGANIZATION_ADMIN,
-            hashed_password=utils.get_password_hash("test_pass"),
+            hashed_password=utils.get_password_hash(lh.TEST_PASSWORD),
             is_active=True,
-            organization_id=cls.org_a_id,
-            clerk_user_id=cls.org_a_admin_clerk_id
+            organization_id=cls.org_a_id
         )
         db.add(cls.admin_a)
         db.commit()
@@ -83,21 +78,18 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         db.add(models.OrganizationMember(
             organization_id=cls.org_a_id,
             user_id=cls.admin_a.id,
-            clerk_user_id=cls.org_a_admin_clerk_id,
             role="ORGANIZATION_ADMIN",
             status="active"
         ))
 
         # 3. Company A HR (explicitly provisioned)
         cls.hr_a_email = "hr1@companya.com"
-        cls.hr_a_clerk_id = "clerk_test_hr1_a_google"
         cls.hr_a = models.User(
             email=cls.hr_a_email,
             role=models.UserRole.HR,
-            hashed_password=utils.get_password_hash("test_pass"),
+            hashed_password=utils.get_password_hash(lh.TEST_PASSWORD),
             is_active=True,
-            organization_id=cls.org_a_id,
-            clerk_user_id=cls.hr_a_clerk_id
+            organization_id=cls.org_a_id
         )
         db.add(cls.hr_a)
         db.commit()
@@ -106,7 +98,6 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         db.add(models.OrganizationMember(
             organization_id=cls.org_a_id,
             user_id=cls.hr_a.id,
-            clerk_user_id=cls.hr_a_clerk_id,
             role="HR",
             status="active"
         ))
@@ -144,7 +135,6 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
 
         # Set env variable for test platform admin
         os.environ["PLATFORM_ADMIN_EMAIL"] = cls.platform_admin_email
-        os.environ["PLATFORM_ADMIN_CLERK_USER_ID"] = cls.platform_admin_clerk_id
 
     @classmethod
     def _cleanup_db(cls, db: Session):
@@ -165,7 +155,8 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         db.query(models.Assessment).filter(models.Assessment.candidate_email.like("%@testtenant.com")).delete(synchronize_session=False)
         db.query(models.Candidate).filter(models.Candidate.email.like("%@testtenant.com")).delete(synchronize_session=False)
         db.query(models.JobDescription).filter(models.JobDescription.title.like("Test %")).delete(synchronize_session=False)
-        db.query(models.OrganizationMember).filter(models.OrganizationMember.clerk_user_id.like("clerk_test_%")).delete(synchronize_session=False)
+        if test_user_ids:
+            db.query(models.OrganizationMember).filter(models.OrganizationMember.user_id.in_(test_user_ids)).delete(synchronize_session=False)
         db.query(models.User).filter(models.User.email.in_([
             "test_platform_admin@testtenant.com",
             "admin@companya.com",
@@ -182,144 +173,113 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         cls._cleanup_db(db)
         db.close()
         os.environ["PLATFORM_ADMIN_EMAIL"] = "admin@thirdeyedata.ai"
-        os.environ["PLATFORM_ADMIN_CLERK_USER_ID"] = ""
 
-    def test_01_unknown_google_user_rejected_with_403(self):
+    @staticmethod
+    def _login(email):
+        c, res = lh.login(email)
+        return c, {"X-CSRF-Token": res.json()["csrf_token"]}, res
+
+    def _assert_rejected_and_not_provisioned(self, email):
+        lh.reset_login_limits()
+        res = lh.new_client().post("/api/auth/login/", json={"email": email, "password": lh.TEST_PASSWORD})
+        self.assertEqual(res.status_code, 401)
+        self.assertEqual(res.json()["detail"], "Invalid email or password.")
+        self.assertNotIn("prepwin_session", res.cookies)
+        db = next(database.get_db())
+        user_in_db = db.query(models.User).filter(models.User.email == email).first()
+        db.close()
+        self.assertIsNone(user_in_db, "An unknown e-mail must NOT be inserted into the users table")
+
+    def test_01_unknown_user_rejected(self):
         """
-        TEST 1: Unknown Google user
-        Input: clerk_user_id = unknown_google_user, no organization membership.
-        Expected: HTTP 403 Forbidden. No role, no organization, no db records created.
+        TEST 1: Unknown user: no account, no organization membership.
+        Expected: HTTP 401 with the generic credentials error. No user or membership is created.
         """
+        self._assert_rejected_and_not_provisioned("arbitrary_google_user@gmail.com")
+        # The former token-exchange endpoint (which used to provision from an identity-provider id) is gone
         res = self.client.post("/api/auth/clerk-sync/", json={
             "email": "arbitrary_google_user@gmail.com",
             "clerk_user_id": "unknown_google_user_99999"
         })
-        self.assertEqual(res.status_code, 403)
-        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("not been invited", "not been provisioned")))
+        self.assertIn(res.status_code, (404, 405))
 
-        # Verify no user or membership created
-        db = next(database.get_db())
-        user_in_db = db.query(models.User).filter(models.User.email == "arbitrary_google_user@gmail.com").first()
-        member_in_db = db.query(models.OrganizationMember).filter(models.OrganizationMember.clerk_user_id == "unknown_google_user_99999").first()
-        db.close()
-        self.assertIsNone(user_in_db, "Uninvited Google user must NOT be inserted into users table")
-        self.assertIsNone(member_in_db, "Uninvited Google user must NOT be inserted into organization_members")
-
-    def test_02_unknown_gmail_user_rejected_with_403(self):
-        """
-        TEST 2: Unknown Gmail user
-        Input: random@gmail.com, no HiringAI membership.
-        Expected: HTTP 403 Forbidden.
-        """
-        res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": "random@gmail.com",
-            "clerk_user_id": "clerk_random_gmail_user"
-        })
-        self.assertEqual(res.status_code, 403)
-        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("not been invited", "not been provisioned")))
+    def test_02_unknown_gmail_user_rejected(self):
+        """TEST 2: random@gmail.com, no PrepWin account. Expected: HTTP 401."""
+        self._assert_rejected_and_not_provisioned("random@gmail.com")
 
     def test_03_valid_platform_admin_authorized(self):
         """
         TEST 3: Valid Platform Admin
-        Explicit platform-admin record.
-        Expected: HTTP 200, role = PLATFORM_ADMIN.
+        Explicit platform-admin record. Expected: HTTP 200, role = SUPER_ADMIN, no organization anchor, platform API allowed.
         """
-        res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": self.platform_admin_email,
-            "clerk_user_id": self.platform_admin_clerk_id
-        })
+        c, _csrf, res = self._login(self.platform_admin_email)
         self.assertEqual(res.status_code, 200)
-        token = res.json()["access"]
 
-        # Call /api/auth/me
-        me_res = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        me_res = c.get("/api/auth/me")
         self.assertEqual(me_res.status_code, 200)
         me_data = me_res.json()
-        self.assertEqual(me_data["role"], "PLATFORM_ADMIN")
+        self.assertEqual(me_data["role"], "SUPER_ADMIN")
         self.assertIsNone(me_data["organization_id"])
 
-        # Call platform-only API -> Allowed
-        plat_res = self.client.get("/api/platform/organizations", headers={"Authorization": f"Bearer {token}"})
+        plat_res = c.get("/api/platform/organizations")
         self.assertEqual(plat_res.status_code, 200)
 
     def test_04_valid_organization_admin_authorized(self):
         """
         TEST 4: Valid Organization Admin
         Explicit organization membership in Company A.
-        Expected: HTTP 200, role = ORGANIZATION_ADMIN, organization_id = Company A.
+        Expected: HTTP 200, role = ADMIN, organization_id = Company A.
         """
-        res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": self.org_a_admin_email,
-            "clerk_user_id": self.org_a_admin_clerk_id
-        })
+        c, _csrf, res = self._login(self.org_a_admin_email)
         self.assertEqual(res.status_code, 200)
-        token = res.json()["access"]
 
-        # Call /api/auth/me
-        me_res = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        me_res = c.get("/api/auth/me")
         self.assertEqual(me_res.status_code, 200)
         me_data = me_res.json()
-        self.assertEqual(me_data["role"], "ORGANIZATION_ADMIN")
+        self.assertIn(me_data["role"], ("ADMIN", "ORGANIZATION_ADMIN"))
         self.assertEqual(me_data["organization_id"], self.org_a_id)
         self.assertEqual(me_data["organization_name"], "Company A Corp")
 
-        # MUST NOT be able to access platform-only API
-        plat_res = self.client.get("/api/platform/organizations", headers={"Authorization": f"Bearer {token}"})
+        plat_res = c.get("/api/platform/organizations")
         self.assertEqual(plat_res.status_code, 403, "Org Admin must NOT have platform admin access")
 
     def test_05_valid_hr_authorized(self):
         """
         TEST 5: Valid HR
         Explicit organization membership in Company A as HR.
-        Expected: HTTP 200, role = HR, organization_id = Company A.
+        Expected: HTTP 200, role = ADMIN, organization_id = Company A.
         """
-        res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": self.hr_a_email,
-            "clerk_user_id": self.hr_a_clerk_id
-        })
+        c, _csrf, res = self._login(self.hr_a_email)
         self.assertEqual(res.status_code, 200)
-        token = res.json()["access"]
 
-        # Call /api/auth/me
-        me_res = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        me_res = c.get("/api/auth/me")
         self.assertEqual(me_res.status_code, 200)
         me_data = me_res.json()
-        self.assertEqual(me_data["role"], "HR")
+        self.assertIn(me_data["role"], ("ADMIN", "HR"))
         self.assertEqual(me_data["organization_id"], self.org_a_id)
 
-        # MUST NOT be able to access platform-only API
-        plat_res = self.client.get("/api/platform/organizations", headers={"Authorization": f"Bearer {token}"})
+        plat_res = c.get("/api/platform/organizations")
         self.assertEqual(plat_res.status_code, 403, "HR must NOT have platform admin access")
 
-    def test_06_uninvited_google_user_from_company_domain_rejected(self):
+    def test_06_uninvited_company_domain_user_rejected(self):
         """
-        TEST 6: Google user with matching company domain (uninvited.employee@companya.com)
-        Google authentication succeeds in Clerk, but user has NO HiringAI membership.
-        Expected: HTTP 403 Forbidden. Matching email domain alone does NOT grant access.
+        TEST 6: A user with a matching company domain (uninvited.employee@companya.com) but NO PrepWin account.
+        Expected: HTTP 401. A matching e-mail domain alone does NOT grant access.
         """
-        res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": "uninvited.employee@companya.com",
-            "clerk_user_id": "clerk_uninvited_emp_google"
-        })
-        self.assertEqual(res.status_code, 403)
-        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("not been invited", "not been provisioned")))
+        self._assert_rejected_and_not_provisioned("uninvited.employee@companya.com")
 
     def test_07_company_a_hr_accesses_company_a_data_only(self):
         """
         TEST 7: Company A HR with explicit membership
         Expected: Can access Company A candidates; sees Alice Alpha.
         """
-        sync_res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": self.hr_a_email,
-            "clerk_user_id": self.hr_a_clerk_id
-        })
-        token = sync_res.json()["access"]
+        c, _csrf, _res = self._login(self.hr_a_email)
 
-        cand_res = self.client.get("/api/resume/candidates/", headers={"Authorization": f"Bearer {token}"})
+        cand_res = c.get("/api/resume/candidates/")
         self.assertEqual(cand_res.status_code, 200)
         cand_list = cand_res.json()
 
-        cand_names = [c["name"] for c in cand_list]
+        cand_names = [x["name"] for x in cand_list]
         self.assertIn("Alice Alpha", cand_names, "HR from Company A should see Alice Alpha")
         self.assertNotIn("Bob Beta", cand_names, "HR from Company A must NOT see Bob Beta from Company B")
 
@@ -328,26 +288,22 @@ class TestGoogleAuthAuthorization(unittest.TestCase):
         TEST 8: Company A HR attempts to access or mutate Company B candidate
         Expected: HTTP 404/403. Cross-tenant access and mutation is blocked.
         """
-        sync_res = self.client.post("/api/auth/clerk-sync/", json={
-            "email": self.hr_a_email,
-            "clerk_user_id": self.hr_a_clerk_id
-        })
-        token = sync_res.json()["access"]
+        c, csrf, _res = self._login(self.hr_a_email)
 
         # 1. Update Company B candidate via PATCH -> 404 Not Found
-        update_res = self.client.patch(
+        update_res = c.patch(
             f"/api/resume/candidates/{self.cand_b_id}/",
             json={"stage": "Technical Interview"},
-            headers={"Authorization": f"Bearer {token}"}
+            headers=csrf
         )
         self.assertEqual(update_res.status_code, 404, "Cross-tenant candidate update must return 404")
 
         # 2. Delete Company B candidate via DELETE -> 404 Not Found
-        del_res = self.client.delete(f"/api/resume/candidates/{self.cand_b_id}/", headers={"Authorization": f"Bearer {token}"})
+        del_res = c.delete(f"/api/resume/candidates/{self.cand_b_id}/", headers=csrf)
         self.assertEqual(del_res.status_code, 404, "Cross-tenant candidate delete must return 404")
 
         # 3. Access Company B candidate resume file -> 404 Not Found
-        file_res = self.client.get(f"/api/resume/file/{self.cand_b_id}", headers={"Authorization": f"Bearer {token}"})
+        file_res = c.get(f"/api/resume/file/{self.cand_b_id}")
         self.assertEqual(file_res.status_code, 404, "Cross-tenant file access must return 404")
 
 

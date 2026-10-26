@@ -23,7 +23,6 @@ export default defineConfig(({ command }) => ({
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-clerk': ['@clerk/clerk-react'],
           'vendor-ui': ['lucide-react', 'framer-motion'],
         }
       }

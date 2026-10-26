@@ -156,7 +156,6 @@ describe('recruitment adapter: the explicit start, in-memory lease and server-dr
 describe('student adapter: the existing student endpoints, student authentication, plus drafts', () => {
     test('calls the roleready endpoints for the given session and never a public candidate endpoint', async () => {
         globalThis.localStorage = makeStorage();
-        globalThis.localStorage.setItem('studentToken', 'JWT');
         (globalThis.__axiosCalls ||= []).length = 0;
         globalThis.__axiosHandler = () => ({});
         const { createStudentAssessmentApi } = await loadModule('src/services/assessmentApi.js');
@@ -179,7 +178,9 @@ describe('student adapter: the existing student endpoints, student authenticatio
             'POST /api/roleready/session/UUID-9/start-interview', 'POST /api/roleready/session/UUID-9/vapi-init', 'POST /api/roleready/session/UUID-9/submit-interview',
             'PUT /api/roleready/session/UUID-9/draft', 'POST /api/roleready/session/UUID-9/terminate',
         ]);
-        assert.ok(globalThis.__axiosCalls.every((c) => c.headers.Authorization === 'Bearer JWT'), 'student authentication is unchanged');
+        // Students authenticate with the HttpOnly session cookie (+ CSRF header added by the auth client): no per-request bearer credential
+        assert.ok(globalThis.__axiosCalls.every((c) => !('Authorization' in c.headers)), 'no bearer credential is attached by the service client');
+        assert.deepEqual(globalThis.localStorage.dump(), {}, 'nothing is written to storage');
         assert.ok(!seen.some((u) => u.includes('/api/public/')));
         assert.deepEqual(globalThis.__axiosCalls[9].body, { section: 'aptitude', payload: { answers: { 1: 'B' } } });
     });

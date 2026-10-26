@@ -12,7 +12,6 @@ const studentLayoutCode = fs.readFileSync(path.join(__dirname, 'src', 'layouts',
 const studentDashboardCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentDashboard.jsx'), 'utf-8');
 const studentResumeCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentResumeUpload.jsx'), 'utf-8');
 const studentProfileCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentProfile.jsx'), 'utf-8');
-const studentLoginCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentLogin.jsx'), 'utf-8');
 const studentApiCode = fs.readFileSync(path.join(__dirname, 'src', 'services', 'studentApi.js'), 'utf-8');
 const globalNavbarCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'GlobalNavbar.jsx'), 'utf-8');
 
@@ -27,14 +26,15 @@ describe('Student Career Platform Phase 1 Frontend Test Suite', () => {
         assert.ok(appCode.includes("StudentDashboard"));
         assert.ok(appCode.includes("StudentResumeUpload"));
         assert.ok(appCode.includes("StudentProfile"));
-        assert.ok(appCode.includes("StudentLogin"));
+        assert.ok(!appCode.includes("StudentLogin"), 'the separate student sign-in/registration page is gone: one login for everyone');
     });
 
     test('2. StudentLayout implements dedicated Student Career Hub navigation and auth guard', () => {
         assert.ok(studentLayoutCode.includes('/student/dashboard'));
         assert.ok(studentLayoutCode.includes('/student/resume'));
         assert.ok(studentLayoutCode.includes('/student/profile'));
-        assert.ok(studentLayoutCode.includes('studentToken'));
+        assert.ok(studentLayoutCode.includes('useAuth'), 'the layout follows the server-verified session');
+        assert.ok(!studentLayoutCode.includes('studentToken'), 'no stored student token');
         assert.ok(studentLayoutCode.includes('Student Career Hub'));
         assert.ok(studentLayoutCode.includes('handleLogout'));
     });
@@ -111,22 +111,19 @@ describe('Student Career Platform Phase 1 Frontend Test Suite', () => {
         assert.ok(studentProfileCode.includes('onRemove={() => setField(\'skills\''));
     });
 
-    test('6. Student API service encapsulates all /api/student endpoints and token headers', () => {
+    test('6. Student API service encapsulates all /api/student endpoints (cookie session, no token headers)', () => {
         assert.ok(studentApiCode.includes('/api/student/profile'));
         assert.ok(studentApiCode.includes('/api/student/resume/upload'));
         assert.ok(studentApiCode.includes('/api/student/resume'));
         assert.ok(studentApiCode.includes('/api/student/readiness'));
         assert.ok(studentApiCode.includes('/api/student/dashboard'));
-        assert.ok(studentApiCode.includes('/api/student/auth/login'));
-        assert.ok(studentApiCode.includes('/api/student/auth/register'));
-        assert.ok(studentApiCode.includes('studentToken'));
+        assert.ok(!studentApiCode.includes('/api/student/auth/login') && !studentApiCode.includes('/api/student/auth/register'), 'no student login/registration API: accounts are created by an administrator, sign-in is the single login');
+        assert.ok(!studentApiCode.includes('studentToken') && !studentApiCode.includes('Authorization'), 'cookie session: no token headers or stored token');
     });
 
-    test('7. StudentLogin provides credentials login, new registration and instant demo student access', () => {
-        assert.ok(studentLoginCode.includes('Student Career Sign In'));
-        assert.ok(studentLoginCode.includes('Instant Demo Student Access'));
-        assert.ok(studentLoginCode.includes('isRegistering'));
-        assert.ok(studentLoginCode.includes('studentApi.login'));
+    test('7. there is no separate student login/registration/demo-account page: /student/login is an alias of the single login', () => {
+        assert.ok(!fs.existsSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentLogin.jsx')));
+        assert.match(appCode, /path="\/student\/login" element=\{<Navigate to="\/\?auth=login" replace \/>\}/);
     });
 
     test('8. GlobalNavbar conditionally displays Student Career Hub for STUDENT role', () => {

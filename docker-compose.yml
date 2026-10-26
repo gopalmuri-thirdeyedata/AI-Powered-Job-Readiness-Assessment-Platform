@@ -66,7 +66,7 @@ services:
       - DB_PORT=3306
       - REDIS_URL=redis://redis:6379/0
       # SQLite file on a persistent volume: saved profiles survive logout, restarts and rebuilds
-      - DATABASE_URL=sqlite:////app/data/hiringai.db
+      - DATABASE_URL=sqlite:////app/data/PrepWin.db
       # Demo-only Java/Python runner (the public Judge0 is overloaded); use a real Judge0 for production
       - JUDGE0_API_URL=http://code_runner:2358/submissions
     volumes:
@@ -94,7 +94,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_dWx0aW1hdGUtZmVycmV0LTYzLmNsZXJrLmFjY291bnRzLmRldiQ}
         VITE_VAPI_PUBLIC_KEY: ${VITE_VAPI_PUBLIC_KEY:-85876843-8675-47b9-b5bd-f4387a97473d}
     container_name: hiringai_frontend_prod
     restart: always

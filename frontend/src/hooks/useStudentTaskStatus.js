@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import studentApi from '../services/studentApi';
-import API_URL from '../apiConfig';
+import { useAuth } from '../auth/useAuth';
+import { getStudentEmail } from '../utils/authStorage';
 
 const BASE_STORAGE_KEY = 'student_completed_assessment';
 const EVENT_NAME = 'student_task_status_changed';
@@ -9,59 +10,11 @@ const EVENT_NAME = 'student_task_status_changed';
  * Returns a scoped storage key for the given email to prevent state leaking between users.
  */
 const getStorageKey = (email = null) => {
-    const targetEmail = (email || localStorage.getItem('student_user_email') || '').trim().toLowerCase();
+    const targetEmail = (email || getStudentEmail() || '').trim().toLowerCase();
     if (targetEmail) {
         return `${BASE_STORAGE_KEY}_${targetEmail}`;
     }
     return BASE_STORAGE_KEY;
-};
-
-/**
- * Synchronizes the active Clerk student session with the backend.
- * Ensures the student JWT token in localStorage strictly belongs to this user.
- */
-export const syncStudentSessionWithBackend = async (user) => {
-    if (!user) return null;
-    const email = user.primaryEmailAddress?.emailAddress?.trim()?.toLowerCase();
-    if (!email) return null;
-
-    const previousEmail = (localStorage.getItem('student_user_email') || '').trim().toLowerCase();
-    if (previousEmail && previousEmail !== email) {
-        // Different user logged in! Evict previous user's JWT and task flags
-        localStorage.removeItem('token');
-        localStorage.removeItem('studentToken');
-        localStorage.removeItem(BASE_STORAGE_KEY);
-        localStorage.removeItem(getStorageKey(previousEmail));
-        window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { completed: false, email } }));
-    }
-
-    try {
-        const response = await fetch(`${API_URL}/api/auth/clerk-sync/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                email,
-                clerk_user_id: user.id,
-                role_intent: 'student',
-                full_name: user.fullName || user.firstName || undefined
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            if (data.access) {
-                localStorage.setItem('token', data.access);
-                localStorage.setItem('studentToken', data.access);
-                localStorage.setItem('student_user_email', email);
-                return data.access;
-            }
-        }
-    } catch (err) {
-        console.warn('syncStudentSessionWithBackend failed:', err);
-    }
-    return null;
 };
 
 /**
@@ -114,8 +67,9 @@ export const clearStudentTaskCompleted = (email = null) => {
  * - Validates in the background against /api/roleready/student/assessments when an auth token exists.
  * - Reactive across tabs and components via custom event listeners.
  */
-export default function useStudentTaskStatus(user = null) {
-    const userEmail = user?.primaryEmailAddress?.emailAddress?.trim()?.toLowerCase() || null;
+export default function useStudentTaskStatus() {
+    const { user, isLoaded: isAuthLoaded } = useAuth();
+    const userEmail = user?.role === 'STUDENT' && user?.email ? String(user.email).trim().toLowerCase() : null;
     const [hasCompletedTask, setHasCompletedTask] = useState(() => isStudentTaskCompletedSync(userEmail));
     const [isLoading, setIsLoading] = useState(true);
     // True only when the server confirmed this student has no assessments (or nobody is signed in).
@@ -123,29 +77,14 @@ export default function useStudentTaskStatus(user = null) {
     const [isConfirmedNew, setIsConfirmedNew] = useState(false);
 
     const refreshStatus = useCallback(async () => {
-        let token = localStorage.getItem('studentToken') || localStorage.getItem('token');
-        const storedEmail = (localStorage.getItem('student_user_email') || '').trim().toLowerCase();
+        if (!isAuthLoaded) return;
 
-        // If active Clerk student exists and tokens are missing or belong to another account, synchronize now
-        if (user && (!token || (storedEmail && userEmail && storedEmail !== userEmail))) {
-            const syncedToken = await syncStudentSessionWithBackend(user);
-            if (syncedToken) token = syncedToken;
-        }
-
-        if (!token && !user) {
+        // No student session: nothing to ask the student endpoint (and hiring staff have no student task)
+        if (!userEmail) {
             setIsConfirmedNew(true);
             setIsLoading(false);
             return;
         }
-
-        // Hiring staff have no student task: asking the student endpoint with an admin token is pointless
-        try {
-            const cachedRole = JSON.parse(localStorage.getItem('user_profile') || '{}')?.role;
-            if (['PLATFORM_ADMIN', 'ORGANIZATION_ADMIN', 'HR'].includes(cachedRole)) {
-                setIsLoading(false);
-                return;
-            }
-        } catch { /* unreadable cache: fall through to the normal check */ }
 
         try {
             const data = await studentApi.getAssessmentHistory();
@@ -154,7 +93,7 @@ export default function useStudentTaskStatus(user = null) {
             // Any attempt (even unfinished) unlocks the dashboard so past tests stay reachable
             const isCompleted = completedCount > 0 || attemptedCount > 0 || (Array.isArray(data?.assessments) && data.assessments.some(a => a.is_completed));
 
-            const key = getStorageKey(userEmail || storedEmail);
+            const key = getStorageKey(userEmail);
             setIsConfirmedNew(!isCompleted);
             if (isCompleted) {
                 localStorage.setItem(key, 'true');
@@ -170,7 +109,7 @@ export default function useStudentTaskStatus(user = null) {
         } finally {
             setIsLoading(false);
         }
-    }, [user, userEmail]);
+    }, [isAuthLoaded, userEmail]);
 
     useEffect(() => {
         refreshStatus();

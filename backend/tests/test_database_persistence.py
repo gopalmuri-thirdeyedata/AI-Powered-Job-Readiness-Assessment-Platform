@@ -53,7 +53,7 @@ def test_concurrent_writers_queue_instead_of_failing(tmp_path):
 
 def test_compose_keeps_the_database_on_a_persistent_volume():
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "DATABASE_URL=sqlite:////app/data/hiringai.db" in compose
+    assert "DATABASE_URL=sqlite:////app/data/PrepWin.db" in compose
     assert "backend_data:/app/data" in compose
     top_level = compose[compose.rindex("\nvolumes:"):]
     assert "backend_data:" in top_level

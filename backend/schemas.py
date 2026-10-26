@@ -8,6 +8,8 @@ class Token(BaseModel):
     access: str # Match 'access' key expected by frontend
     refresh: Optional[str] = None # Optional for now
     token_type: str
+    role: Optional[str] = None
+    organization_id: Optional[int] = None
 
 class TokenData(BaseModel):
     email: Optional[str] = None

@@ -25,7 +25,7 @@ import {
     XCircle,
     ArrowRight,
 } from 'lucide-react';
-import { useUser } from '@clerk/clerk-react';
+import { useUser } from '../../auth/useAuth';
 import studentApi from '../../services/studentApi';
 import StudentOnboardingWizard from '../../components/student/StudentOnboardingWizard';
 import StudentPerformanceView from '../../components/student/StudentPerformanceView';

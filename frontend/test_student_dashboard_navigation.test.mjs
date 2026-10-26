@@ -27,15 +27,17 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(fileContent.includes('Student Dashboard'), 'GlobalNavbar must render "Student Dashboard"');
     });
 
-    test('4. Home.jsx routes authenticated students to Assessment Setup and admins to the admin dashboard', () => {
+    test('4. Home.jsx routes authenticated students to their dashboard and admins to the admin dashboard (by server-verified role)', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'Home.jsx'), 'utf-8');
-        assert.ok(fileContent.includes("navigate('/assessment/setup'"), 'Home.jsx must navigate students to /assessment/setup');
+        assert.ok(fileContent.includes("navigate('/student/dashboard'"), 'Home.jsx must navigate students to /student/dashboard');
+        assert.ok(fileContent.includes("role === 'STUDENT'") && fileContent.includes('isAdminRole(role)'), 'the role comes from the verified session');
         assert.ok(fileContent.includes("navigate('/admin/dashboard'"), 'Home.jsx must navigate admins to /admin/dashboard');
     });
 
-    test('5. StudentLogin.jsx defaults destination to /student/dashboard', () => {
-        const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentLogin.jsx'), 'utf-8');
-        assert.ok(fileContent.includes("'/student/dashboard'"), 'StudentLogin.jsx must fallback to /student/dashboard');
+    test('5. LoginModal.jsx sends students to /student/dashboard unless the server says otherwise', () => {
+        const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'components', 'LoginModal.jsx'), 'utf-8');
+        assert.ok(fileContent.includes("'/student/dashboard'"), 'LoginModal.jsx must fall back to /student/dashboard');
+        assert.ok(fileContent.includes('data.redirect'), 'the destination is the one the server returned');
     });
 
     test('6. App.jsx redirects /student to /student/dashboard', () => {
@@ -43,9 +45,10 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(fileContent.includes('to="/student/dashboard"'), 'App.jsx must redirect /student to /student/dashboard');
     });
 
-    test('7. StudentLayout.jsx syncs Clerk session or token smoothly', () => {
+    test('7. StudentLayout.jsx follows the server-verified session (cookie), with no token juggling', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'StudentLayout.jsx'), 'utf-8');
-        assert.ok(fileContent.includes('clerk-sync') || fileContent.includes('useUser') || fileContent.includes('studentToken'), 'StudentLayout must handle auth cleanly');
+        assert.ok(fileContent.includes('useAuth'), 'StudentLayout must handle auth cleanly');
+        assert.ok(!/clerk/i.test(fileContent) && !fileContent.includes('studentToken'), 'no Clerk sync and no stored student token');
     });
 
     test('8. RoleReadySetup.jsx has a link or navigation to Student Dashboard', () => {

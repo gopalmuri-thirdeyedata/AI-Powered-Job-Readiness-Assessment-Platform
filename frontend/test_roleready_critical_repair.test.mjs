@@ -9,12 +9,12 @@ const __dirname = path.dirname(__filename);
 
 const appCode = fs.readFileSync(path.join(__dirname, 'src', 'App.jsx'), 'utf-8');
 const authGuardCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'RoleReadyAuthGuard.jsx'), 'utf-8');
-const studentLoginCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'student', 'StudentLogin.jsx'), 'utf-8');
+const loginModalCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'LoginModal.jsx'), 'utf-8');
 const publicNavbarCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'PublicNavbar.jsx'), 'utf-8');
 const homeCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'Home.jsx'), 'utf-8');
 const dashboardCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'Dashboard.jsx'), 'utf-8');
 const dashboardLayoutCode = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'DashboardLayout.jsx'), 'utf-8');
-const clerkGuardCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'ClerkAdminGuard.jsx'), 'utf-8');
+const adminGuardCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'AdminGuard.jsx'), 'utf-8');
 const candidateLayoutCode = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'CandidateLayout.jsx'), 'utf-8');
 const collegeLayoutCode = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'CollegeLayout.jsx'), 'utf-8');
 const globalNavbarCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'GlobalNavbar.jsx'), 'utf-8');
@@ -30,31 +30,33 @@ describe('RoleReady Critical Repair — Authentication, Routing, and Integration
         assert.ok(appCode.includes('<RoleReadyAuthGuard><RoleReadyReport /></RoleReadyAuthGuard>'), 'RoleReadyReport route must be guarded');
     });
 
-    test('2. RoleReadyAuthGuard inspects session tokens and safely preserves redirect query', () => {
-        assert.ok(authGuardCode.includes('studentToken') || authGuardCode.includes('token'), 'Guard must check session tokens');
+    test('2. RoleReadyAuthGuard trusts the server-verified session, honours invitation tokens and routes everyone else to the single login', () => {
+        assert.ok(authGuardCode.includes('useAuth'), 'Guard must read the server-verified session');
         assert.ok(authGuardCode.includes('invitationToken'), 'Guard must check invitationToken');
-        assert.ok(authGuardCode.includes('/?auth=student') || authGuardCode.includes('redirect'), 'Unauthenticated users must be routed to student authentication');
+        assert.ok(authGuardCode.includes('/?auth=login'), 'Unauthenticated users must be routed to the single login');
+        assert.ok(!/localStorage\.(get|set)Item\((['"])(student_?[Tt]oken|token|admin_token)/.test(authGuardCode), 'no credential is read from browser storage');
     });
 
-    test('3. StudentLogin parses and honors the return destination query parameter', () => {
-        assert.ok(studentLoginCode.includes('useSearchParams'), 'StudentLogin must use useSearchParams');
-        assert.ok(studentLoginCode.includes('redirectParam'), 'StudentLogin must retrieve redirect param');
-        assert.ok(studentLoginCode.includes('resolvePostLoginDestination'), 'StudentLogin must resolve the post-login destination');
-        assert.ok(studentLoginCode.includes('return redirectParam'), 'StudentLogin must honor a safe redirect param');
-        assert.ok(studentLoginCode.includes('navigate(dest)'), 'StudentLogin must navigate to destination upon login');
+    test('3. LoginModal is the one login: server-decided destination, no sign-up, no secret persisted', () => {
+        assert.ok(loginModalCode.includes("from '../auth/authSession'"), 'LoginModal must sign in through the cookie-session client');
+        assert.ok(loginModalCode.includes('data.redirect'), 'the destination comes from the server response (role verified server-side)');
+        assert.ok(!/sign ?up|register/i.test(loginModalCode.replace(/Accounts are created by your administrator[^<]*/, '')), 'no sign-up path in the login');
+        assert.ok(!/localStorage|sessionStorage/.test(loginModalCode), 'the login never writes to browser storage');
+        assert.ok(!/clerk/i.test(loginModalCode), 'no Clerk dependency');
+        assert.ok(!appCode.includes('/signup'), 'App.jsx must not route a public sign-up page');
     });
 
-    test('4. PublicNavbar provides distinct flows for Student Assessment and Enterprise Sign In', () => {
-        assert.ok(publicNavbarCode.includes('handleStudentClick'), 'PublicNavbar must define handleStudentClick');
-        assert.ok(publicNavbarCode.includes('handleAdminClick'), 'PublicNavbar must define handleAdminClick');
-        assert.ok(publicNavbarCode.includes('Student Sign In'), 'PublicNavbar must label student sign-in clearly');
-        assert.ok(publicNavbarCode.includes('Admin Sign In') || publicNavbarCode.includes('Enterprise Workspace'), 'PublicNavbar must label admin sign-in clearly');
+    test('4. PublicNavbar offers a single Sign In that opens the one login', () => {
+        assert.ok(publicNavbarCode.includes('handleSignInClick'), 'PublicNavbar must define handleSignInClick');
+        assert.ok(publicNavbarCode.includes('onOpenSignIn'), 'PublicNavbar must open the login modal through onOpenSignIn');
+        assert.ok(publicNavbarCode.includes('Sign In'), 'PublicNavbar must label sign-in clearly');
+        assert.ok(!publicNavbarCode.includes('Student Sign In') && !publicNavbarCode.includes('Admin Sign In'), 'one login, not two portals');
     });
 
-    test('5. Home.jsx provides distinct student and admin authentication entry points', () => {
-        assert.ok(homeCode.includes('openStudentSignIn'), 'Home.jsx must define openStudentSignIn');
-        assert.ok(homeCode.includes('openAdminSignIn'), 'Home.jsx must define openAdminSignIn');
-        assert.ok(homeCode.includes('ClerkAuthModal'), 'Home.jsx must integrate ClerkAuthModal');
+    test('5. Home.jsx opens the single LoginModal and routes signed-in users by their server-verified role', () => {
+        assert.ok(homeCode.includes('openSignIn'), 'Home.jsx must define openSignIn');
+        assert.ok(homeCode.includes('LoginModal'), 'Home.jsx must integrate LoginModal');
+        assert.ok(!homeCode.includes('ClerkAuthModal'), 'Clerk modal is gone');
     });
 
     test('6. Dashboard.jsx replaces old Hiring Control Panel and legacy command center with Assessment Management', () => {
@@ -73,13 +75,13 @@ describe('RoleReady Critical Repair — Authentication, Routing, and Integration
     });
 
     test('8. Active layout and guard components use PrepWin branding', () => {
-        assert.ok(!clerkGuardCode.includes('HiringAI</span>'), 'ClerkAdminGuard must not render legacy HiringAI');
-        assert.ok(clerkGuardCode.includes('PrepWin'), 'ClerkAdminGuard must render PrepWin');
+        assert.ok(!adminGuardCode.includes('HiringAI</span>'), 'AdminGuard must not render legacy HiringAI');
+        assert.ok(adminGuardCode.includes('PrepWin'), 'AdminGuard must render PrepWin');
         assert.ok(!candidateLayoutCode.includes('HiringAI</span>'), 'CandidateLayout must not render legacy HiringAI');
         assert.ok(candidateLayoutCode.includes('PrepWin</span>'), 'CandidateLayout must render PrepWin');
         assert.ok(!collegeLayoutCode.includes('HiringAI\n'), 'CollegeLayout must not render legacy HiringAI');
         assert.ok(collegeLayoutCode.includes('PrepWin'), 'CollegeLayout must render PrepWin');
-        assert.ok(globalNavbarCode.includes('PrepWin Platform'), 'GlobalNavbar must render PrepWin Platform for platform admin');
+        assert.ok(globalNavbarCode.includes('PrepWin'), 'GlobalNavbar must render PrepWin branding');
     });
 
     test('9. Candidate invitation portal and API service persist and send invitation tokens', () => {

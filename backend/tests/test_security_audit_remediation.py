@@ -421,7 +421,7 @@ def test_resume_access_expired_token_rejected(resume_test_env):
 
 def test_sqlite_database_path_resolves_consistently_regardless_of_cwd():
     """
-    Verifies that SQLite database path resolves to backend/hiringai.db
+    Verifies that SQLite database path resolves to backend/PrepWin.db
     both when run from backend/ and when run from the workspace root directory.
     """
     import subprocess
@@ -430,15 +430,18 @@ def test_sqlite_database_path_resolves_consistently_regardless_of_cwd():
 
     backend_dir = Path(__file__).resolve().parent.parent
     workspace_root = backend_dir.parent
-    expected_db_file = (backend_dir / "hiringai.db").resolve()
+    expected_db_file = (backend_dir / "PrepWin.db").resolve()
 
     python_exe = sys.executable
+
+    clean_env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "PREPWIN_TESTS_USE_CONFIGURED_DB")}
 
     # 1. Test when working directory is backend/
     code_backend = "import database; print(str(database.engine.url.database))"
     res_backend = subprocess.run(
         [python_exe, "-c", code_backend],
         cwd=str(backend_dir),
+        env=clean_env,
         capture_output=True,
         text=True,
         check=True
@@ -451,6 +454,7 @@ def test_sqlite_database_path_resolves_consistently_regardless_of_cwd():
     res_root = subprocess.run(
         [python_exe, "-c", code_root],
         cwd=str(workspace_root),
+        env=clean_env,
         capture_output=True,
         text=True,
         check=True

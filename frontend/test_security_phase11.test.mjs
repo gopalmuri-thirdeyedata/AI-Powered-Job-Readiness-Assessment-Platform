@@ -18,31 +18,39 @@ const globalNavbarCode = fs.readFileSync(path.join(__dirname, 'src', 'components
 
 describe('Security Hardening, Performance & Integration Phase 11 Frontend Test Suite', () => {
 
-    test('1. studentApi.js isolates studentToken and wipes credentials on logout', () => {
-        assert.ok(studentApiCode.includes('studentToken'));
+    const readsCredentialFromStorage = (code) => /(localStorage|sessionStorage)\.(get|set)Item\(\s*['"`](token|studentToken|student_token|admin_token|access)['"`]/.test(code);
+
+    test('1. studentApi.js relies on the credentialed cookie session and ends it server-side on logout', () => {
         assert.ok(studentApiCode.includes('getAuthHeaders'));
         assert.ok(studentApiCode.includes('logout()'));
-        assert.ok(studentApiCode.includes("localStorage.removeItem('studentToken')"));
+        assert.ok(studentApiCode.includes("from '../auth/authSession'"), 'logout goes through the session client (revokes the server-side session)');
+        assert.ok(!studentApiCode.includes('Authorization'), 'no bearer header is built by the service');
+        assert.ok(!readsCredentialFromStorage(studentApiCode) && !studentApiCode.includes('studentToken'), 'no token lives in browser storage');
+        assert.ok(!studentApiCode.includes('/api/student/auth/'), 'no student register/login API: accounts are created by an administrator');
     });
 
-    test('2. collegeApi.js enforces bearer authentication and college administration route prefixes', () => {
+    test('2. collegeApi.js uses cookie auth and keeps the college administration route prefixes', () => {
         assert.ok(collegeApiCode.includes('getAuthHeaders'));
-        assert.ok(collegeApiCode.includes('localStorage.getItem(\'token\')'));
+        assert.ok(!collegeApiCode.includes('Authorization') && !readsCredentialFromStorage(collegeApiCode), 'no bearer token from browser storage');
         assert.ok(collegeApiCode.includes('/api/college/overview'));
         assert.ok(collegeApiCode.includes('/api/college/students'));
         assert.ok(collegeApiCode.includes('/api/college/drives'));
     });
 
-    test('3. StudentLayout.jsx guards unauthenticated navigation and redirects to /student/login', () => {
-        assert.ok(studentLayoutCode.includes('localStorage.getItem(\'studentToken\')'));
-        assert.ok(studentLayoutCode.includes('navigate(\'/student/login\')'));
+    test('3. StudentLayout.jsx guards on the server-verified session and redirects to the single login', () => {
+        assert.ok(studentLayoutCode.includes('useAuth'));
+        assert.ok(studentLayoutCode.includes("navigate('/?auth=login'"));
+        assert.ok(studentLayoutCode.includes('isAdminRole(role)'), 'an admin session is sent to the admin dashboard');
         assert.ok(studentLayoutCode.includes('studentApi.getProfile()'));
+        assert.ok(!readsCredentialFromStorage(studentLayoutCode), 'no credential is read from browser storage');
     });
 
-    test('4. CollegeLayout.jsx enforces admin authentication token and navigation protection', () => {
-        assert.ok(collegeLayoutCode.includes('localStorage.getItem(\'token\')'));
-        assert.ok(collegeLayoutCode.includes('navigate(\'/login\')'));
+    test('4. CollegeLayout.jsx requires a server-verified ADMIN session and signs out through the session client', () => {
+        assert.ok(collegeLayoutCode.includes('useAuth'));
+        assert.ok(collegeLayoutCode.includes('!isAdminRole(role)'));
+        assert.ok(collegeLayoutCode.includes("navigate('/?auth=login'"));
         assert.ok(collegeLayoutCode.includes('handleLogout'));
+        assert.ok(!readsCredentialFromStorage(collegeLayoutCode));
     });
 
     test('5. StudentResumeUpload.jsx restricts uploads to valid document MIME types (.pdf, .docx, .doc, .txt)', () => {
@@ -64,9 +72,11 @@ describe('Security Hardening, Performance & Integration Phase 11 Frontend Test S
         assert.ok(studentPracticeCode.includes('Public Sample Test Cases'));
     });
 
-    test('8. GlobalNavbar.jsx handles user profile authentication state and role navigation', () => {
-        assert.ok(globalNavbarCode.includes('/api/auth/me'));
-        assert.ok(globalNavbarCode.includes('user_profile'));
+    test('8. GlobalNavbar.jsx shows the server-verified account and signs out through the session client', () => {
+        assert.ok(globalNavbarCode.includes('useAuth'));
+        assert.ok(globalNavbarCode.includes('signOut'));
+        assert.ok(globalNavbarCode.includes('profile.role'), 'role-dependent navigation reads the verified role');
+        assert.ok(!readsCredentialFromStorage(globalNavbarCode) && !globalNavbarCode.includes('user_profile'), 'no account cache or token in browser storage');
         assert.ok(!globalNavbarCode.includes('handleNotificationClick'), 'legacy activity notifications are not part of the recruitment workflow');
     });
 });

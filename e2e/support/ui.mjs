@@ -140,6 +140,9 @@ export const sessionUuid = (ui) => {
 /** Submit coding and wait for the interview screen. */
 export async function submitCodingToInterview(ui) {
   await ui.page.getByRole('button', { name: /Submit All & Unlock Interview/ }).click();
+  // The round-result screen holds until the candidate continues (it no longer advances on its own)
+  const proceed = ui.page.getByRole('button', { name: /Continue to Interview/ });
+  await proceed.waitFor({ state: 'visible', timeout: 60000 }).then(() => proceed.click()).catch(() => {});
   await ui.page.waitForSelector('text=/AI Video Interview|Written interview|Connecting to AI Interviewer|Connection Failed/', { timeout: 60000 });
   await ui.page.waitForTimeout(1500);
 }
@@ -173,9 +176,14 @@ export const armMicDenial = (context) => context.addInitScript(() => {
 });
 
 // ------------------------------------------------------------------------------ Student Platform
-// Real sign-in is Clerk (an external identity provider) and cannot be automated; the guard also accepts the platform JWT
-// stored by the app, so the tests mint a real JWT through the harness and let the app validate it against /api/auth/me.
-export const signInStudent = (context, token) => context.addInitScript((t) => { try { localStorage.setItem('studentToken', t); } catch { /* storage unavailable */ } }, token);
+// Real sign-in: POST /api/auth/login/ through the browser context's request client, so the HttpOnly session cookie lands in the SAME
+// cookie jar the page uses. The app then validates it with /api/auth/me exactly as for a human login.
+export const signIn = async (context, api, { email, password }) => {
+  const res = await context.request.post(`${api}/api/auth/login/`, { data: { email, password } });
+  if (!res.ok()) throw new Error(`e2e login failed for ${email}: HTTP ${res.status()}`);
+  return res.json();
+};
+export const signInStudent = signIn;
 
 /** What the vision service would say for a candidate who is simply sitting there (YOLO itself is tested in the backend suite). */
 export const stubCleanProctoring = (page) => page.route('**/api/proctor/analyze-frame', (route) => route.fulfill({

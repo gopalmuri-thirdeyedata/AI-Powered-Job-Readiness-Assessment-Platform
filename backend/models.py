@@ -11,15 +11,37 @@ PreciseDateTime = DateTime(timezone=True).with_variant(MYSQL_DATETIME(fsp=6), "m
 
 
 class UserRole(str, enum.Enum):
-    PLATFORM_ADMIN = "PLATFORM_ADMIN"
-    ORGANIZATION_ADMIN = "ORGANIZATION_ADMIN"
-    HR = "HR"
-    CANDIDATE = "CANDIDATE"
-    STUDENT = "STUDENT"
-    # Backward compatibility aliases
+    """
+    Canonical roles (the only values stored for login accounts):
+      SUPER_ADMIN  platform owner: creates Student, Admin and Super Admin accounts; platform-level operations
+      ADMIN        organization administrator: creates Student accounts only
+      STUDENT      student / assessment taker
+    CANDIDATE is the internal shadow account of a candidate-portal invitation; it can never sign in with a password.
+    """
     SUPER_ADMIN = "SUPER_ADMIN"
-    HR_ADMIN = "HR_ADMIN"
-    INTERVIEWER = "INTERVIEWER"
+    ADMIN = "ADMIN"
+    STUDENT = "STUDENT"
+
+    # Backward-compatibility aliases (same stored value as the canonical role they name)
+    PLATFORM_ADMIN = "SUPER_ADMIN"
+    ORGANIZATION_ADMIN = "ADMIN"
+    HR = "ADMIN"
+    RECRUITER = "ADMIN"
+    HR_ADMIN = "ADMIN"
+    INTERVIEWER = "ADMIN"
+    CANDIDATE = "CANDIDATE"
+
+
+ADMIN_ROLES = (UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value)
+
+
+def is_admin_role(role) -> bool:
+    """ADMIN or SUPER_ADMIN (every administrative surface); never true for STUDENT / CANDIDATE / unknown values."""
+    return str(getattr(role, "value", role)) in ADMIN_ROLES
+
+
+def is_super_admin_role(role) -> bool:
+    return str(getattr(role, "value", role)) == UserRole.SUPER_ADMIN.value
 
 class OrganizationStatus(str, enum.Enum):
     active = "active"
@@ -45,7 +67,7 @@ class OrganizationMember(Base):
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     clerk_user_id = Column(String(150), index=True, nullable=True)
-    role = Column(String(50), default="HR", nullable=False) # ORGANIZATION_ADMIN, HR
+    role = Column(String(50), default="ADMIN", nullable=False) # ADMIN, STUDENT
     status = Column(String(50), default="active", nullable=False) # active, pending, deactivated
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -70,15 +92,41 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(150), unique=True, index=True)
     hashed_password = Column(String(255))
-    role = Column(String(50), default=UserRole.CANDIDATE) # Stores enum value as string
+    role = Column(String(50), default=UserRole.STUDENT) # Stores enum value as string (ADMIN, STUDENT)
     is_active = Column(Boolean, default=True)
     password_changed = Column(Boolean, default=False)
     company_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
-    clerk_user_id = Column(String(150), index=True, nullable=True)
+    clerk_user_id = Column(String(150), index=True, nullable=True)  # legacy (Clerk era): kept as an inert column, never read for authentication
+    # Local authentication profile (admin-managed accounts)
+    full_name = Column(String(150), nullable=True)
+    phone = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
 
     assessments = relationship("Assessment", back_populates="user")
     memberships = relationship("OrganizationMember", back_populates="user")
+
+
+class AuthSession(Base):
+    """
+    Server-side login session behind the HttpOnly session cookie. Only the SHA-256 of the opaque cookie value is stored, so a
+    database leak does not leak usable sessions. Revocation (logout, password change/reset, deactivation) is a row update.
+    """
+    __tablename__ = "auth_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(64), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    csrf_token = Column(String(64), nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+
+    user = relationship("User")
 
 class Assessment(Base):
     __tablename__ = "assessments"

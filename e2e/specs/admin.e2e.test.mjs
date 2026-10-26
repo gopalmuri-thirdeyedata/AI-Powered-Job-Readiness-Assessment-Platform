@@ -2,7 +2,7 @@
 //
 // Real: frontend, backend, tenant scoping, blueprint persistence, publication. NOT real: Gemini (the backend runs its OFFLINE mock
 // mode, labelled "Offline test data"; "Gemini unavailable" is simulated by intercepting the generate request with the 502 the
-// backend returns), and sign-in (the admin JWT is minted by the harness and validated by /api/auth/me like a real one).
+// backend returns), and nothing about sign-in: the admin logs in through the real /api/auth/login/ (HttpOnly cookie session).
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startStack } from '../support/stack.mjs';
@@ -14,9 +14,9 @@ after(() => stack?.stop());
 
 const JD = 'We are hiring an engineer to build Python and FastAPI services backed by SQL databases, design REST APIs and own reliability in production.';
 
-const openAdmin = async (token, viewport) => {
+const openAdmin = async (org, viewport) => {
   const { browser, context } = await U.launch({ viewport });
-  await context.addInitScript((t) => { try { localStorage.setItem('token', t); } catch { /* storage unavailable */ } }, token);
+  await U.signIn(context, stack.api, org);
   const ui = await U.newPage(context, stack.api);
   return { browser, ui };
 };
@@ -31,7 +31,7 @@ describe('Job Roles & Blueprints', () => {
     const org = await stack.newOrg('adm1');                         // org with one published role
     await createRole(org.token, 'Full Stack Engineer Draft');       // a title that used to qualify for the template
     await createRole(org.token, 'Backend Engineer');                // a title that used to show "available for ... roles only"
-    const { browser, ui } = await openAdmin(org.token);
+    const { browser, ui } = await openAdmin(org);
     try {
       await ui.page.goto(`${stack.web}/admin/job-roles`);
       await ui.page.getByRole('heading', { name: 'Backend Engineer', exact: true }).waitFor({ timeout: 30000 });
@@ -63,7 +63,7 @@ describe('Job Roles & Blueprints', () => {
   test('the cards wrap cleanly on a phone-width screen (no horizontal scroll, no stray gap)', async () => {
     const org = await stack.newOrg('adm2');
     await createRole(org.token, 'Backend Engineer');
-    const { browser, ui } = await openAdmin(org.token, { width: 390, height: 800 });
+    const { browser, ui } = await openAdmin(org, { width: 390, height: 800 });
     try {
       await ui.page.goto(`${stack.web}/admin/job-roles`);
       await ui.page.getByRole('heading', { name: 'Backend Engineer', exact: true }).waitFor({ timeout: 30000 });
@@ -77,7 +77,7 @@ describe('Job Roles & Blueprints', () => {
   test('when Gemini is unavailable the card shows a failure, nothing is implied to have succeeded, and Publish stays disabled', async () => {
     const org = await stack.newOrg('adm3');
     await createRole(org.token, 'Platform Engineer');
-    const { browser, ui } = await openAdmin(org.token);
+    const { browser, ui } = await openAdmin(org);
     try {
       await ui.page.route('**/generate-blueprint', (route) => route.fulfill({
         status: 502, contentType: 'application/json',
@@ -103,7 +103,7 @@ describe('Job Roles & Blueprints', () => {
   test('generate -> review -> publish works end to end and the role then appears in Shared Links', async () => {
     const org = await stack.newOrg('adm4');
     await createRole(org.token, 'Data Engineer');
-    const { browser, ui } = await openAdmin(org.token);
+    const { browser, ui } = await openAdmin(org);
     try {
       await ui.page.goto(`${stack.web}/admin/job-roles`);
       await ui.page.getByRole('heading', { name: 'Data Engineer', exact: true }).waitFor({ timeout: 30000 });
@@ -130,7 +130,7 @@ describe('Job Roles & Blueprints', () => {
 describe('Shared Links keeps its existing open / closed behaviour', () => {
   test('closing hides the link from candidates and the card offers Reopen; reopening restores the same link; history stays', async () => {
     const org = await stack.newOrg('adm5');
-    const { browser, ui } = await openAdmin(org.token);
+    const { browser, ui } = await openAdmin(org);
     try {
       await ui.page.goto(`${stack.web}/admin/shared-links`);
       await ui.page.getByRole('heading', { name: 'Full Stack Engineer', exact: true }).waitFor({ timeout: 30000 });

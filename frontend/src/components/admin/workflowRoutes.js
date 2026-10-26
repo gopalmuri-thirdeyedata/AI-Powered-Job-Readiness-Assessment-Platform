@@ -7,6 +7,7 @@ export const WORKFLOW_ROUTES = {
     roles: '/admin/job-roles',
     links: '/admin/shared-links',
     results: '/admin/candidate-results',
+    users: '/admin/users',
 };
 
 /** Returns goTo('roles' | 'links' | 'results' | 'overview'), used by empty states and next-step actions. */

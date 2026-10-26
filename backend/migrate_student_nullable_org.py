@@ -110,6 +110,6 @@ def migrate_database(db_path: str):
         return False
 
 if __name__ == "__main__":
-    target_db = sys.argv[1] if len(sys.argv) > 1 else "backend/hiringai.db"
+    target_db = sys.argv[1] if len(sys.argv) > 1 else "backend/PrepWin.db"
     success = migrate_database(target_db)
     sys.exit(0 if success else 1)

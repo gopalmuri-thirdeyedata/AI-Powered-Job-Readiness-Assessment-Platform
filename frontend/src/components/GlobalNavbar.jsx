@@ -1,63 +1,32 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Sun, Moon, LogOut } from 'lucide-react';
+import { Menu, Sun, Moon, LogOut, User } from 'lucide-react';
 import CandidateLoginModal from './CandidateLoginModal';
-import { UserButton, useUser, useClerk } from '@clerk/clerk-react';
-import API_URL from '../apiConfig';
+import { useAuth } from '../auth/useAuth';
+import { ROLE_LABELS } from '../auth/roles';
 import { useTheme } from '../context/ThemeContext';
 import useStudentTaskStatus from '../hooks/useStudentTaskStatus';
+import { clearStudentSession } from '../utils/authStorage';
 
 const GlobalNavbar = ({ onToggleMobileMenu }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { theme, toggleTheme } = useTheme();
     const { hasCompletedTask } = useStudentTaskStatus();
-    const clerk = useClerk();
-    const { user: clerkUser } = useUser();
+    const { user: sessionUser, signOut } = useAuth();
+
+    const isAdminRoute = location.pathname.startsWith('/admin');
+
+    // Profile & organization come from the server-verified session
+    const profile = sessionUser || {};
 
     const handleSignOut = async () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user_profile');
-        localStorage.removeItem('studentToken');
-        if (clerk && clerk.signOut) {
-            try { await clerk.signOut(); } catch (e) {}
-        }
-        navigate('/');
+        clearStudentSession();
+        await signOut();
+        navigate('/?auth=login', { replace: true });
     };
 
     const [showLoginModal, setShowLoginModal] = useState(false);
-
-    // Profile & Organization State
-    const [profile, setProfile] = useState(() => {
-        try {
-            return JSON.parse(localStorage.getItem('user_profile') || '{}');
-        } catch {
-            return {};
-        }
-    });
-
-    React.useEffect(() => {
-        const fetchProfile = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                if (token) {
-                    const res = await fetch(`${API_URL}/api/auth/me`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        setProfile(data);
-                        localStorage.setItem('user_profile', JSON.stringify(data));
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to load user profile", e);
-            }
-        };
-        fetchProfile();
-    }, []);
-
-    const isActive = (path) => location.pathname === path;
 
     return (
         <>
@@ -74,7 +43,7 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                             <Menu className="w-5 h-5" />
                         </button>
                     )}
-                    <Link to="/admin/dashboard" className="flex items-center gap-3 focus:outline-none min-w-0 shrink-0">
+                    <Link to={isAdminRoute ? "/admin/dashboard" : "/"} className="flex items-center gap-3 focus:outline-none min-w-0 shrink-0">
                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-[38px] w-auto object-contain shrink-0" />
                         <div className="hidden sm:block w-px h-6 bg-gray-200 dark:bg-slate-800 shrink-0" />
                         <div className="flex flex-col justify-center">
@@ -84,28 +53,30 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                     </Link>
                 </div>
 
-                {/* Center Navigation Links */}
-                <div className="hidden md:flex items-center gap-2 lg:gap-4">
-                    {profile.role === 'STUDENT' && (
-                        <>
-                            {hasCompletedTask && (
+                {/* Center Navigation Links (Student Portal) */}
+                {!isAdminRoute && (
+                    <div className="hidden md:flex items-center gap-2 lg:gap-4">
+                        {profile.role === 'STUDENT' && (
+                            <>
+                                {hasCompletedTask && (
+                                    <Link
+                                        to="/student/dashboard"
+                                        className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/student') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+                                    >
+                                        Student Dashboard
+                                    </Link>
+                                )}
                                 <Link
-                                    to="/student/dashboard"
-                                    className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/student') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+                                    to="/assessment/setup"
+                                    data-fallback="/student/dashboard"
+                                    className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/assessment') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
                                 >
-                                    Student Dashboard
+                                    Student Assessment
                                 </Link>
-                            )}
-                            <Link
-                                to="/assessment/setup"
-                                data-fallback="/student/dashboard"
-                                className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/assessment') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-                            >
-                                Student Assessment
-                            </Link>
-                        </>
-                    )}
-                </div>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {/* Right Section: Profile & Actions */}
                 <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
@@ -122,49 +93,47 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
 
                     <div className="h-8 w-px bg-gray-200 dark:bg-slate-800 mx-2" />
 
-                    {/* Organization and Role Badges */}
-                    {profile.organization_name && (
-                        <div className="hidden sm:flex flex-col items-end">
-                            <span className="text-xs font-bold text-gray-900 dark:text-slate-100 truncate max-w-[150px]">
-                                {profile.organization_name}
-                            </span>
-                            <span className="text-[10px] font-semibold text-[#5d8c2c] dark:text-emerald-300 uppercase tracking-wider bg-green-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-green-200 dark:border-emerald-800/60">
-                                {profile.role === 'ORGANIZATION_ADMIN' ? 'Org Admin' : profile.role}
-                            </span>
+                    {/* ADMIN PORTAL IDENTITY & ACTIONS (server-verified session) */}
+                    {isAdminRoute ? (
+                        <div className="flex items-center gap-3 sm:gap-4">
+                            <div className="hidden sm:flex flex-col items-end">
+                                <span className="text-xs font-bold text-gray-900 dark:text-slate-100 truncate max-w-[180px]">
+                                    {profile.email || 'Administrator'}
+                                </span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                    {profile.organization_name && (
+                                        <span className="text-[10px] text-gray-500 dark:text-slate-400 truncate max-w-[120px]">
+                                            {profile.organization_name}
+                                        </span>
+                                    )}
+                                    <span className="text-[10px] font-semibold text-[#5d8c2c] dark:text-emerald-300 uppercase tracking-wider bg-green-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-green-200 dark:border-emerald-800/60">
+                                        {ROLE_LABELS[profile.role] || 'Admin'}
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleSignOut}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 transition-colors cursor-pointer"
+                                title="Sign Out of Admin Portal"
+                            >
+                                <LogOut className="w-3.5 h-3.5 text-red-500" />
+                                <span className="hidden sm:inline">Sign Out</span>
+                            </button>
                         </div>
-                    )}
-                    {profile.role === 'PLATFORM_ADMIN' && (
-                        <div className="hidden sm:flex flex-col items-end">
-                            <span className="text-xs font-bold text-purple-900 dark:text-purple-300">
-                                PrepWin Platform
-                            </span>
-                            <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800/60">
-                                Platform Admin
-                            </span>
-                        </div>
-                    )}
-
-                    {/* Admin Sign Out or Clerk User Button */}
-                    {clerkUser ? (
-                        <UserButton
-                            appearance={{
-                                elements: {
-                                    avatarBox: "w-9 h-9",
-                                    userButtonPopoverCard: "shadow-xl"
-                                }
-                            }}
-                            afterSignOutUrl="/"
-                        />
                     ) : (
-                        <button
-                            type="button"
-                            onClick={handleSignOut}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 transition-colors cursor-pointer"
-                            title="Sign Out"
-                        >
-                            <LogOut className="w-3.5 h-3.5 text-red-500" />
-                            <span className="hidden sm:inline">Sign Out</span>
-                        </button>
+                        /* STUDENT / PUBLIC IDENTITY & ACTIONS */
+                        <>
+                            <button
+                                type="button"
+                                onClick={handleSignOut}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 transition-colors cursor-pointer"
+                                title="Sign Out"
+                            >
+                                <LogOut className="w-3.5 h-3.5 text-red-500" />
+                                <span className="hidden sm:inline">Sign Out</span>
+                            </button>
+                        </>
                     )}
                 </div>
             </nav>

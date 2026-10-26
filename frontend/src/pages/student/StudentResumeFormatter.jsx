@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useUser } from '../../auth/useAuth';
 import { AlertTriangle, CheckCircle2, Download, FileText, History, LayoutTemplate, RefreshCw, Sparkles, X } from 'lucide-react';
 import studentApi from '../../services/studentApi';
 import { PageHero, Stagger, StaggerItem } from '../../components/student-ui/StudentMotion';

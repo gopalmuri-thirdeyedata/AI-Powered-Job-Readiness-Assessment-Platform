@@ -299,6 +299,7 @@ logo_base64.txt
 
 # Agent configurations
 .agents/
+.superpowers/
 
 
 # Local database backups taken before migrations (contain real data - never commit)

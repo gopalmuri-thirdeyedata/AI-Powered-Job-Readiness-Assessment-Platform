@@ -1,7 +1,7 @@
 # Browser end-to-end tests
 
 Real Chrome (fake camera and microphone) against the **real** frontend (Vite) and the **real** FastAPI backend running on a
-scratch SQLite database in a temp directory. Nothing touches `backend/hiringai.db`; the harness refuses to start unless the
+scratch SQLite database in a temp directory. Nothing touches `backend/PrepWin.db`; the harness refuses to start unless the
 database lives inside its temp directory.
 
 ```bash
@@ -24,8 +24,8 @@ Requirements: Node 22+, a Python environment with the backend dependencies (`bac
 | Frontend, backend, timing, scoring, authorization, persistence | **Judge0**: code runs on this machine's Python and JDK (`harness/serve.py`). Only the harness does this; the application never executes candidate code itself |
 | Chrome, fake camera / microphone devices, fullscreen | **Gemini**: the application's offline mock mode (deterministic) |
 | Python and Java compilation / execution | **Vapi REST**: stubbed in the backend; in the browser the SDK talks to an intercepted endpoint (except the opt-in live specs) |
-| The student JWT validated by `/api/auth/me` | **Clerk sign-in** (an external identity provider) cannot be automated; a real JWT is minted by the harness |
+| The real email + password login (`/api/auth/login/`, HttpOnly cookie session validated by `/api/auth/me`) | Accounts are seeded by the harness in the throw-away database (PrepWin has no public sign-up) |
 | | **YOLO** is real in the frame-analysis authorization tests, replaced by a deterministic response where a test needs a known detection |
 
-The harness also exposes test-only routes (`/__e2e/*`) to mint tokens, seed an organization, move the server clock forward
+The harness also exposes test-only routes (`/__e2e/*`) to seed accounts and tokens, seed an organization, move the server clock forward
 (timer tests do not wait an hour) and read the persisted session. They exist only in `harness/serve.py`, never in the application.

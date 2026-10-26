@@ -22,7 +22,9 @@ def db_session():
 def orgs(db_session):
     a = rh.make_admin(db_session)
     b = rh.make_admin(db_session)
-    yield dict(a=a, b=b)
+    # Roles and administrator memberships are the Super Admin's to change: an organization Admin is refused (see test_three_role_hierarchy)
+    sa = rh.make_admin(db_session, org=a["org"], user_role=models.UserRole.SUPER_ADMIN)
+    yield dict(a=a, b=b, sa=sa)
     rh.cleanup_orgs(db_session, [a["org"].id, b["org"].id])
 
 
@@ -92,7 +94,7 @@ def test_single_membership_behaviour_unchanged(db_session, orgs):
 
 
 def test_demoting_one_row_demotes_every_duplicate_row(db_session, orgs):
-    actor = orgs["a"]
+    actor = orgs["sa"]
     target = _user_with_rows(db_session, orgs["a"]["org"], ["ORGANIZATION_ADMIN", "ORGANIZATION_ADMIN"])
     assert _owner_probe(target["token"]) != 403
     res = client.patch(f"/api/organization/users/{target['member'].id}", headers=rh.auth(actor["token"]), json={"role": "HR"})
@@ -105,7 +107,9 @@ def test_demoting_one_row_demotes_every_duplicate_row(db_session, orgs):
 
 def test_deactivating_one_row_deactivates_every_duplicate_row(db_session, orgs):
     target = _user_with_rows(db_session, orgs["a"]["org"], ["HR", "ORGANIZATION_ADMIN"])
-    res = client.patch(f"/api/organization/users/{target['member'].id}", headers=rh.auth(orgs["a"]["token"]), json={"status": "deactivated"})
+    refused = client.patch(f"/api/organization/users/{target['member'].id}", headers=rh.auth(orgs["a"]["token"]), json={"status": "deactivated"})
+    assert refused.status_code == 403, "an organization Admin cannot deactivate an administrator member"
+    res = client.patch(f"/api/organization/users/{target['member'].id}", headers=rh.auth(orgs["sa"]["token"]), json={"status": "deactivated"})
     assert res.status_code == 200, res.text
     db_session.expire_all()
     rows = db_session.query(models.OrganizationMember).filter_by(user_id=target["user"].id).all()

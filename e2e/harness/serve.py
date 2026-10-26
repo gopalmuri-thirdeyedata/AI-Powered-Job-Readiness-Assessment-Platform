@@ -26,8 +26,8 @@ DB_URL = os.environ.get("DATABASE_URL", "")
 E2E_DIR = os.path.abspath(os.environ.get("E2E_DIR", ""))
 if not (DB_URL.startswith("sqlite:///") and E2E_DIR and os.path.abspath(DB_URL.replace("sqlite:///", "", 1)).startswith(E2E_DIR)):
     sys.exit("e2e harness: DATABASE_URL must be a sqlite file inside E2E_DIR (refusing to touch any other database)")
-if os.path.basename(DB_URL).lower() == "hiringai.db":
-    sys.exit("e2e harness: refusing to use hiringai.db")
+if os.path.basename(DB_URL).lower() in ("hiringai.db", "prepwin.db"):
+    sys.exit("e2e harness: refusing to use production database")
 
 os.environ.setdefault("GEMINI_MOCK_MODE", "true")
 os.environ["ASSESSMENT_SWEEPER_ENABLED"] = os.environ.get("ASSESSMENT_SWEEPER_ENABLED", "false")   # deterministic: backend tests cover the sweeper
@@ -132,28 +132,32 @@ def info():
     return {"offset_seconds": OFFSET["seconds"], "executions": list(EXEC_LOG), "vapi_calls": list(VAPI_CALLS)}
 
 
+E2E_PASSWORD = "E2e-Test-Passw0rd!"   # throw-away accounts in a throw-away database; used for the REAL cookie login
+
+
 @router.post("/org-admin")
 def org_admin(tag: str):
-    """Create an organization + organization admin and return its token (test-only)."""
+    """Create an organization + organization admin; returns its credentials (real login) and a Bearer token for API-only calls (test-only)."""
     db = _db()
     try:
         org = models.Organization(name=f"E2E Org {tag}", slug=f"e2e-org-{tag}", status="active")
         db.add(org)
         db.commit()
-        user = models.User(email=f"e2e.admin.{tag}@e2e.test", hashed_password=utils.get_password_hash("x"),
+        user = models.User(email=f"e2e.admin.{tag}@e2e.test", hashed_password=utils.get_password_hash(E2E_PASSWORD),
                            role=models.UserRole.ORGANIZATION_ADMIN, organization_id=org.id, is_active=True)
         db.add(user)
         db.commit()
         db.add(models.OrganizationMember(organization_id=org.id, user_id=user.id, role="ORGANIZATION_ADMIN", status="active"))
         db.commit()
-        return {"org_id": org.id, "token": utils.create_access_token(data={"sub": user.email, "role": user.role})}
+        return {"org_id": org.id, "email": user.email, "password": E2E_PASSWORD,
+                "token": utils.create_access_token(data={"sub": user.email, "role": user.role})}
     finally:
         db.close()
 
 
 @router.post("/student")
 def student(tag: str):
-    """Create a student account + profile and return its JWT (test-only; real sign-in is Clerk and cannot be automated)."""
+    """Create a student account + profile; returns its credentials (real login) and a Bearer token for API-only calls (test-only)."""
     db = _db()
     try:
         org = db.query(models.Organization).filter_by(slug="e2e-students").first()
@@ -162,7 +166,7 @@ def student(tag: str):
             db.add(org)
             db.commit()
         email = f"e2e.student.{tag}@e2e.test"
-        user = models.User(email=email, hashed_password=utils.get_password_hash("x"), role=models.UserRole.STUDENT,
+        user = models.User(email=email, hashed_password=utils.get_password_hash(E2E_PASSWORD), role=models.UserRole.STUDENT,
                            organization_id=org.id, is_active=True, password_changed=True)
         db.add(user)
         db.commit()
@@ -170,7 +174,7 @@ def student(tag: str):
                                         target_role="Full Stack Engineer", is_onboarded=True)
         db.add(profile)
         db.commit()
-        return {"email": email, "token": utils.create_access_token(data={"sub": email, "role": user.role}), "profile_id": profile.id}
+        return {"email": email, "password": E2E_PASSWORD, "token": utils.create_access_token(data={"sub": email, "role": user.role}), "profile_id": profile.id}
     finally:
         db.close()
 

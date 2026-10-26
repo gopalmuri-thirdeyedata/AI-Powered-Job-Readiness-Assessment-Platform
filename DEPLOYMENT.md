@@ -9,7 +9,7 @@ This document provides step-by-step instructions for deploying the **HiringAI En
   * CPU: 2 vCPUs (4 vCPUs recommended for concurrent proctoring inference & AI summarization)
   * RAM: 4 GB (8 GB recommended for YOLOv8 CPU inference + Gunicorn worker pool)
   * Disk: 40 GB NVMe / SSD (provisioned with growth capacity for resume storage and MySQL)
-  * Network: Outbound internet access for Groq, Gemini, Vapi, Clerk, Judge0, and Let's Encrypt
+  * Network: Outbound internet access for Groq, Gemini, Vapi, Judge0, and Let's Encrypt
 
 ---
 
@@ -75,9 +75,10 @@ This document provides step-by-step instructions for deploying the **HiringAI En
 | `CORS_ORIGINS` | Yes | Comma-separated allowed origins (e.g. `https://app.yourdomain.com`) |
 | `DATABASE_URL` | Yes | `mysql+pymysql://<user>:<pass>@<host>:3306/<dbname>` |
 | `JWT_SECRET_KEY` | Yes | Cryptographically secure random secret (min 32 bytes) |
-| `CLERK_SECRET_KEY` | Yes | Production secret key (`sk_live_...`) |
-| `CLERK_PUBLISHABLE_KEY`| Yes | Production publishable key (`pk_live_...`) |
-| `PLATFORM_ADMIN_CLERK_USER_ID` | Optional | Clerk user ID if logging in via Clerk SSO |
+| `SESSION_TTL_HOURS` | Optional | Absolute login lifetime in hours (default 12) |
+| `SESSION_IDLE_MINUTES` | Optional | Idle timeout in minutes (default 120) |
+| `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_SAMESITE` | Optional | Cookie overrides. `Secure` is on by default in production; serve the app over HTTPS |
+| `ADMIN_INITIAL_PASSWORD` | Optional | First run only. Without it a new platform admin is created locked: run `python scripts/set_admin_password.py` |
 | `PLATFORM_ADMIN_EMAIL` | Yes | Explicit owner email (`admin@thirdeyedata.ai`) |
 | `GROQ_API_KEY` | Yes | Primary Groq API key |
 | `GROQ_API_KEY_FALLBACK_1` | Optional | Fallback Groq API key 1 |
@@ -92,26 +93,25 @@ This document provides step-by-step instructions for deploying the **HiringAI En
 | Variable | Required | Description |
 |---|---|---|
 | `VITE_API_URL` | Yes | Backend API root (e.g. `https://app.yourdomain.com/api` or `https://api.yourdomain.com`) |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Production Clerk key (`pk_live_...`) |
 | `VITE_VAPI_PUBLIC_KEY` | Yes | Vapi Public API Key |
 
 ---
 
-## 9. Clerk Production Setup
+## 9. Authentication Setup (local accounts)
 
-1. **Create Production Instance:**
-   * In the Clerk Dashboard, switch from **Development** to **Production**.
-2. **Configure Allowed Origins & Redirects:**
-   * Allowed Origins: `https://app.yourdomain.com`
-   * Home URL: `https://app.yourdomain.com`
-   * Sign-in Redirect: `https://app.yourdomain.com/dashboard`
-   * Sign-up Redirect: `https://app.yourdomain.com/dashboard`
-3. **Authentication Methods:**
-   * Enable Google OAuth and GitHub OAuth.
-   * Enable Email + Password with Email verification code (OTP).
-4. **B2B Architecture Rules:**
-   * Disable "Allow users to create organizations" in Clerk dashboard if using platform-admin-provisioned companies.
-   * The system strictly grants access based on `organization_members` database records or `PLATFORM_ADMIN` role (`admin@thirdeyedata.ai`). Unknown users receive HTTP 403.
+PrepWin authenticates users itself (email + password); there is no external identity provider.
+
+1. **First administrator:** the platform admin (`PLATFORM_ADMIN_EMAIL`) must have a password before the first login. Run
+   `python scripts/set_admin_password.py` on the server (it prompts without echo; the password is hashed, never printed or logged).
+2. **Accounts:** only an authenticated administrator can create Student and Admin accounts (Admin Dashboard -> User Management).
+   There is no public sign-up and no unauthenticated account-creation endpoint.
+3. **Transport:** serve everything over HTTPS. The session cookie is `HttpOnly`, `SameSite=Lax` and `Secure` in production.
+   If the API is on a different registrable domain than the SPA, set `SESSION_COOKIE_SAMESITE=none` and list the SPA origin in `CORS_ORIGINS`.
+4. **Database migration:** `python migrate_local_auth.py --neutralize-placeholders` (backs up SQLite first) adds the profile columns and the
+   `auth_sessions` table and clears the old Clerk-era placeholder password hashes. The API also adds the nullable columns on startup.
+5. **Rate limiting:** failed logins are limited per account+client, per client and per account (in process memory; with several workers
+   keep an nginx `limit_req` zone on `/api/auth/login/`).
+6. **Multi-tenant rules** are unchanged: access is granted by `organization_members` records or the platform admin role. Unknown users cannot sign in.
 
 ---
 
@@ -298,7 +298,7 @@ sudo systemctl reload hiringai-backend.service
 
 ## 22. Rebuild Safely
 
-1. **Back up first.** Copy `backend/hiringai.db` out of the running backend container (if the app uses SQLite) and run a `mysqldump` (Section 14) plus a copy of the `backend_media` volume. Backend images bake in `backend/hiringai.db`; a rebuilt container without a persistent volume starts from that baked copy, so unsaved data is lost.
+1. **Back up first.** Copy `backend/PrepWin.db` out of the running backend container (if the app uses SQLite) and run a `mysqldump` (Section 14) plus a copy of the `backend_media` volume. Backend images bake in `backend/PrepWin.db`; a rebuilt container without a persistent volume starts from that baked copy, so unsaved data is lost.
 2. **Use the right compose file** for the host (see Section 15). Never run `docker-compose.prod.yml` against the live `hiringai` stack.
 3. `docker compose up -d --build` rebuilds changed images and **recreates** the affected containers (brief downtime; container filesystems not backed by a volume are reset).
 4. Rebuild only what changed, e.g. `docker compose up -d --build frontend`, to avoid touching the backend.

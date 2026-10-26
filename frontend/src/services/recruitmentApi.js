@@ -1,17 +1,14 @@
 import axios from 'axios';
 import API_URL from '../apiConfig';
+import { getAdminOrgId } from '../utils/authStorage';
 
 // ------------------------------------------------------------------------------
-// Admin API (JWT from the admin sign-in; tenant resolved server-side)
+// Admin API (HttpOnly session cookie + CSRF header added by the auth client; tenant resolved server-side)
 // ------------------------------------------------------------------------------
 const adminHeaders = () => {
     const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
-    try {
-        const token = localStorage.getItem('token');
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const org = localStorage.getItem('prepwin_org_id');
-        if (org) headers['X-Organization-Id'] = org;
-    } catch { /* storage unavailable */ }
+    const org = getAdminOrgId();
+    if (org) headers['X-Organization-Id'] = String(org);
     return headers;
 };
 

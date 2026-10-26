@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
@@ -21,12 +21,14 @@ import {
     Moon,
     LayoutTemplate,
 } from 'lucide-react';
-import { useUser, useClerk } from '@clerk/clerk-react';
+import { useAuth } from '../auth/useAuth';
+import { isAdminRole } from '../auth/roles';
 import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import AssessmentRequiredGate from '../components/student-ui/AssessmentRequiredGate';
 import { useTheme } from '../context/ThemeContext';
-import useStudentTaskStatus, { clearStudentTaskCompleted, syncStudentSessionWithBackend } from '../hooks/useStudentTaskStatus';
+import useStudentTaskStatus, { clearStudentTaskCompleted } from '../hooks/useStudentTaskStatus';
+import { clearStudentSession } from '../utils/authStorage';
 import { PROFILE_UPDATED_EVENT } from '../utils/profileForm';
 
 // Navigation definition with unified emerald brand accents
@@ -129,64 +131,46 @@ const StudentLayout = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { theme, toggleTheme } = useTheme();
-    const { user, isLoaded: isClerkLoaded } = useUser();
-    const clerk = useClerk();
+    const { user, role, isLoaded: isAuthLoaded, signOut } = useAuth();
     const [profile, setProfile] = useState(null);
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     // New students are not redirected: the dashboard page itself shows the take-assessment screen
-    const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus(user);
+    const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus();
 
-    // Read the current path without making it an effect dependency: navigating between pages must
-    // not re-sync the session and refetch the profile.
-    const pathnameRef = useRef(location.pathname);
-    pathnameRef.current = location.pathname;
+    // Student workspace: the server-verified STUDENT session decides. No session -> the single login; an ADMIN session has its own dashboard.
+    useEffect(() => {
+        if (!isAuthLoaded) return;
+        if (!user) {
+            navigate('/?auth=login', { replace: true });
+        } else if (isAdminRole(role)) {
+            navigate('/admin/dashboard', { replace: true });
+        }
+    }, [isAuthLoaded, user, role, navigate]);
 
     useEffect(() => {
+        if (!isAuthLoaded || role !== 'STUDENT') return undefined;
         let isCancelled = false;
-
-        const initAuth = async () => {
-            // 1. Sync Clerk student session if user is logged in via Clerk
-            if (user) {
-                await syncStudentSessionWithBackend(user);
-            }
-
-            // 2. Validate token availability
-            const token = localStorage.getItem('studentToken') || localStorage.getItem('token');
-            if (!token && !user && isClerkLoaded && pathnameRef.current !== '/student/login') {
-                navigate('/student/login');
-                return;
-            }
-
-            if (pathnameRef.current !== '/student/login') {
-                try {
-                    const data = await studentApi.getProfile();
-                    if (!isCancelled) {
-                        setProfile(data);
-                        setIsLoading(false);
-                    }
-                } catch {
-                    if (!isCancelled) {
-                        if (user) {
-                            setProfile({
-                                full_name: user.fullName || user.firstName || 'Student',
-                                email: user.primaryEmailAddress?.emailAddress,
-                                target_role: ''
-                            });
-                        }
-                        setIsLoading(false);
-                    }
+        (async () => {
+            try {
+                const data = await studentApi.getProfile();
+                if (!isCancelled) setProfile(data);
+            } catch {
+                // Profile not readable yet: fall back to the account summary from the session
+                if (!isCancelled) {
+                    setProfile({
+                        full_name: user?.fullName || 'Student',
+                        email: user?.email,
+                        target_role: ''
+                    });
                 }
-            } else {
+            } finally {
                 if (!isCancelled) setIsLoading(false);
             }
-        };
-
-        initAuth();
-
+        })();
         return () => { isCancelled = true; };
-    }, [user, isClerkLoaded, navigate]);
+    }, [isAuthLoaded, role, user]);
 
     // Show a freshly saved name and role in the sidebar without a reload
     useEffect(() => {
@@ -231,22 +215,9 @@ const StudentLayout = () => {
 
     const handleLogout = async () => {
         clearStudentTaskCompleted();
-        if (studentApi && typeof studentApi.logout === 'function') {
-            studentApi.logout();
-        } else {
-            localStorage.removeItem('studentToken');
-            localStorage.removeItem('token');
-            localStorage.removeItem('student_user_email');
-            localStorage.removeItem('student_completed_assessment');
-        }
-        try {
-            if (clerk && clerk.signOut) {
-                await clerk.signOut();
-            }
-        } catch (e) {
-            console.error("Clerk signout error:", e);
-        }
-        navigate('/?auth=student');
+        clearStudentSession();
+        await signOut();
+        navigate('/?auth=login', { replace: true });
     };
 
     // Filter nav items: new students who haven't completed the task do not see the Dashboard link

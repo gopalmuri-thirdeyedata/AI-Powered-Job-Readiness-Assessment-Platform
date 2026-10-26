@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import models, database, utils
 from services import roleready_service
 from main import app
+from tests import local_auth_helpers as lh
 
 client = TestClient(app)
 
@@ -27,18 +28,11 @@ def test_vapi_init_unauthenticated():
 
 def test_vapi_init_not_found(db_session):
     test_email = f"vapi.test.{uuid.uuid4().hex[:6]}@roleready.test"
-    # 1. Authorize email
-    client.post("/api/auth/check-email/", json={"email": test_email, "intent": "student"})
-    # 2. Sync Clerk user
-    sync_res = client.post("/api/auth/clerk-sync/", json={
-        "email": test_email,
-        "clerk_user_id": f"clerk_{uuid.uuid4().hex[:8]}",
-        "first_name": "Test",
-        "last_name": "Candidate",
-        "role_intent": "student"
-    })
-    assert sync_res.status_code == 200
-    token = sync_res.json()["access"]
+    # 1. An administrator-provisioned student (the profile carries the e-mail-derived placeholder name)
+    org = lh.ensure_org(db_session)
+    user = lh.ensure_user(db_session, test_email, models.UserRole.STUDENT, org=org, student_profile=True,
+                          full_name=test_email.split("@")[0].replace(".", " ").title())
+    token = utils.create_access_token(data={"sub": user.email, "role": models.UserRole.STUDENT})
 
     nonexistent_uuid = str(uuid.uuid4())
     res = client.post(
@@ -51,19 +45,12 @@ def test_vapi_init_success_with_session(db_session):
     # The profile name is only replaced by the resume name when the email-derived placeholder contains digits,
     # so the handle must always contain one (a random hex suffix was digit-free ~0.3% of runs -> flaky).
     test_email = f"vapi.success.{uuid.uuid4().int % 10**6:06d}@roleready.test"
-    client.post("/api/auth/check-email/", json={"email": test_email, "intent": "student"})
-    sync_res = client.post("/api/auth/clerk-sync/", json={
-        "email": test_email,
-        "clerk_user_id": f"clerk_{uuid.uuid4().hex[:8]}",
-        "first_name": "Gopal",
-        "last_name": "Muri",
-        "role_intent": "student"
-    })
-    assert sync_res.status_code == 200
-    token = sync_res.json()["access"]
+    org = lh.ensure_org(db_session)
+    user = lh.ensure_user(db_session, test_email, models.UserRole.STUDENT, org=org, student_profile=True,
+                          full_name=test_email.split("@")[0].replace(".", " ").title())
+    token = utils.create_access_token(data={"sub": user.email, "role": models.UserRole.STUDENT})
 
     # Locate student profile
-    user = db_session.query(models.User).filter(models.User.email == test_email).first()
     profile = db_session.query(models.StudentProfile).filter(models.StudentProfile.user_id == user.id).first()
 
     # Create session

@@ -41,8 +41,11 @@ def make_admin(db, org=None, tag=None, member_role="ORGANIZATION_ADMIN", user_ro
         db.add(org)
         db.commit()
         db.refresh(org)
-    role = user_role or (models.UserRole.ORGANIZATION_ADMIN if member_role == "ORGANIZATION_ADMIN" else models.UserRole.HR)
-    user = models.User(email=f"rw.admin.{tag}@rwtest.com", hashed_password=utils.get_password_hash("password123"),
+    # Platform scope is the stored SUPER_ADMIN role (never an e-mail pattern); every other member role is an ordinary ADMIN account
+    role = user_role or (models.UserRole.SUPER_ADMIN if member_role == "PLATFORM_ADMIN"
+                         else models.UserRole.ORGANIZATION_ADMIN if member_role == "ORGANIZATION_ADMIN" else models.UserRole.HR)
+    email_prefix = "platform" if (member_role == "PLATFORM_ADMIN" or "platform" in str(tag).lower()) else "rw.admin"
+    user = models.User(email=f"{email_prefix}.{tag}@rwtest.com", hashed_password=utils.get_password_hash("password123"),
                        role=role, organization_id=org.id, is_active=active)
     db.add(user)
     db.commit()

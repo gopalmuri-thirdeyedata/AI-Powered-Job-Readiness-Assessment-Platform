@@ -69,13 +69,21 @@ def get_current_student_profile(
     Enforces student ownership and tenant isolation.
     Fails closed if the student user is not associated with an organization.
     """
-    if getattr(current_user, "role", None) == models.UserRole.CANDIDATE:
+    if getattr(current_user, "email", "").endswith(".internal"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Candidate interviewees are not authorized to access student career features."
         )
 
-    if not current_user.organization_id and current_user.role != models.UserRole.PLATFORM_ADMIN:
+    # Strictly require STUDENT role - deny administrator and unauthorized roles
+    active_role = getattr(current_user, "_token_role", None) or current_user.role
+    if active_role != models.UserRole.STUDENT or current_user.role != models.UserRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Student authorization required."
+        )
+
+    if not current_user.organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Student user is not provisioned with a valid organization."
@@ -84,15 +92,6 @@ def get_current_student_profile(
     profile = db.query(models.StudentProfile).filter(
         models.StudentProfile.user_id == current_user.id
     ).first()
-
-    # A student profile makes /api/auth/me report the user as a STUDENT, which locks a hiring admin out of the admin
-    # workspace. Never auto-provision one for hiring staff (an existing profile keeps working).
-    if not profile and current_user.role in (models.UserRole.ORGANIZATION_ADMIN, models.UserRole.HR,
-                                             models.UserRole.HR_ADMIN, models.UserRole.SUPER_ADMIN):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Hiring administrator accounts do not have a student profile."
-        )
 
     if not profile:
         profile = models.StudentProfile(
@@ -148,171 +147,10 @@ def verify_student_tenant_access(
 
 
 # ==============================================================================
-# STUDENT AUTHENTICATION (SERVER-CONTROLLED PROVISIONING)
+# STUDENT AUTHENTICATION
+# Students sign in through the single login (POST /api/auth/login/). There is no public registration: accounts are created by an
+# administrator (POST /api/admin/users). The former /auth/register and /auth/login endpoints were removed with the Clerk migration.
 # ==============================================================================
-
-class StudentAuthRequest(schemas.BaseModel):
-    email: schemas.EmailStr
-    password: str
-    full_name: Optional[str] = None
-    invite_code: Optional[str] = None  # Model B: College invite code / organization slug
-
-
-@router.post("/auth/register", response_model=schemas.Token)
-def register_student(payload: StudentAuthRequest, db: Session = Depends(database.get_db)):
-    """
-    Registers a new student user and provisions their StudentProfile.
-    Enforces server-controlled organization provisioning:
-    - Model A: Pre-invited by College Admin
-    - Model B: College invite code (matches active Organization.slug)
-    Never trusts or allows frontend-controlled organization_id.
-    """
-    clean_email = payload.email.strip().lower()
-    existing_user = db.query(models.User).filter(func.lower(models.User.email) == clean_email).first()
-
-    # Step 1: Check if user was pre-invited by College Admin (Model A)
-    org_id = None
-    if existing_user:
-        if existing_user.password_changed:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="An account with this email already exists. Please log in."
-            )
-        # Pre-invited account being activated
-        if existing_user.organization_id:
-            org_id = existing_user.organization_id
-    else:
-        # Check if pre-invited via OrganizationMember
-        membership = db.query(models.OrganizationMember).join(
-            models.User, models.OrganizationMember.user_id == models.User.id
-        ).filter(
-            func.lower(models.User.email) == clean_email
-        ).first()
-        if membership and membership.organization_id:
-            org_id = membership.organization_id
-
-    # Step 2: If not pre-invited, validate college invite code (Model B)
-    if not org_id:
-        if payload.invite_code and payload.invite_code.strip():
-            code = payload.invite_code.strip().lower()
-            org = db.query(models.Organization).filter(
-                func.lower(models.Organization.slug) == code,
-                models.Organization.status == "active"
-            ).first()
-            if not org:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid or inactive college invite code."
-                )
-            org_id = org.id
-        else:
-            # Reject uninvited student registration without valid code
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Registration rejected: Student accounts require college invitation or a valid college invite code."
-            )
-
-    # Verify active status of resolved organization
-    org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
-    if not org or org.status != "active":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The specified college organization is inactive or suspended."
-        )
-
-    hashed_pw = utils.get_password_hash(payload.password)
-    if existing_user:
-        user = existing_user
-        user.hashed_password = hashed_pw
-        user.role = models.UserRole.STUDENT
-        user.organization_id = org_id
-        user.is_active = True
-        user.password_changed = True
-        db.commit()
-        db.refresh(user)
-    else:
-        user = models.User(
-            email=clean_email,
-            hashed_password=hashed_pw,
-            role=models.UserRole.STUDENT,
-            organization_id=org_id,
-            is_active=True,
-            password_changed=True
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    # Ensure active OrganizationMember record exists
-    member = db.query(models.OrganizationMember).filter(
-        models.OrganizationMember.user_id == user.id,
-        models.OrganizationMember.organization_id == org_id
-    ).first()
-    if not member:
-        member = models.OrganizationMember(
-            organization_id=org_id,
-            user_id=user.id,
-            role="STUDENT",
-            status="active"
-        )
-        db.add(member)
-    else:
-        member.status = "active"
-        member.role = "STUDENT"
-
-    # Create or update associated student profile
-    full_name = payload.full_name.strip() if payload.full_name else clean_email.split('@')[0].replace('.', ' ').title()
-    profile = db.query(models.StudentProfile).filter(models.StudentProfile.user_id == user.id).first()
-    if not profile:
-        profile = models.StudentProfile(
-            user_id=user.id,
-            organization_id=org_id,
-            full_name=full_name,
-            email=clean_email,
-            target_role="Software Engineer",
-            readiness_score=15.0
-        )
-        db.add(profile)
-    else:
-        profile.organization_id = org_id
-        if payload.full_name:
-            profile.full_name = full_name
-
-    db.commit()
-
-    token = utils.create_access_token(data={"sub": user.email, "role": models.UserRole.STUDENT})
-    return {"access": token, "token_type": "bearer"}
-
-
-@router.post("/auth/login", response_model=schemas.Token)
-def login_student(payload: StudentAuthRequest, db: Session = Depends(database.get_db)):
-    """Authenticates student and issues JWT token."""
-    clean_email = payload.email.strip().lower()
-    user = db.query(models.User).filter(func.lower(models.User.email) == clean_email).first()
-    if not user or not utils.verify_password(payload.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid student email or password."
-        )
-
-    if user.role != models.UserRole.STUDENT:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is not authorized as a student user."
-        )
-
-    # Validate active organization membership
-    if user.organization_id:
-        org = db.query(models.Organization).filter(models.Organization.id == user.organization_id).first()
-        if not org or org.status != "active":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your college organization is inactive or suspended."
-            )
-
-    token = utils.create_access_token(data={"sub": user.email, "role": user.role})
-    return {"access": token, "token_type": "bearer"}
-
 
 # ==============================================================================
 # 1. STUDENT PROFILE APIS

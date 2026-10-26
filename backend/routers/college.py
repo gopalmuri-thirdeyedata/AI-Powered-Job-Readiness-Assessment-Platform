@@ -28,15 +28,15 @@ def get_current_college_admin(
     Enforces authorization for college placement officers and administrators.
     Rejects students, candidates, and users without an active college organization.
     """
-    if current_user.role in (models.UserRole.STUDENT, models.UserRole.CANDIDATE):
+    if not models.is_admin_role(current_user.role):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Students and candidates are not authorized to access college administrative resources."
+            detail="Students are not authorized to access college administrative resources."
         )
 
     # Resolve organization_id
     org_id = current_user.organization_id
-    if not org_id and current_user.role != models.UserRole.PLATFORM_ADMIN:
+    if not org_id:
         member = db.query(models.OrganizationMember).filter(
             models.OrganizationMember.user_id == current_user.id,
             models.OrganizationMember.status == "active"

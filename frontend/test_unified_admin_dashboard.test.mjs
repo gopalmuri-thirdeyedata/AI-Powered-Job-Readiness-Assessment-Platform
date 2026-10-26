@@ -23,14 +23,14 @@ const adminComponents = { rolesSrc, linksSrc, tableSrc, modalSrc, kpiSrc };
 
 const makeLocalStorage = (initial = {}) => {
     const m = new Map(Object.entries(initial));
-    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), dump: () => Object.fromEntries(m) };
 };
 
-describe('Admin API client (real endpoints, JWT + tenant header)', () => {
+describe('Admin API client (real endpoints, cookie session + tenant header)', () => {
     beforeEach(() => { (globalThis.__axiosCalls ||= []).length = 0; globalThis.__axiosResponse = { items: [] }; });
 
-    test('1. every admin call hits the real backend route with the admin JWT', async () => {
-        globalThis.localStorage = makeLocalStorage({ token: 'ADMIN-JWT' });
+    test('1. every admin call hits the real backend route with the cookie session (no bearer header, nothing in storage)', async () => {
+        globalThis.localStorage = makeLocalStorage();
         const { adminApi } = await loadModule('src/services/recruitmentApi.js');
         await adminApi.listRoles();
         await adminApi.getRole(7);
@@ -54,23 +54,33 @@ describe('Admin API client (real endpoints, JWT + tenant header)', () => {
             'POST /api/admin/recruitment/registrations/9/revoke', 'POST /api/admin/recruitment/candidates/9/authorize-retake',
             'POST /api/admin/recruitment/candidates/9/reject-review', 'POST /api/admin/recruitment/candidates/9/retry-evaluation',
         ]);
-        assert.ok(globalThis.__axiosCalls.every((c) => c.headers.Authorization === 'Bearer ADMIN-JWT'));
+        assert.ok(globalThis.__axiosCalls.every((c) => !('Authorization' in c.headers)), 'the HttpOnly cookie (+ CSRF header from the auth client) is the credential');
         assert.deepEqual(globalThis.__axiosCalls[8].params, { page: 2, status: 'COMPLETED' });
         assert.deepEqual(globalThis.__axiosCalls[11].body, { justification: 'verified outage' });
         assert.ok(globalThis.__axiosCalls[4].timeout >= 60000, 'blueprint generation allows for Gemini latency');
+        assert.deepEqual(globalThis.localStorage.dump?.() ?? {}, {}, 'no credential is stored client side');
         delete globalThis.localStorage;
     });
 
-    test('2. multi-organization admins send an explicit tenant header; others send none', async () => {
-        globalThis.localStorage = makeLocalStorage({ token: 'J', prepwin_org_id: '42' });
-        let { adminApi } = await loadModule('src/services/recruitmentApi.js');
+    test('2. the tenant header comes from the server-verified session (org of the signed-in admin); students and anonymous send none', async () => {
+        const { adminApi, refreshSession } = await loadModule('test_support/adminSessionHarness.js');
+        const signInAs = async (me) => {
+            globalThis.fetch = async () => ({ ok: Boolean(me), json: async () => me });
+            await refreshSession();
+        };
+        await signInAs({ user_id: 1, email: 'a@x.test', role: 'ADMIN', organization_id: 42, csrf_token: 'C1' });
         await adminApi.listRoles();
         assert.equal(globalThis.__axiosCalls.at(-1).headers['X-Organization-Id'], '42');
-        globalThis.localStorage = makeLocalStorage({ token: 'J' });
-        ({ adminApi } = await loadModule('src/services/recruitmentApi.js'));
+        await signInAs({ user_id: 1, email: 'a@x.test', role: 'ADMIN', organization_id: null, csrf_token: 'C1' });
         await adminApi.listRoles();
         assert.ok(!('X-Organization-Id' in globalThis.__axiosCalls.at(-1).headers));
-        delete globalThis.localStorage;
+        await signInAs({ user_id: 2, email: 's@x.test', role: 'STUDENT', organization_id: 42, csrf_token: 'C2' });
+        await adminApi.listRoles();
+        assert.ok(!('X-Organization-Id' in globalThis.__axiosCalls.at(-1).headers), 'a student session never selects an admin tenant');
+        await signInAs(null);
+        await adminApi.listRoles();
+        assert.ok(!('X-Organization-Id' in globalThis.__axiosCalls.at(-1).headers));
+        delete globalThis.fetch;
     });
 });
 
@@ -123,11 +133,12 @@ describe('Shared admin UI helpers render real values', () => {
 describe('Admin dashboard structure and requirements', () => {
     test('7. the four workflow stages are separate routes (one page each), not in-page tabs', async () => {
         const routes = await loadModule('src/components/admin/workflowRoutes.js');
-        assert.deepEqual(routes.WORKFLOW_ROUTES, { overview: '/admin/dashboard', roles: '/admin/job-roles', links: '/admin/shared-links', results: '/admin/candidate-results' });
+        assert.deepEqual(routes.WORKFLOW_ROUTES, { overview: '/admin/dashboard', roles: '/admin/job-roles', links: '/admin/shared-links', results: '/admin/candidate-results', users: '/admin/users' });
         const pages = {
             roles: ['src/pages/admin/JobRolesPage.jsx', '<JobRoleManager', 'Job Roles & Blueprints'],
             links: ['src/pages/admin/SharedLinksPage.jsx', '<SharedLinkManager', 'Shared Links'],
             results: ['src/pages/admin/CandidateResultsPage.jsx', '<CandidateResultsTable', 'Candidate Results'],
+            users: ['src/pages/admin/UserManagementPage.jsx', 'userManagementApi', 'User Management'],
         };
         for (const [, [file, comp, title]] of Object.entries(pages)) {
             const src = read(file);
@@ -152,7 +163,7 @@ describe('Admin dashboard structure and requirements', () => {
         for (const [path, comp] of [['/admin/dashboard', 'Dashboard'], ['/admin/job-roles', 'JobRolesPage'], ['/admin/shared-links', 'SharedLinksPage'], ['/admin/candidate-results', 'CandidateResultsPage']]) {
             assert.ok(appSrc.includes(`<Route path="${path}" element={<${comp} />} />`), `${path} is routed`);
         }
-        const guarded = appSrc.slice(appSrc.indexOf('<ClerkAdminGuard><DashboardLayout />'), appSrc.indexOf('Candidate Portal Routes'));
+        const guarded = appSrc.slice(appSrc.indexOf('<AdminGuard><DashboardLayout />'), appSrc.indexOf('Candidate Portal Routes'));
         for (const path of ['/admin/dashboard', '/admin/job-roles', '/admin/shared-links', '/admin/candidate-results']) assert.ok(guarded.includes(`path="${path}"`), `${path} is admin-guarded`);
     });
 
@@ -170,12 +181,14 @@ describe('Admin dashboard structure and requirements', () => {
         assert.ok(!navbarSrc.includes('>\n                        Admin Workspace'), 'no second "Admin Workspace" link next to the sidebar entry');
     });
 
-    test('8. sidebar: exactly the four workflow stages for every role, no legacy modules and no Organizations', () => {
+    test('8. sidebar: the four workflow stages plus the Administration > User Management entry, no legacy modules and no Organizations', () => {
         assert.ok(layoutSrc.includes('PrepWin Assessment Suite'));
         const labels = [...layoutSrc.matchAll(/<SidebarItem icon=\{(\w+)\} label="([^"]+)" path=\{?([^\s}]+)\}?/g)].map((m) => [m[1], m[2], m[3]]);
-        assert.deepEqual(labels.map((l) => l[1]), ['Overview', 'Job Roles & Blueprints', 'Shared Links', 'Candidate Results']);
+        assert.deepEqual(labels.map((l) => l[1]), ['Overview', 'Job Roles & Blueprints', 'Shared Links', 'Candidate Results', 'User Management']);
         assert.deepEqual(labels.slice(0, 4).map((l) => l[0]), ['LayoutDashboard', 'Briefcase', 'Link2', 'ClipboardList'], 'icons');
         assert.deepEqual(labels.slice(0, 4).map((l) => l[2]), ['WORKFLOW_ROUTES.overview', 'WORKFLOW_ROUTES.roles', 'WORKFLOW_ROUTES.links', 'WORKFLOW_ROUTES.results']);
+        assert.deepEqual([labels[4][0], labels[4][2]], ['UserCog', 'WORKFLOW_ROUTES.users'], 'User Management lives under its own Administration heading');
+        assert.ok(layoutSrc.includes('Administration'));
         for (const gone of ['Recruitment Workspace', 'Candidate Results & Dossiers', 'Admin Workspace', 'Resume Screening', 'Screened Candidates', 'Assessment Rounds', 'Invitation Assessments', 'Recruitment Analytics',
             'Enterprise Settings', 'Talent Screening Suite', 'Platform & Settings', 'Platform &amp; Settings', 'tab=']) {
             assert.ok(!layoutSrc.includes(gone), `removed from the sidebar: ${gone}`);
@@ -183,11 +196,12 @@ describe('Admin dashboard structure and requirements', () => {
         // each item is active only on its own route (Overview also on the /dashboard alias)
         assert.ok(layoutSrc.includes('location.pathname === path') && layoutSrc.includes("location.pathname === '/dashboard'"));
         for (const gone of ['Organizations', 'Building2', 'PLATFORM_ADMIN', '/platform/', '>Platform<']) assert.ok(!layoutSrc.includes(gone), `no platform / organizations navigation: ${gone}`);
-        assert.equal((layoutSrc.match(/<SidebarItem icon=/g) || []).length, 4, 'no role-specific extra entries');
+        assert.equal((layoutSrc.match(/<SidebarItem icon=/g) || []).length, 5, 'no role-specific extra entries');
         assert.ok(!layoutSrc.includes('Recruitment Pipeline'));
         assert.ok(!/Recruiter Login|HR Login|Org Admin Login|College Admin Login/i.test(layoutSrc + appSrc), 'only Student and Admin logins exist');
-        const guarded = appSrc.slice(appSrc.indexOf('<ClerkAdminGuard><DashboardLayout />'), appSrc.indexOf('Candidate Portal Routes'));
+        const guarded = appSrc.slice(appSrc.indexOf('<AdminGuard><DashboardLayout />'), appSrc.indexOf('Candidate Portal Routes'));
         assert.ok(guarded.includes('path="/admin/dashboard"'));
+        assert.ok(guarded.includes('path="/admin/users"'), 'User Management is inside the admin guard');
     });
 
     test('8a. the sidebar is fixed width: collapse / expand only, no resize handle, state or listeners', () => {

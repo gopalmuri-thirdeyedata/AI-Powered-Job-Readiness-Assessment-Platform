@@ -7,6 +7,7 @@ import {
     Link2,
     ClipboardList,
     Users,
+    UserCog,
     ChevronLeft,
     ChevronRight,
     X,
@@ -100,6 +101,18 @@ const DashboardLayout = () => {
                     <SidebarItem icon={Briefcase} label="Job Roles & Blueprints" path={WORKFLOW_ROUTES.roles} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                     <SidebarItem icon={Link2} label="Shared Links" path={WORKFLOW_ROUTES.links} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                     <SidebarItem icon={ClipboardList} label="Candidate Results" path={WORKFLOW_ROUTES.results} isOpen={isOpen} onClick={onItemClick} scope={scope} />
+                </div>
+            </div>
+
+            {/* Administration */}
+            <div>
+                {isOpen && (
+                    <h3 className="text-[11px] font-black text-[#5d8c2c] dark:text-emerald-400 uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c] dark:bg-emerald-400" /> Administration
+                    </h3>
+                )}
+                <div className={isOpen ? "space-y-1.5" : "space-y-3"}>
+                    <SidebarItem icon={UserCog} label="User Management" path={WORKFLOW_ROUTES.users} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                 </div>
             </div>
         </div>

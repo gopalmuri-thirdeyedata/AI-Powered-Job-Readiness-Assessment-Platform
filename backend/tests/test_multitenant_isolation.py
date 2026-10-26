@@ -13,13 +13,14 @@ import schemas
 import database
 import utils
 from main import app
+from tests import local_auth_helpers as lh
 from routers.auth import get_current_user
 
 
 class TestMultitenantIsolationAndSecurity(unittest.TestCase):
     """
     Comprehensive Security and Multi-Tenant Isolation Test Suite for HiringAI V2.
-    Tests Clerk authentication, invite-only enforcement, role-based access control,
+    Tests local authentication, administrator-provisioned accounts only, role-based access control,
     and strict multi-tenant data, query, mutation, analytics, and file isolation.
     """
 
@@ -223,23 +224,36 @@ class TestMultitenantIsolationAndSecurity(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 401)
 
-    def test_03_uninvited_user_clerk_sync_rejected(self):
-        """Public/uninvited users attempting clerk-sync must be rejected with 403 Forbidden."""
+    def test_03_uninvited_user_login_rejected(self):
+        """Public/uninvited users cannot sign in or self-provision: generic 401, nothing is created."""
+        lh.reset_login_limits()
         res = self.client.post(
-            "/api/auth/clerk-sync/",
-            json={"email": "random_stranger@gmail.com", "clerk_user_id": "clerk_stranger_1"}
+            "/api/auth/login/",
+            json={"email": "random_stranger@gmail.com", "password": lh.TEST_PASSWORD}
         )
-        self.assertEqual(res.status_code, 403)
-        self.assertTrue(any(t in res.json()["detail"].lower() for t in ("invite-only", "not been provisioned")))
+        self.assertEqual(res.status_code, 401)
+        self.assertEqual(res.json()["detail"], "Invalid email or password.")
+        # the former self-provisioning endpoint is gone
+        sync = self.client.post("/api/auth/clerk-sync/", json={"email": "random_stranger@gmail.com", "clerk_user_id": "clerk_stranger_1"})
+        self.assertIn(sync.status_code, (404, 405))
+        db = next(database.get_db())
+        try:
+            self.assertIsNone(db.query(models.User).filter(models.User.email == "random_stranger@gmail.com").first())
+        finally:
+            db.close()
 
-    def test_04_invited_user_clerk_sync_succeeds(self):
-        """Invited organization users syncing via Clerk receive valid JWT credentials."""
-        res = self.client.post(
-            "/api/auth/clerk-sync/",
-            json={"email": self.org_a_admin.email, "clerk_user_id": "clerk_test_admin_a"}
-        )
-        self.assertEqual(res.status_code, 200)
-        self.assertIn("access", res.json())
+    def test_04_provisioned_user_login_succeeds(self):
+        """A provisioned organization user signs in with the local password and gets a session scoped to their organization."""
+        db = next(database.get_db())
+        try:
+            user = db.query(models.User).filter(models.User.id == self.org_a_admin.id).first()
+            user.hashed_password = utils.get_password_hash(lh.TEST_PASSWORD)
+            db.commit()
+        finally:
+            db.close()
+        c, res = lh.login(self.org_a_admin.email)
+        self.assertNotIn("access", res.json())
+        self.assertEqual(c.get("/api/auth/me").json()["organization_id"], self.org_a_id)
 
     def test_05_auth_me_resolves_role_and_organization(self):
         """GET /api/auth/me returns the user's role and resolved tenant organization."""

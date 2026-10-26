@@ -1,18 +1,15 @@
 import axios from 'axios';
 import API_URL from '../apiConfig';
+import { logout as endSession } from '../auth/authSession';
 
 /**
- * Returns authorization headers for student API requests.
- * Checks both studentToken and global token in localStorage.
+ * Headers for student API requests. Authentication is the HttpOnly session cookie plus the CSRF header, both added by the
+ * auth client (auth/authSession.js); nothing credential-like is built here.
  */
 const getAuthHeaders = (isMultipart = false) => {
-    const token = localStorage.getItem('studentToken') || localStorage.getItem('token');
     const headers = {
         'Accept': 'application/json',
     };
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
     if (isMultipart) {
         headers['Content-Type'] = 'multipart/form-data';
     } else {
@@ -21,88 +18,10 @@ const getAuthHeaders = (isMultipart = false) => {
     return headers;
 };
 
-// A stored student JWT can be stale (expired, or signed before a backend restart) while the Clerk
-// session is still valid. Re-issue it from the Clerk session once and replay the request.
-let refreshInFlight = null;
-const refreshStudentToken = () => {
-    if (!refreshInFlight) {
-        const clerkUser = window.Clerk?.user;
-        const email = clerkUser?.primaryEmailAddress?.emailAddress?.trim()?.toLowerCase();
-        if (!clerkUser || !email) return Promise.resolve(null);
-        refreshInFlight = fetch(`${API_URL}/api/auth/clerk-sync/`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, clerk_user_id: clerkUser.id, role_intent: 'student' })
-        })
-            .then((res) => (res.ok ? res.json() : null))
-            .then((data) => {
-                if (!data?.access) return null;
-                localStorage.setItem('token', data.access);
-                localStorage.setItem('studentToken', data.access);
-                localStorage.setItem('student_user_email', email);
-                return data.access;
-            })
-            .catch(() => null)
-            .finally(() => { refreshInFlight = null; });
-    }
-    return refreshInFlight;
-};
-
-axios.interceptors.response.use(undefined, async (error) => {
-    const config = error.config;
-    const url = config?.url || '';
-    const isStudentCall = (url.includes('/api/student') || url.includes('/api/roleready/student')) && !url.includes('/auth/');
-    if (error.response?.status !== 401 || !isStudentCall || config._studentRetried) {
-        return Promise.reject(error);
-    }
-    config._studentRetried = true;
-    const token = await refreshStudentToken();
-    if (!token) return Promise.reject(error);
-    config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
-    return axios(config);
-});
-
 export const studentApi = {
-    // Auth
-    async login(email, password) {
-        const response = await axios.post(`${API_URL}/api/student/auth/login`, {
-            email,
-            password
-        });
-        if (response.data?.access) {
-            localStorage.setItem('studentToken', response.data.access);
-            localStorage.setItem('token', response.data.access);
-        }
-        return response.data;
-    },
-
-    async register(email, password, fullName, inviteCode = null) {
-        const payload = {
-            email,
-            password,
-            full_name: fullName
-        };
-        if (inviteCode) {
-            payload.invite_code = inviteCode;
-        }
-        const response = await axios.post(`${API_URL}/api/student/auth/register`, payload);
-        if (response.data?.access) {
-            localStorage.setItem('studentToken', response.data.access);
-            localStorage.setItem('token', response.data.access);
-        }
-        return response.data;
-    },
-
-    logout() {
-        try {
-            localStorage.removeItem('studentToken');
-            localStorage.removeItem('token');
-            localStorage.removeItem('student_user_email');
-            localStorage.removeItem('user_profile');
-            localStorage.removeItem('student_completed_assessment');
-        } catch (e) {
-            console.error('Failed to clear student session storage:', e);
-        }
+    // Auth: students sign in through the single login (auth/authSession.js); there is no student sign-up.
+    async logout() {
+        await endSession();
     },
 
     // Profile
@@ -488,21 +407,6 @@ export const studentApi = {
         );
         return response.data;
     },
-
-    logout() {
-        localStorage.removeItem('studentToken');
-        localStorage.removeItem('student_completed_assessment');
-        // If current role is STUDENT in user_profile, clean up user_profile too
-        try {
-            const profile = JSON.parse(localStorage.getItem('user_profile') || '{}');
-            if (profile.role === 'STUDENT') {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user_profile');
-            }
-        } catch {
-            // ignore
-        }
-    }
 };
 
 export default studentApi;

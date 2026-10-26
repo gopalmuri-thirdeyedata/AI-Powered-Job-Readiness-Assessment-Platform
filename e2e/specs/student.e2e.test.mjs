@@ -1,7 +1,7 @@
 // Student Platform assessment workspace in a real browser against the real backend on a scratch database.
 //
 // Real: frontend, FastAPI backend, timing + scoring code, Chrome with fake camera/microphone, local Python + JDK as the code
-// sandbox stand-in. NOT real (and therefore not proven here): Clerk sign-in (the app's JWT path is used with a minted JWT),
+// sandbox stand-in. NOT real (and therefore not proven here): account creation (the harness seeds the student; sign-in itself is the real cookie login),
 // Gemini (offline mock mode), Vapi (REST stubbed; the SDK talks to an intercepted endpoint), Judge0.
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ after(() => stack?.stop());
 const openStudent = async ({ tag, token, cleanProctoring = true } = {}) => {
   const student = token ? { token } : await stack.newStudent(tag);
   const { browser, context } = await U.launch();
-  await U.signInStudent(context, student.token);
+  await U.signIn(context, stack.api, student);
   const ui = await U.newPage(context, stack.api);
   if (cleanProctoring) await U.stubCleanProctoring(ui.page);
   return { browser, context, ui, student };
@@ -52,21 +52,21 @@ describe('student authentication', () => {
     try {
       const ui = await U.newPage(context, stack.api);
       await ui.page.goto(`${stack.web}/assessment/setup`);
-      await ui.page.waitForURL(/auth=student/, { timeout: 20000 });
-      assert.match(ui.page.url(), /\/\?auth=student/);
+      await ui.page.waitForURL(/auth=login/, { timeout: 20000 });
+      assert.match(ui.page.url(), /\/\?auth=login/);
       assert.ok(!ui.t.responses.some((r) => r.path.startsWith('/api/roleready/student/initialize')), 'nothing is created for an unauthenticated visitor');
     } finally { await browser.close(); }
   });
 
-  test('an invalid or tampered token is refused by the server and removed from the browser', async () => {
+  test('a forged or tampered session cookie is refused by the server and the visitor is sent to the login', async () => {
     const { browser, context } = await U.launch();
     try {
-      await U.signInStudent(context, 'not.a.valid.jwt');
+      await context.addCookies([{ name: 'prepwin_session', value: 'not-a-real-session-value', url: stack.api }]);
       const ui = await U.newPage(context, stack.api);
       await ui.page.goto(`${stack.web}/assessment/setup`);
-      await ui.page.waitForURL(/auth=student/, { timeout: 20000 });
-      assert.equal(await ui.page.evaluate(() => localStorage.getItem('studentToken')), null);
+      await ui.page.waitForURL(/auth=login/, { timeout: 20000 });
       assert.ok(ui.t.responses.some((r) => r.path === '/api/auth/me' && r.status === 401));
+      assert.equal(await ui.page.evaluate(() => Object.keys(localStorage).filter((k) => /token/i.test(k)).length), 0, 'no credential-like key is ever stored in the browser');
     } finally { await browser.close(); }
   });
 

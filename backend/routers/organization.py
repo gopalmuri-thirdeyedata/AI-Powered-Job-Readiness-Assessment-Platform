@@ -9,7 +9,7 @@ import models
 import database
 import utils
 from routers.auth import get_current_tenant, require_organization_admin, require_hr_or_admin
-from services import clerk_service
+from services import local_auth
 
 router = APIRouter(
     prefix="/api/organization",
@@ -19,6 +19,8 @@ router = APIRouter(
 class InviteUserSchema(BaseModel):
     email: EmailStr
     role: Optional[str] = "HR" # 'HR' or 'ORGANIZATION_ADMIN'
+    # Optional initial password. Without one the account cannot sign in until an administrator sets a password.
+    password: Optional[str] = None
 
 class UpdateMemberSchema(BaseModel):
     role: Optional[str] = None
@@ -91,12 +93,24 @@ def invite_organization_user(
         raise HTTPException(status_code=404, detail="No active organization context found.")
 
     email = payload.email.strip().lower()
-    target_role = (payload.role or "HR").upper()
+    raw_role = (payload.role or "ADMIN").upper()
+    if payload.password is not None:
+        problems = local_auth.password_policy_errors(payload.password, email)
+        if problems:
+            raise HTTPException(status_code=422, detail=problems)
 
-    if target_role not in ("HR", "ORGANIZATION_ADMIN", "STUDENT"):
-        raise HTTPException(status_code=400, detail="Role must be 'HR', 'ORGANIZATION_ADMIN', or 'STUDENT'.")
+    if raw_role in ("HR", "ORGANIZATION_ADMIN", "ADMIN"):
+        target_role = "ADMIN"
+    elif raw_role == "STUDENT":
+        target_role = "STUDENT"
+    else:
+        raise HTTPException(status_code=400, detail="Role must be 'ADMIN' or 'STUDENT'.")
 
-    # Prevent inviting as Platform Admin
+    # Role hierarchy (server-side): only a Super Admin can add administrators; an Admin can only add Students.
+    if target_role == "ADMIN" and not models.is_super_admin_role(current_user.role):
+        raise HTTPException(status_code=403, detail="Only a Super Admin can add Admin accounts.")
+
+    # Prevent inviting seed platform admin accounts into a tenant
     platform_admin_email = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@thirdeyedata.ai").strip().lower()
     if email in (platform_admin_email, "admin@hiringai.com", "admin@thirdeyedata.ai"):
         raise HTTPException(status_code=400, detail="Cannot invite Platform Admin account into an organization.")
@@ -118,7 +132,7 @@ def invite_organization_user(
         target_user = models.User(
             email=email,
             role=target_role,
-            hashed_password=utils.get_password_hash("clerk_managed_user"),
+            hashed_password=(utils.get_password_hash(payload.password) if payload.password else utils.make_unusable_password_hash()),
             is_active=True,
             organization_id=current_tenant.id
         )
@@ -126,8 +140,10 @@ def invite_organization_user(
         db.commit()
         db.refresh(target_user)
     else:
-        target_user.organization_id = current_tenant.id
-        target_user.role = target_role
+        if not target_user.organization_id:
+            target_user.organization_id = current_tenant.id
+        if not models.is_admin_role(target_user.role):
+            target_user.role = target_role
         db.commit()
 
     # Add organization membership
@@ -155,15 +171,8 @@ def invite_organization_user(
     db.commit()
     db.refresh(new_member)
 
-    # Dispatch Clerk invitation if configured
-    clerk_role = "org:admin" if target_role == "ORGANIZATION_ADMIN" else "org:member"
-    if current_tenant.clerk_org_id:
-        clerk_service.invite_to_clerk_organization(current_tenant.clerk_org_id, email, role=clerk_role)
-    else:
-        clerk_service.create_clerk_invitation(email)
-
     return {
-        "message": f"Invitation sent to '{email}'.",
+        "message": f"'{email}' was added to the organization." + ("" if payload.password else " Set a password for the account before it can sign in."),
         "member": {
             "id": new_member.id,
             "user_id": target_user.id,
@@ -196,6 +205,20 @@ def update_organization_member(
     if not member:
         raise HTTPException(status_code=404, detail="Member not found in your organization.")
 
+    # Role hierarchy (server-side): an Admin may only change the status of Student members; roles and administrators
+    # are the Super Admin's. Nobody can change their own role.
+    is_super = models.is_super_admin_role(current_user.role)
+    target_user_role = member.user.role if member.user else None
+    if not is_super:
+        if payload.role:
+            raise HTTPException(status_code=403, detail="Only a Super Admin can change roles.")
+        if member.role != "STUDENT" or models.is_admin_role(target_user_role):
+            raise HTTPException(status_code=403, detail="Only a Super Admin can manage administrator accounts.")
+    if payload.role and member.user_id == current_user.id:
+        raise HTTPException(status_code=403, detail="You cannot change your own role.")
+    if models.is_super_admin_role(target_user_role) and not is_super:
+        raise HTTPException(status_code=403, detail="Only a Super Admin can manage Super Admin accounts.")
+
     # Prevent modifying self away from admin if last admin
     if member.user_id == current_user.id and payload.role == "HR":
         admin_count = db.query(models.OrganizationMember).filter(
@@ -210,9 +233,7 @@ def update_organization_member(
         new_role = payload.role.upper()
         if new_role not in ("HR", "ORGANIZATION_ADMIN"):
             raise HTTPException(status_code=400, detail="Role must be 'HR' or 'ORGANIZATION_ADMIN'.")
-        member.role = new_role
-        if member.user:
-            member.user.role = new_role
+        member.role = new_role   # membership label only: the account's own role is never rewritten here
 
     if payload.status:
         new_status = payload.status.lower()
@@ -266,6 +287,9 @@ def remove_organization_member(
 
     if member.user_id == current_user.id and current_user.role != models.UserRole.PLATFORM_ADMIN:
         raise HTTPException(status_code=400, detail="Cannot remove yourself from your organization.")
+    # Role hierarchy (server-side): an Admin can remove Students only
+    if not models.is_super_admin_role(current_user.role) and (member.role != "STUDENT" or (member.user and models.is_admin_role(member.user.role))):
+        raise HTTPException(status_code=403, detail="Only a Super Admin can remove administrator accounts.")
 
     user_to_remove = member.user
     db.delete(member)

@@ -4,7 +4,7 @@ Proctoring (YOLO frame analysis) endpoints.
 Access model - the frame analysis is CPU-expensive and reachable from three kinds of sitting, each with its OWN credential
 (candidates are never forced onto Student Platform authentication):
 
-  * Student Platform / legacy candidate portal:  Authorization: Bearer <JWT of an active user>
+  * Student Platform / legacy candidate portal:  the HttpOnly session cookie of an active user, or Authorization: Bearer <JWT>
   * Student invitation sitting:                  X-Invitation-Token: <unexpired invitation token>
   * Recruitment shared-link sitting:             X-Session-Id + X-Session-Token  (the session capability of a sitting that is
                                                  still in progress; verified read-only, the volatile lease is not needed)
@@ -28,7 +28,9 @@ from sqlalchemy.orm import Session
 import database
 import models
 import utils
+from routers.auth import cookie_session_user
 from services import assessment_flow_service as flow
+from services import local_auth
 from services.proctor_service import (InvalidFrame, MAX_BASE64_CHARS, analyze_frame, decode_frame, get_model_status, get_public_status)
 from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter, client_ip
 
@@ -79,8 +81,19 @@ def _user_from_bearer(db: Session, authorization: Optional[str]) -> Optional[mod
     return user if user is not None and user.is_active else None
 
 
+def _user_from_cookie(db: Session, request: Optional[Request]) -> Optional[models.User]:
+    """Account behind the HttpOnly session cookie (expiry / revocation / active / CSRF enforced); None for no or an invalid session."""
+    if request is None or not request.cookies.get(local_auth.SESSION_COOKIE):
+        return None
+    try:
+        return cookie_session_user(request, db)
+    except HTTPException:
+        return None
+
+
 def resolve_principal(db: Session, authorization: Optional[str], x_invitation_token: Optional[str],
-                      x_session_id: Optional[str], x_session_token: Optional[str]) -> Tuple[Optional[tuple], Optional[Tuple[int, str]]]:
+                      x_session_id: Optional[str], x_session_token: Optional[str],
+                      request: Optional[Request] = None) -> Tuple[Optional[tuple], Optional[Tuple[int, str]]]:
     """Returns (principal key, None) or (None, (status, detail)). Read-only: nothing is written or locked."""
     if x_session_token:                                                    # recruitment sitting capability
         try:
@@ -93,11 +106,16 @@ def resolve_principal(db: Session, authorization: Optional[str], x_invitation_to
         key = ("invitation", inv.id) if ok else None
         db.rollback()
         return (key, None) if key else (None, (status.HTTP_403_FORBIDDEN, "Not authorized."))
-    if authorization:                                                      # student / legacy candidate account
+    if authorization:                                                      # API client: signed Bearer JWT
         user = _user_from_bearer(db, authorization)
         key = ("user", user.id) if user is not None else None
         db.rollback()
         return (key, None) if key else (None, (status.HTTP_401_UNAUTHORIZED, "Not authorized."))
+    user = _user_from_cookie(db, request)                                  # browser: HttpOnly session cookie
+    if user is not None:
+        key = ("user", user.id)
+        db.rollback()
+        return key, None
     return None, (status.HTTP_401_UNAUTHORIZED, "Authentication required.")
 
 
@@ -109,7 +127,7 @@ def require_principal(request: Request,
                       db: Session = Depends(database.get_db)) -> tuple:
     if getattr(analyze_frame, "__name__", "") == "slow_analyze":
         return ("test", 0)
-    principal, failure = resolve_principal(db, authorization, x_invitation_token, x_session_id, x_session_token)
+    principal, failure = resolve_principal(db, authorization, x_invitation_token, x_session_id, x_session_token, request)
     if principal is None:
         raise _deny(request, *failure)
     return principal
@@ -122,7 +140,7 @@ def get_proctoring_status(request: Request,
     """Public readiness probe for the device-check page: minimal by design. Valid account holders also get diagnostic detail."""
     if not status_limiter.allow(client_ip(request)):
         raise _error(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests. Please wait a minute and try again.", 60)
-    if _user_from_bearer(db, authorization) is not None:
+    if _user_from_bearer(db, authorization) is not None or _user_from_cookie(db, request) is not None:
         db.rollback()
         return get_model_status()
     db.rollback()

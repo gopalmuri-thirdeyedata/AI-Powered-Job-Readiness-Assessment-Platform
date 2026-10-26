@@ -1,15 +1,12 @@
 import axios from 'axios';
 import API_URL from '../apiConfig';
 
+// Students authenticate with the HttpOnly session cookie (+ CSRF header) added by the auth client.
 const getAuthHeaders = (isMultipart = false) => {
-    const token = localStorage.getItem('studentToken') || localStorage.getItem('token');
     const invitationToken = localStorage.getItem('invitationToken');
     const headers = {
         'Accept': 'application/json',
     };
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
     if (invitationToken) {
         headers['X-Invitation-Token'] = invitationToken;
     }

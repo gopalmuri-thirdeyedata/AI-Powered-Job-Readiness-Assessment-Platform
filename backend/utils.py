@@ -56,13 +56,30 @@ SECRET_KEY = validate_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080  # 7 days — sufficient for full candidate test lifecycle
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt, cost 12 (explicit so a library default change can never weaken stored hashes)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    """False (never an exception) for a missing / malformed stored hash such as a cleared or legacy placeholder value."""
+    if not hashed_password or plain_password is None:
+        return False
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except (ValueError, TypeError):
+        return False
 
 def get_password_hash(password):
     return pwd_context.hash(password)
+
+# Literal "passwords" the Clerk-era provisioning code stored for accounts whose real credential lived at Clerk. They are public
+# knowledge (they are in the source history), so they must never authenticate: login refuses them and
+# migrate_local_auth.py replaces every stored hash of them with an unusable one.
+LEGACY_PLACEHOLDER_PASSWORDS = ("clerk_managed_user", "clerk_student_user")
+
+def make_unusable_password_hash() -> str:
+    """A valid bcrypt hash of a random secret nobody ever sees: the account cannot be logged into until a password is set."""
+    import secrets
+    return pwd_context.hash(secrets.token_urlsafe(32))
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
