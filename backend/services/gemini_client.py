@@ -296,3 +296,41 @@ def call_gemini_text(prompt: str, system_prompt: str = "You are a helpful assist
     """Calls Gemini and returns plain text response."""
     result = call_gemini(prompt, system_prompt, temperature, json_mode=False)
     return result.get("text", "")
+
+
+GROUNDED_TIMEOUT_SECONDS = 60
+
+
+def call_gemini_grounded(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1,
+                         timeout: float = GROUNDED_TIMEOUT_SECONDS) -> dict:
+    """
+    One Gemini call with Google Search grounding: Gemini decides what to search and reads the pages itself.
+    Returns {"text", "sources": [{"uri", "title"}], "queries": [str]}. Grounding cannot be combined with JSON mode, so the
+    caller parses the text. Never raises: any failure (or mock mode / no key) returns an empty result so callers fall back.
+    """
+    empty = {"text": "", "sources": [], "queries": []}
+    if is_mock_mode_enabled() or not has_gemini_key():
+        return empty
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "tools": [{"google_search": {}}],
+        "generationConfig": {"temperature": temperature},
+    }
+    try:
+        resp = httpx.post(
+            GEMINI_REST_URL.format(model=get_model_name()), json=body,
+            headers={"x-goog-api-key": get_gemini_api_key(), "Content-Type": "application/json"}, timeout=timeout,
+        )
+        if resp.status_code != 200:
+            _log_failure(_classify_http_error(resp.status_code, resp.text), "grounded search")
+            return empty
+        candidate = resp.json()["candidates"][0]
+        text = "".join(p.get("text", "") for p in (candidate.get("content") or {}).get("parts", []))
+        meta = candidate.get("groundingMetadata") or {}
+        sources = [{"uri": (c.get("web") or {}).get("uri", ""), "title": (c.get("web") or {}).get("title", "")}
+                   for c in meta.get("groundingChunks", []) if c.get("web")]
+        return {"text": text.strip(), "sources": sources, "queries": list(meta.get("webSearchQueries", []))}
+    except Exception as exc:  # network, timeout, malformed response: callers fall back to normal generation
+        logger.warning("Gemini grounded search failed (%s): %s", type(exc).__name__, _redact(str(exc)))
+        return empty

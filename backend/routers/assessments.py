@@ -222,6 +222,12 @@ def assign_assessment(
             if recruiter_skills and not config.get("topics"):
                 config["topics"] = recruiter_skills
 
+    # Company style for AI question generation: default to the recruiter's organization when none was supplied.
+    if org_id and not (config.get("company") or "").strip():
+        org_record = db.query(models.Organization).filter(models.Organization.id == org_id).first()
+        if org_record and (org_record.name or "").strip():
+            config["company"] = org_record.name.strip()
+
     # --- PRE-GENERATE QUESTIONS (Optimization) ---
     # Generate ONCE per batch assignment to save time and ensure consistency
     try:

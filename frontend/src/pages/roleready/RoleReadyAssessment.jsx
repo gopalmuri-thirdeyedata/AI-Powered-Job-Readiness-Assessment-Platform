@@ -49,6 +49,7 @@ import MicrophonePicker from '../../components/student-ui/MicrophonePicker';
 import { shouldWarnSilence } from '../../utils/micLevel';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
 import FullscreenGateModal from '../../components/FullscreenGateModal';
+import QuestionProvenance from '../../components/roleready-ui/QuestionProvenance';
 import { createStudentAssessmentApi } from '../../services/assessmentApi';
 import API_URL from '../../apiConfig';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
@@ -2043,11 +2044,12 @@ export const AssessmentWorkspace = ({
                                     const selected = aptitudeAnswers[String(activeQ.id)];
                                     return (
                                         <SlideSwap index={currentAptIndex} className="space-y-6">
-                                            <div className="flex items-center gap-2 text-xs text-emerald-800 font-bold">
+                                            <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-800 font-bold">
                                                 <span>Category:</span>
                                                 <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 font-mono">
                                                     {activeQ.topic || "Domain Logic"}
                                                 </span>
+                                                <QuestionProvenance provenance={activeQ.provenance} styleCompany={activeQ.style_company} />
                                             </div>
 
                                             <h3 className="text-base sm:text-lg font-semibold text-slate-900 leading-relaxed">
@@ -2462,15 +2464,18 @@ export const AssessmentWorkspace = ({
                                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                                             {/* Left Pane (~45% / 5 Cols): Problem Statement, Constraints, Public Tests */}
                                             <div className="min-w-0 lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 max-h-[500px] lg:max-h-[700px] overflow-y-auto">
-                                                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                                    <h3 className="text-base font-bold text-slate-900">{activeProblem.title}</h3>
-                                                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
-                                                        activeProblem.difficulty === 'Easy' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                                                        activeProblem.difficulty === 'Medium' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                                                        'bg-red-50 text-red-800 border-red-200'
-                                                    }`}>
-                                                        {activeProblem.difficulty}
-                                                    </span>
+                                                <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                                                    <h3 className="text-base font-bold text-slate-900 min-w-0 break-words">{activeProblem.title}</h3>
+                                                    <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+                                                        <QuestionProvenance provenance={activeProblem.provenance} styleCompany={activeProblem.style_company} />
+                                                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
+                                                            activeProblem.difficulty === 'Easy' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                                                            activeProblem.difficulty === 'Medium' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                                            'bg-red-50 text-red-800 border-red-200'
+                                                        }`}>
+                                                            {activeProblem.difficulty}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
                                                 <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line">

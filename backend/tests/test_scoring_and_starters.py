@@ -311,4 +311,4 @@ def test_existing_practice_rows_get_sanitized_starters(db_session):
 
 def test_ai_coding_prompt_forbids_solution_in_starter():
     import inspect
-    assert "must NOT contain the solution" in inspect.getsource(roleready_service.generate_coding_problems)
+    assert "must NOT contain the solution" in inspect.getsource(roleready_service._generate_coding_core)

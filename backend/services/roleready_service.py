@@ -29,9 +29,12 @@ from models import (
     CandidateInvitation, 
     Candidate, 
     StudentProfile,
-    StudentResume
+    StudentResume,
+    Organization
 )
 from services.gemini_client import call_gemini
+from services.company_prompt import style_note, jd_context_note, attach_provenance, sanitize_company, pick_top_tech_companies, style_block
+from services import web_question_research
 from services.readiness_service import refresh_profile_readiness
 from services import piston_service
 from services import vapi_service
@@ -134,6 +137,7 @@ def _build_aptitude_payload(questions: Any, count: int):
             "topic": q.get("topic", "General Reasoning"),
             "question": q["question"],
             "options": [{"key": k, "text": o.get("text", "")} for k, o in zip(keys, options)],
+            **({"style_company": str(q["style_company"])[:60]} if isinstance(q.get("style_company"), str) else {}),
         })
         server_keys[qid] = {"correct_key": correct, "explanation": q.get("explanation", "")}
     return client_safe, server_keys
@@ -183,7 +187,7 @@ _GENERAL_APTITUDE_SUPPLEMENT = [
 ]
 
 
-def generate_aptitude_questions(jd_data: Dict[str, Any], count: int = 10) -> tuple[List[Dict[str, Any]], Dict[str, str]]:
+def _generate_aptitude_core(jd_data: Dict[str, Any], count: int = 10, company: str = "", jd_text: str = "", style_companies: tuple = ()) -> tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Generates tailored aptitude questions based on JD requirements and target role.
     Returns: (client_safe_questions, server_private_keys)
@@ -203,7 +207,7 @@ Return valid JSON with a "questions" array where each item has:
 - "options": array of 4 objects [{{"key": "A", "text": "..."}}, {{"key": "B", "text": "..."}}]
 - "correct_key": "A" or "B" or "C" or "D"
 - "explanation": brief rationale
-"""
+{jd_context_note(jd_text)}{style_block(company, style_companies)}"""
     try:
         res = call_gemini(prompt, system_prompt="You are a senior psychometric and technical assessment engineer. Output valid JSON.")
         built = _build_aptitude_payload(res.get("questions", []), count)
@@ -657,12 +661,13 @@ def _build_coding_payload(problems: Any, count: int):
                 "java": starter.get("java") or JAVA_STARTER_DEFAULT
             },
             "public_test_cases": public[:1],
+            **({"style_company": str(prob["style_company"])[:60]} if isinstance(prob.get("style_company"), str) else {}),
         })
         server_keys[pid] = {"hidden_test_cases": hidden[:4]}
     return client_safe, server_keys
 
 
-def generate_coding_problems(jd_data: Dict[str, Any], count: int = 2) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def _generate_coding_core(jd_data: Dict[str, Any], count: int = 2, company: str = "", jd_text: str = "", style_companies: tuple = ()) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Generates coding problems configured specifically for the candidate's target role & JD technical requirements.
     Returns: (client_safe_problems, server_private_keys)
@@ -701,7 +706,7 @@ Return valid JSON:
     }}
   ]
 }}
-"""
+{jd_context_note(jd_text)}{style_block(company, style_companies)}"""
     try:
         res = call_gemini(prompt, system_prompt="You are a principal software engineer configuring algorithmic coding interview questions. Return strictly valid JSON.")
         built = _build_coding_payload(res.get("problems", []), count)
@@ -1044,7 +1049,8 @@ def generate_interview_questions(
     resume_data: Optional[Dict[str, Any]] = None,
     count: int = 5,
     resume_text: str = "",
-    jd_text: str = ""
+    jd_text: str = "",
+    company: str = ""
 ) -> List[Dict[str, Any]]:
     """
     Generates conversational technical & behavioral interview questions grounded in JD and resume.
@@ -1078,7 +1084,7 @@ Return strictly valid JSON with an array "questions" containing objects with:
 - "type": "TECHNICAL" or "BEHAVIORAL" or "SYSTEM_DESIGN"
 - "question": realistic, conversational question text suitable for a voice interview
 - "evaluation_criteria": key technical competencies and STAR points a strong answer must demonstrate
-"""
+{style_note(company)}"""
     try:
         res = call_gemini(prompt, system_prompt="You are an expert technical interviewer and hiring bar raiser. Output strictly valid JSON.")
         questions = res.get("questions", [])
@@ -1121,6 +1127,89 @@ Return strictly valid JSON with an array "questions" containing objects with:
     ]
 
 
+def _organization_name(db: Session, organization_id: Optional[int]) -> str:
+    """Name of the hiring organization, used as the question-style company for recruiter invitations."""
+    if not organization_id:
+        return ""
+    try:
+        org = db.query(Organization).filter(Organization.id == organization_id).first()
+    except SQLAlchemyError:
+        return ""
+    return (org.name or "").strip() if org else ""
+
+
+def _session_company(db: Session, session: RoleReadySession) -> str:
+    """Company for question style: the session's target company, else the recruiter's organization (never a placeholder)."""
+    return (session.target_company or "").strip() or _organization_name(db, session.organization_id)
+
+
+def _merge_with_web(kind: str, jd_data: Dict[str, Any], count: int, company: str, jd_text: str, core, builder):
+    """
+    Real questions found on the web first (each with its verified company / count / year when the source states them),
+    then the normal generator fills whatever is missing. Any web failure simply means everything comes from the generator.
+    """
+    role = (jd_data.get("role_title") or "Software Engineer").strip()
+    skills = ", ".join(str(sk) for sk in (jd_data.get("required_skills") or []))
+    # Entered target company, else the top 10 tech companies ordered by JD relevance; every question carries its own style company.
+    entered = sanitize_company(company)
+    picked = () if entered else pick_top_tech_companies(role, skills, jd_text)
+    search_target = entered or ", ".join(picked)
+    try:
+        found = web_question_research.research(kind, role, skills, search_target, jd_text, count)
+    except Exception as e:
+        print(f"[RoleReady] Web {kind} research skipped: {e}")
+        found = []
+
+    client_items, keys_by_item = [], []
+    for raw in found:
+        if len(client_items) >= count:
+            break
+        try:
+            built = builder([raw], 1)
+        except Exception:
+            built = None
+        if not built or not built[0]:
+            continue  # invalid structure (e.g. missing options / tests): not usable
+        item, keys = built[0][0], built[1].get("1")
+        attach_provenance(item, raw.get("provenance"))
+        client_items.append(item)
+        keys_by_item.append(keys)
+
+    if len(client_items) < count:
+        rest_client, rest_keys = core(jd_data, count - len(client_items), entered, jd_text, picked)
+        for item in rest_client:
+            client_items.append(item)
+            keys_by_item.append(rest_keys.get(str(item["id"])))
+
+    merged_keys = {}
+    for idx, (item, keys) in enumerate(zip(client_items, keys_by_item), start=1):
+        item["id"] = str(idx)
+        item["style_company"] = _style_company_for(item, entered, picked, idx - 1)
+        merged_keys[str(idx)] = keys
+    return client_items, merged_keys
+
+
+def _style_company_for(item: Dict[str, Any], entered: str, picked: tuple, index: int) -> str:
+    """The company shown on a question: the entered one, else the company the AI tagged (if on our list), else spread over the list."""
+    if entered:
+        return entered
+    tagged = str(item.get("style_company") or "").strip()
+    for name in picked:
+        if tagged.lower() == name.lower():
+            return name
+    return picked[index % len(picked)]
+
+
+def generate_aptitude_questions(jd_data: Dict[str, Any], count: int = 10, company: str = "", jd_text: str = "") -> tuple[List[Dict[str, Any]], Dict[str, str]]:
+    """Web-researched aptitude questions first, generated ones for the rest. Returns (client_safe_questions, server_private_keys)."""
+    return _merge_with_web("aptitude", jd_data, count, company, jd_text, _generate_aptitude_core, _build_aptitude_payload)
+
+
+def generate_coding_problems(jd_data: Dict[str, Any], count: int = 2, company: str = "", jd_text: str = "") -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Web-researched coding problems first, generated ones for the rest. Returns (client_safe_problems, server_private_keys)."""
+    return _merge_with_web("coding", jd_data, count, company, jd_text, _generate_coding_core, _build_coding_payload)
+
+
 # ==============================================================================
 # WORKFLOW A: STUDENT SELF-ASSESSMENT ORCHESTRATION
 # ==============================================================================
@@ -1139,7 +1228,9 @@ def create_student_session(
     Initializes a new self-assessment session with synthesized JD and 3 pending rounds.
     """
     role = target_role or student_profile.target_role or "Software Engineer"
-    company = target_company or student_profile.target_company
+    # Only the company typed on the assessment page counts; a blank field means "no company" (top tech companies are used),
+    # never the company saved on the student profile.
+    company = (target_company or "").strip() or None
 
     # Extract JD
     jd_data = extract_structured_jd(custom_jd_text or "", default_role=role)
@@ -1176,9 +1267,9 @@ def create_student_session(
 
     # Pre-generate questions for rounds concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        future_apt = executor.submit(generate_aptitude_questions, jd_data, 10)
-        future_coding = executor.submit(generate_coding_problems, jd_data, 2)
-        future_interview = executor.submit(generate_interview_questions, jd_data, resume_snapshot, 5)
+        future_apt = executor.submit(generate_aptitude_questions, jd_data, 10, company or "", custom_jd_text or "")
+        future_coding = executor.submit(generate_coding_problems, jd_data, 2, company or "", custom_jd_text or "")
+        future_interview = executor.submit(generate_interview_questions, jd_data, resume_snapshot, 5, "", custom_jd_text or "", company or "")
 
         apt_client, apt_keys = future_apt.result()
         coding_client, coding_keys = future_coding.result()
@@ -2517,7 +2608,8 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
             resume_snapshot,
             count=5,
             resume_text=resume_raw,
-            jd_text=jd_text
+            jd_text=jd_text,
+            company=_session_company(db, session)
         )
         standardized = []
         for i, q in enumerate(raw_questions):
@@ -3050,11 +3142,13 @@ def verify_and_start_invitation(db: Session, token: str) -> Dict[str, Any]:
         db.add(session)
         db.flush()
 
+        invite_company = _organization_name(db, inv.organization_id)
+
         # Pre-generate rounds concurrently
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            future_apt = executor.submit(generate_aptitude_questions, jd_data, 10)
-            future_coding = executor.submit(generate_coding_problems, jd_data, 2)
-            future_interview = executor.submit(generate_interview_questions, jd_data, None, 5)
+            future_apt = executor.submit(generate_aptitude_questions, jd_data, 10, invite_company, jd_text or "")
+            future_coding = executor.submit(generate_coding_problems, jd_data, 2, invite_company, jd_text or "")
+            future_interview = executor.submit(generate_interview_questions, jd_data, None, 5, "", jd_text or "", invite_company)
 
             apt_client, apt_keys = future_apt.result()
             coding_client, coding_keys = future_coding.result()

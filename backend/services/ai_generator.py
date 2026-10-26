@@ -5,6 +5,7 @@ load_dotenv()
 
 
 from . import gemini_client
+from .company_prompt import style_note
 
 def generate_questions(assessment_type: str, config: dict):
     if not gemini_client.is_ai_available():
@@ -24,6 +25,7 @@ def generate_interview_questions(config: dict):
     role = config.get("role") or config.get("focus_area") or "Full Stack Engineer"
     difficulty = config.get("difficulty", "Medium")
     resume_summary = config.get("resume_summary", "")
+    company_note = style_note(config.get("company"))
     
     prompt = f"""
     Act as a principal technical interviewer. Generate 5 structured, realistic technical interview questions for the role: "{role}".
@@ -37,6 +39,7 @@ def generate_interview_questions(config: dict):
     4. Debugging, Performance Optimization & Trade-offs
     5. Production Best Practices, Security & Scalability
 
+    {company_note}
     Return ONLY a JSON array of 5 objects formatted as:
     [
       {{"id": 1, "question": "Can you walk me through your background and describe the architecture of a recent technical project you built?", "category": "Background & Architecture", "type": "verbal"}}
@@ -414,6 +417,7 @@ def generate_aptitude_questions(config: dict):
     limit = min(count, 30) # Cap at 30 to avoid timeout/token limits
 
     custom_notes = config.get("description", "")
+    company_note = style_note(config.get("company"))
     
     prompt = f"""
     Generate {limit} multiple-choice aptitude questions.
@@ -423,7 +427,7 @@ def generate_aptitude_questions(config: dict):
     {"CRITICAL INSTRUCTION: " + custom_notes if custom_notes else ""}
     
     If custom instructions are provided above, prioritize them over Primary Topics.
-    
+    {company_note}
     Return ONLY a raw JSON array of objects. No markdown formatting.
     Each object must have:
     - id: integer (1 to {limit})
@@ -450,6 +454,7 @@ def generate_coding_questions(config: dict):
     try: count = int(count)
     except: count = 1
     custom_notes = config.get("description", "")
+    company_note = style_note(config.get("company"))
     
     import time
     example_tcs = []
@@ -507,6 +512,7 @@ def generate_coding_questions(config: dict):
         }}
     ]
     
+    {company_note}
     Return ONLY the raw JSON array. No explanations, no code examples, no markdown after the JSON.
     """
     
