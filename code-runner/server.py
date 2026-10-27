@@ -111,7 +111,7 @@ def _run(cmd, workdir, uid, stdin, timeout, limits, address_space):
     """Run one command as `uid` in its own process group; stdout / stderr are files, never pipes. Returns (code, out, err, timed_out)."""
     out_path, err_path = os.path.join(workdir, ".stdout"), os.path.join(workdir, ".stderr")
     env = {"PATH": "/opt/java/openjdk/bin:/usr/local/bin:/usr/bin:/bin", "HOME": workdir, "TMPDIR": workdir,
-           "LANG": "C.UTF-8", "JAVA_TOOL_OPTIONS": ""}
+           "LANG": "C.UTF-8"}
     in_path = os.path.join(workdir, ".stdin")
     with open(in_path, "w", encoding="utf-8") as fh:
         fh.write(stdin or "")
@@ -134,8 +134,8 @@ def _run(cmd, workdir, uid, stdin, timeout, limits, address_space):
 def _prepare_workdir(uid):
     os.makedirs(RUNS_DIR, exist_ok=True)
     workdir = tempfile.mkdtemp(prefix="run-", dir=RUNS_DIR)
+    os.chmod(workdir, 0o700)          # mode first: once the directory belongs to `uid`, root (without FOWNER) can no longer chmod it
     os.chown(workdir, uid, uid)
-    os.chmod(workdir, 0o700)
     return workdir
 
 
