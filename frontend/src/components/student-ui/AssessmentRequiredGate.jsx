@@ -1,13 +1,13 @@
 import React from 'react';
-import { Lock, Sparkles } from 'lucide-react';
-import { useAssessmentLock } from '../../context/AssessmentLockContext';
+import { Sparkles } from 'lucide-react';
+import { useAssessmentLock, StartIcon } from '../../context/AssessmentLockContext';
 
 /**
  * Shown in place of a student page until the student has attempted their first assessment.
  * `feature` names what the student clicked so the message says what the assessment unlocks.
  */
 const AssessmentRequiredGate = ({ feature = 'your performance dashboard and career readiness metrics' }) => {
-    const { promptContactAdmin } = useAssessmentLock();
+    const { startAssessment } = useAssessmentLock();
     return (
     <div id="assessment-required-gate" className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
         <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-4">
@@ -19,10 +19,10 @@ const AssessmentRequiredGate = ({ feature = 'your performance dashboard and care
         </p>
         <button
             type="button"
-            onClick={promptContactAdmin}
+            onClick={startAssessment}
             className="px-6 py-3 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all inline-flex items-center gap-2 cursor-pointer"
         >
-            <Lock className="w-4 h-4" />
+            <StartIcon className="w-4 h-4" />
             <span>Start Your Assessment Now</span>
         </button>
     </div>

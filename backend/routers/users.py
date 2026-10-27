@@ -32,7 +32,7 @@ import database
 import models
 import utils
 from routers.auth import TenantContext, require_organization_admin_context
-from services import credential_delivery, local_auth
+from services import assessment_access, credential_delivery, local_auth
 from services.rate_limiter import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
@@ -66,6 +66,10 @@ class UpdateUserRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str = Field(..., max_length=200)
+
+
+class AssessmentAccessRequest(BaseModel):
+    granted: bool
 
 
 class BulkShareCredentialsRequest(BaseModel):
@@ -160,6 +164,8 @@ def _serialize(db: Session, user: models.User, detail: bool = False) -> dict:
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
     }
+    if user.role == STUDENT:
+        data["assessment_access_granted"] = assessment_access.is_granted(profile)
     if detail:
         org = db.query(models.Organization).filter(models.Organization.id == user.organization_id).first() if user.organization_id else None
         data["organization_name"] = org.name if org else None
@@ -323,6 +329,38 @@ def update_user(
     db.commit()
     db.refresh(target)
     return _serialize(db, target, detail=True)
+
+
+@router.put("/{user_id}/assessment-access")
+def set_assessment_access(
+    user_id: int,
+    payload: AssessmentAccessRequest,
+    ctx: TenantContext = Depends(require_organization_admin_context),
+    db: Session = Depends(database.get_db),
+):
+    """
+    Grants or revokes ONE student's access to the normal assessment. Same hierarchy as every other action here: the target must be an
+    account the caller may manage inside the caller's organization (an Admin: Students only). Only Students have this switch.
+    Revoking never ends an attempt in progress and never deletes anything; it only stops new attempts from starting.
+    """
+    target = _load_target(db, ctx, user_id, manage=True)
+    if target.role != STUDENT:
+        raise _fail(400, "Assessment access applies to Student accounts only.")
+    profile = _profile(db, target)
+    if profile is None:
+        profile = models.StudentProfile(
+            user_id=target.id, organization_id=target.organization_id or ctx.tenant_id, email=target.email,
+            full_name=target.full_name or target.email.split("@")[0], phone=target.phone, target_role="",
+        )
+        db.add(profile)
+        db.flush()
+    changed = assessment_access.set_access(profile, payload.granted, ctx.user.id)
+    if changed:
+        _audit(db, ctx, "assessment_access_granted" if payload.granted else "assessment_access_revoked", target)
+    db.commit()
+    state = "granted" if payload.granted else "revoked"
+    verb = "was" if changed else "was already"
+    return {"message": f"Assessment access {verb} {state} for {target.email}.", "changed": changed, "user": _serialize(db, target)}
 
 
 @router.post("/{user_id}/deactivate")

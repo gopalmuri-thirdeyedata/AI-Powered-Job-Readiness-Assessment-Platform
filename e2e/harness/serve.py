@@ -183,7 +183,8 @@ def student(tag: str):
         db.add(user)
         db.commit()
         profile = models.StudentProfile(user_id=user.id, organization_id=org.id, full_name="E2E Student", email=email,
-                                        target_role="Full Stack Engineer", is_onboarded=True)
+                                        target_role="Full Stack Engineer", is_onboarded=True,
+                                        assessment_access_enabled=True)   # these specs exercise the assessment itself; locking is covered by its own tests
         db.add(profile)
         db.commit()
         return {"email": email, "password": E2E_PASSWORD, "token": utils.create_access_token(data={"sub": email, "role": user.role}), "profile_id": profile.id}

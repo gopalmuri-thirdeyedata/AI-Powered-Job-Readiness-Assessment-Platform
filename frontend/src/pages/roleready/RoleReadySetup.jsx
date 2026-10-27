@@ -30,7 +30,8 @@ import RoleReadyNavbar from '../../components/RoleReadyNavbar';
 import WalkthroughTour from '../../components/WalkthroughTour';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
 import useStudentTaskStatus from '../../hooks/useStudentTaskStatus';
-import { ASSESSMENT_START_LOCKED, useAssessmentLock } from '../../context/AssessmentLockContext';
+import { useAssessmentLock } from '../../context/AssessmentLockContext';
+import { failureCode, failureMessage } from '../../services/rolereadyApi';
 
 const popularRoles = [
     "Full Stack Engineer",
@@ -211,7 +212,7 @@ const RoleReadySetup = () => {
     const navigate = useNavigate();
     const { user, isLoaded: isUserLoaded } = useUser();
     const { hasCompletedTask } = useStudentTaskStatus(user);
-    const { promptContactAdmin } = useAssessmentLock();
+    const { promptContactAdmin, assessmentLocked, refreshAccess } = useAssessmentLock();
 
     const [targetRole, setTargetRole] = useState("Full Stack Engineer");
     const [targetCompany, setTargetCompany] = useState("");
@@ -285,8 +286,9 @@ const RoleReadySetup = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        // Also covers Enter pressed inside a field, which submits the form without clicking the button
-        if (ASSESSMENT_START_LOCKED) {
+        // Also covers Enter pressed inside a field, which submits the form without clicking the button.
+        // The server decides: re-read the student's access (an admin may have changed it since the page opened).
+        if (!(await refreshAccess())) {
             promptContactAdmin();
             return;
         }
@@ -341,7 +343,11 @@ const RoleReadySetup = () => {
             }
         } catch (err) {
             console.error("Failed to initialize assessment session:", err);
-            setError(err.response?.data?.detail || err.message || "Could not initialize assessment. Please check your inputs and try again.");
+            if (failureCode(err) === 'ASSESSMENT_ACCESS_LOCKED') {
+                promptContactAdmin();   // access was revoked after the page opened
+            } else {
+                setError(failureMessage(err, "Could not initialize assessment. Please check your inputs and try again."));
+            }
         } finally {
             setIsLoading(false);
         }
@@ -755,7 +761,7 @@ const RoleReadySetup = () => {
                                         <>
                                             <span aria-hidden="true" className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/25 to-transparent" />
                                             <span className="relative">Start Assessment</span>
-                                            {ASSESSMENT_START_LOCKED
+                                            {assessmentLocked
                                                 ? <Lock className="w-4 h-4 relative" />
                                                 : <ArrowRight className="w-4 h-4 relative transition-transform group-hover:translate-x-1" />}
                                         </>

@@ -10,10 +10,10 @@ const read = (...p) => fs.readFileSync(path.join(__dirname, ...p), 'utf-8');
 describe('Assessment-required gate for new students', () => {
     const layout = read('src', 'layouts', 'StudentLayout.jsx');
 
-    test('1. shared gate component opens the contact-admin popup instead of starting an assessment', () => {
+    test('1. shared gate component uses the access-aware start handler (contact-admin popup while locked) instead of linking to the setup page', () => {
         const gate = read('src', 'components', 'student-ui', 'AssessmentRequiredGate.jsx');
         assert.ok(gate.includes('Initial Assessment Required'));
-        assert.ok(gate.includes('onClick={promptContactAdmin}'));
+        assert.ok(gate.includes('onClick={startAssessment}'));
         assert.ok(!gate.includes('to="/assessment/setup"'));
         assert.ok(gate.includes('Start Your Assessment Now'));
     });

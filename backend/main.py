@@ -218,6 +218,13 @@ try:
 except Exception as _exc:  # never block startup; `python migrate_student_assessment_access.py` reports the same problem
     print(f"[Startup Note] student assessment access schema check: {_exc}")
 
+# Admin-controlled student assessment access: three additive student_profiles columns (existing students start locked). Idempotent.
+try:
+    import migrate_student_assessment_toggle
+    migrate_student_assessment_toggle.apply(database.engine)
+except Exception as _exc:  # never block startup; `python migrate_student_assessment_toggle.py` reports the same problem
+    print(f"[Startup Note] student assessment access toggle check: {_exc}")
+
 # "Share credentials" delivery table (new table only; create_all covers a fresh database, this covers an existing one).
 try:
     import migrate_credential_delivery

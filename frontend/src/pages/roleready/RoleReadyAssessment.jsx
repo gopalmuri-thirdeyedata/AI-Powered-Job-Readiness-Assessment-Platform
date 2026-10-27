@@ -1320,7 +1320,8 @@ export const AssessmentWorkspace = ({
             syncTiming(started);
         } catch (err) {
             console.error("Failed to start assessment:", err);
-            setLaunchError(err.response?.data?.detail || err.message || "Could not launch assessment session. Please retry.");
+            const detail = err.response?.data?.detail;   // a string, or { code, message } (e.g. ASSESSMENT_ACCESS_LOCKED)
+            setLaunchError((typeof detail === 'string' ? detail : detail?.message) || err.message || "Could not launch assessment session. Please retry.");
         } finally {
             setIsStartingAssessment(false);
         }

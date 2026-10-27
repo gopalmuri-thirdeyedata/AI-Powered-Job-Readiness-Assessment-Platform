@@ -78,8 +78,8 @@ const PageLoadingSpinner = () => (
 function App() {
     return (
         <ThemeProvider>
-        <AssessmentLockProvider>
         <Router>
+        <AssessmentLockProvider>
             <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1220] text-slate-900 dark:text-slate-100 transition-colors">
                 <Suspense fallback={<PageLoadingSpinner />}>
                     <Routes>
@@ -186,8 +186,8 @@ function App() {
                     </Routes>
                 </Suspense>
             </div>
-        </Router>
         </AssessmentLockProvider>
+        </Router>
         </ThemeProvider>
     );
 }

@@ -22,10 +22,9 @@ import {
     ShieldAlert,
     Target,
     CalendarDays,
-    Lock,
 } from 'lucide-react';
 import rolereadyApi from '../../services/rolereadyApi';
-import { useAssessmentLock } from '../../context/AssessmentLockContext';
+import { useAssessmentLock, StartIcon } from '../../context/AssessmentLockContext';
 import FeedbackGateModal from '../../components/student-ui/FeedbackGateModal';
 import { downloadReportPdf } from '../../utils/reportPdf';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
@@ -69,7 +68,7 @@ const ScoreFigure = ({ value }) => (typeof value === 'number'
 
 const RoleReadyReport = () => {
     const { sessionUuid } = useParams();
-    const { promptContactAdmin } = useAssessmentLock();
+    const { startAssessment } = useAssessmentLock();
     const navigate = useNavigate();
     const [reportData, setReportData] = useState(null);
 
@@ -312,10 +311,10 @@ const RoleReadyReport = () => {
                         </button>
                         <button
                             type="button"
-                            onClick={promptContactAdmin}
+                            onClick={startAssessment}
                             className="rr-btn-primary"
                         >
-                            <Lock className="w-4 h-4" />
+                            <StartIcon className="w-4 h-4" />
                             New Assessment
                         </button>
                     </div>
@@ -823,12 +822,12 @@ const RoleReadyReport = () => {
                         </button>
                         <button
                             type="button"
-                            onClick={promptContactAdmin}
+                            onClick={startAssessment}
                             className="rr-btn-primary shrink-0 relative overflow-hidden group"
                         >
                             <span className="pw-noprint pointer-events-none absolute inset-y-0 -left-full w-1/2 bg-gradient-to-r from-transparent via-white/40 to-transparent -skew-x-12 group-hover:left-[150%] transition-[left] duration-700 motion-reduce:hidden" aria-hidden="true" />
                             <span className="relative">New Self-Assessment</span>
-                            <Lock className="w-4 h-4 relative" />
+                            <StartIcon className="w-4 h-4 relative" />
                         </button>
                     </div>
                 </div>

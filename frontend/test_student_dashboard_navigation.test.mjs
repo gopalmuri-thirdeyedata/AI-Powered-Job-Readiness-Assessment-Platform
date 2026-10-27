@@ -62,9 +62,9 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(fileContent.includes('/student/dashboard'), 'RoleReadyReport must link to /student/dashboard');
     });
 
-    test('10. StudentLayout.jsx keeps the Take Assessment header button, locked behind the contact-admin popup', () => {
+    test('10. StudentLayout.jsx keeps the Take Assessment header button, behind the admin-controlled access check', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'StudentLayout.jsx'), 'utf-8');
-        assert.ok(fileContent.includes('onClick={promptContactAdmin}'), 'StudentLayout Take Assessment button must open the contact-admin popup');
+        assert.ok(fileContent.includes('onClick={startAssessment}'), 'StudentLayout Take Assessment button must use the access-aware start handler (contact-admin popup while locked)');
         assert.ok(!fileContent.includes('to="/assessment/setup"'), 'StudentLayout must not link straight to /assessment/setup');
         assert.ok(fileContent.includes('Take Assessment'), 'StudentLayout must render "Take Assessment" button');
         assert.ok(fileContent.includes('id="student-topbar-assessment-btn"'), 'StudentLayout must retain assessment button ID');

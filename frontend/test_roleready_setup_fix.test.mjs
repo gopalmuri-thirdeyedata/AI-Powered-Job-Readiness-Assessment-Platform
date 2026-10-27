@@ -41,7 +41,7 @@ describe('RoleReady Assessment Setup & API Request Handling Fix Suite', () => {
 
     test('6. Error state displays error feedback from server response or fallback', () => {
         assert.ok(setupCode.includes('setError('), 'Must set error state on catch');
-        assert.ok(setupCode.includes('err.response?.data?.detail'), 'Must use server detail when available');
+        assert.ok(setupCode.includes('failureMessage(err'), 'Must use server detail (string or { message }) when available');
         assert.ok(setupCode.includes('{error && ('), 'Must render error banner when error is present');
     });
 

@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, JSON, Float, DateTime, Text, UniqueConstraint, text
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, DATETIME as MYSQL_DATETIME
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, false
 import enum
 from database import Base
 
@@ -325,7 +325,12 @@ class StudentProfile(Base):
     
     is_onboarded = Column(Boolean, default=False, nullable=False)
     onboarding_step = Column(Integer, default=1, nullable=False)
-    
+
+    # Admin-controlled switch for the normal (self-assessment) workflow. Locked (False) until an Admin / Super Admin grants it.
+    assessment_access_enabled = Column(Boolean, default=False, nullable=False, server_default=false())
+    assessment_access_updated_at = Column(DateTime, nullable=True)
+    assessment_access_updated_by = Column(Integer, nullable=True)  # id of the administrator who last changed it (audit only, no FK)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 

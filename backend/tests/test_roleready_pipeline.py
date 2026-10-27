@@ -62,6 +62,9 @@ def setup_test_data(db_session):
         db_session.add(student_profile)
         db_session.commit()
         db_session.refresh(student_profile)
+    # The normal assessment is locked until an admin grants access; this student takes assessments in these tests
+    student_profile.assessment_access_enabled = True
+    db_session.commit()
 
     # Generate valid JWT token for student
     student_token = utils.create_access_token(data={"sub": student_user.email, "role": student_user.role})

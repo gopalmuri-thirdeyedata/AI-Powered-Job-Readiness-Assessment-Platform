@@ -28,6 +28,9 @@ export const userManagementApi = {
         (await axios.patch(`${BASE}/${id}`, { full_name: fullName, phone: phone || null }, { headers: headers() })).data,
     deactivate: async (id) => (await axios.post(`${BASE}/${id}/deactivate`, {}, { headers: headers() })).data,
     activate: async (id) => (await axios.post(`${BASE}/${id}/activate`, {}, { headers: headers() })).data,
+    // Grants / revokes ONE student's access to the normal assessment. The server enforces the role hierarchy and the organization.
+    setAssessmentAccess: async (id, granted) =>
+        (await axios.put(`${BASE}/${id}/assessment-access`, { granted: Boolean(granted) }, { headers: headers() })).data,
     resetPassword: async (id, newPassword) =>
         (await axios.post(`${BASE}/${id}/reset-password`, { new_password: newPassword }, { headers: headers() })).data,
     // E-mails the student's login e-mail and assigned password. No body: the server takes the recipient and the password from its own

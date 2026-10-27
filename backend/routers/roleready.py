@@ -27,6 +27,7 @@ from routers.student import get_current_student_profile
 from services import roleready_service
 from services import elevenlabs_service
 from services import assessment_feedback
+from services import assessment_access
 from services import assessment_clock as clock
 from services import assessment_policy as policy
 from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, extract_candidate_name_from_resume, persist_student_resume_version
@@ -215,6 +216,9 @@ def initialize_student_session(
     Initializes a new RoleReady student self-assessment session.
     Parses resume (uploaded or existing) and Job Description (pasted or uploaded).
     """
+    # Admin-controlled access: checked first, so a locked student cannot create a session (or reuse a recent one) at all.
+    assessment_access.require_access(student_profile)
+
     if not target_role or not target_role.strip():
         raise HTTPException(status_code=400, detail="Target job role is required.")
 
@@ -346,6 +350,12 @@ def initialize_student_session(
         "resume_match_score": roleready_service.compute_resume_jd_match(session),
         "extracted_jd": session.extracted_jd_data
     }
+
+
+@router.get("/student/assessment-access")
+def get_student_assessment_access(student_profile: models.StudentProfile = Depends(get_current_student_profile)):
+    """Whether an administrator has unlocked the normal assessment for the signed-in student (read-only: students cannot change it)."""
+    return {"access_granted": assessment_access.is_granted(student_profile)}
 
 
 @router.get("/student/assessments")
@@ -546,6 +556,8 @@ def start_aptitude(
     session: models.RoleReadySession = Depends(get_authorized_session),
     db: Session = Depends(database.get_db)
 ):
+    # Only the first start of a not-yet-started student session is gated; a running attempt is never interrupted.
+    assessment_access.require_access_to_start(db, session)
     return roleready_service.start_aptitude_round(db, session)
 
 

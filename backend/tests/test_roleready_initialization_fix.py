@@ -61,6 +61,8 @@ def setup_student(db_session):
         db_session.add(student_profile)
         db_session.commit()
         db_session.refresh(student_profile)
+    student_profile.assessment_access_enabled = True   # locked by default until an admin grants it
+    db_session.commit()
 
     student_token = utils.create_access_token(data={"sub": student_user.email, "role": student_user.role})
     headers = {"Authorization": f"Bearer {student_token}"}

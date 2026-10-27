@@ -19,7 +19,27 @@ const getAuthHeaders = (isMultipart = false) => {
     return headers;
 };
 
+/** Machine-readable reason of a refused request (e.g. ASSESSMENT_ACCESS_LOCKED), or ''. */
+export const failureCode = (err) => {
+    const detail = err?.response?.data?.detail;
+    return detail && typeof detail === 'object' && typeof detail.code === 'string' ? detail.code : '';
+};
+
+/** FastAPI `detail` (string or { message }) as a displayable sentence. */
+export const failureMessage = (err, fallback) => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message;
+    return err?.message || fallback;
+};
+
 export const rolereadyApi = {
+    // Admin-controlled switch for the normal assessment. Read-only for students: only an Admin / Super Admin can change it.
+    async getAssessmentAccess() {
+        const response = await axios.get(`${API_URL}/api/roleready/student/assessment-access`, { headers: getAuthHeaders() });
+        return Boolean(response.data?.access_granted);
+    },
+
     // ─── Workflow A: Student Self-Assessment ───────────────────────
     async initializeSession(formData) {
         const response = await axios.post(`${API_URL}/api/roleready/student/initialize`, formData, {
