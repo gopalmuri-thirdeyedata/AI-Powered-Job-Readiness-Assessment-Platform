@@ -27,6 +27,7 @@ import {
 import rolereadyApi from '../../services/rolereadyApi';
 import { useAssessmentLock } from '../../context/AssessmentLockContext';
 import FeedbackGateModal from '../../components/student-ui/FeedbackGateModal';
+import { downloadReportPdf } from '../../utils/reportPdf';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 import { motion } from 'framer-motion';
@@ -83,23 +84,29 @@ const RoleReadyReport = () => {
         return () => { cancelled = true; };
     }, [sessionUuid]);
 
-    // After the feedback is saved the student is taken to the dashboard; a download is started first, and the page
-    // moves on once the print / save-as-PDF dialog closes.
-    const runGatedAction = useCallback((action, { thenDashboard = false } = {}) => {
-        if (action === 'dashboard') { navigate('/student/dashboard'); return; }
-        if (thenDashboard) window.addEventListener('afterprint', () => navigate('/student/dashboard'), { once: true });
-        window.print();
-    }, [navigate]);
-    const requireFeedback = (action) => {
-        if (feedbackDone) runGatedAction(action);
-        else setPendingAction(action);
+    // The report is saved as a PDF file (no print dialog). If the PDF cannot be built, the browser's print / save-as-PDF dialog is the
+    // fallback, so the student always gets their report.
+    const downloadReport = useCallback(async () => {
+        try {
+            await downloadReportPdf(reportData);
+        } catch (err) {
+            console.error('Report PDF failed, falling back to print:', err);
+            window.print();
+        }
+    }, [reportData]);
+
+    const requireFeedback = async (action) => {
+        if (!feedbackDone) { setPendingAction(action); return; }
+        if (action === 'download') await downloadReport();
+        else navigate('/student/dashboard');
     };
+    // Submitting the feedback downloads the report automatically, then the student is taken to the dashboard.
     const submitFeedback = async (text) => {
         await rolereadyApi.submitFeedback(sessionUuid, text);
-        const action = pendingAction;
         setFeedbackDone(true);
         setPendingAction(null);
-        runGatedAction(action || 'dashboard', { thenDashboard: action === 'download' });
+        await downloadReport();
+        setTimeout(() => navigate('/student/dashboard'), 600);       // let the browser start the file download first
     };
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
