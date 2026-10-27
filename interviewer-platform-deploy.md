@@ -2,7 +2,9 @@
 
 Deployment runbook for **AI-Powered Job Readiness Assessment Platform** (branch `PrepWin`) on `server2` (`139.99.62.133`), served at **`https://interviewer.learningpath.ai`** with host entrypoint port **`8212`**.
 
-Last updated: 2026-10-14. Sections 1-4 describe how to deploy and operate the stack. Section 5 lists the changes the team should make to cut build time and image size.
+Last updated: 2026-10-27 (deployed commit `c9d0817c`, fresh database). Sections 1-4 describe how to deploy and operate the stack. Section 5 lists the changes the team should make to cut build time and image size.
+
+**2026-10-27 summary:** Clerk was removed. Login is now email + password with an HttpOnly session cookie and a three-role model (SUPER_ADMIN / ADMIN / STUDENT). Day-to-day redeploys are in 2.5, a wipe-and-restart on an empty MySQL is in 2.6, and an in-place schema upgrade (not run on server2, read from the code) is in 2.7. New failure modes found during that deploy are 3.1 (deadlock on an empty DB), 3.7 (stale proxy config), 3.8 (slow MySQL first start) and 3.9 (admin password script rejects SUPER_ADMIN).
 
 ---
 
@@ -11,8 +13,8 @@ Last updated: 2026-10-14. Sections 1-4 describe how to deploy and operate the st
 | Component | Host Port | Container Port | Container Name | Image / Service | Description |
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | **Edge Proxy** | **8212** | 80 | `interviewer_proxy` | `nginx:alpine` | Internal routing proxy (`/api/` -> backend, `/` -> frontend) |
-| **Backend** | - | 8000 | `interviewer_backend` | FastAPI (Python 3.11) | Gunicorn + Uvicorn workers, Gemini AI, resume parsing, YOLO proctoring |
-| **Frontend** | - | 80 | `interviewer_frontend` | React + Vite (Node 20 build, nginx serve) | Assessment SPA with Clerk auth and ElevenLabs voice |
+| **Backend** | - | 8000 | `interviewer_backend` | FastAPI (Python 3.11) | Gunicorn + Uvicorn workers, Gemini AI, resume parsing, YOLO proctoring, local session auth |
+| **Frontend** | - | 80 | `interviewer_frontend` | React + Vite (Node 20 build, nginx serve) | Assessment SPA with local session login and ElevenLabs voice |
 | **Database** | - | 3306 | `interviewer_mysql` | `mysql:8.0` | MySQL (not published on the host) |
 | **Cache** | - | 6379 | `interviewer_redis` | `redis:7-alpine` | In-memory cache and sessions |
 | **Network** | - | - | `interviewer_net` | Subnet `10.97.0.0/24` | Isolated Docker network |
@@ -47,12 +49,15 @@ tar -czvf interviewer_platform.tar.gz `
     --exclude=__pycache__ `
     --exclude=*/__pycache__ `
     --exclude=.git `
+    --exclude=backend/.env `
+    --exclude=*.db `
+    --exclude=backend/backups `
     .
 
 scp interviewer_platform.tar.gz server2:~/interviewer_platform.tar.gz
 ```
 
-`backend/.env` is inside this archive. Do not upload the archive anywhere else, and delete it from the server after extracting.
+`backend/.env` is excluded on purpose. The server keeps its own copy (production values), and extracting the archive does not delete files it doesn't contain, so the server's `.env` survives. Local `*.db` files and `backend/backups` are excluded so dev data never reaches the server. The archive still contains `docker-compose.prod.yml`, which overwrites the server's copy, so the repo's compose must carry the production domain (check with the `grep` in 2.5). Delete the archive from the server after extracting.
 
 ### 2.3 Build and launch (server2)
 
@@ -69,6 +74,8 @@ curl -s http://127.0.0.1:8212/health/live
 ```
 
 A cold build is slow, mainly the backend `pip install` (PyTorch via ultralytics) and the frontend `npm ci`. See section 5.
+
+This plain `up -d --build` is only safe when the MySQL database already has its tables. On an empty database the four gunicorn workers race to create the schema and crash (see 3.1). Use 2.6 for a first start, and 2.5 for routine updates.
 
 ### 2.4 Host nginx, DNS and SSL (server2)
 
@@ -111,6 +118,123 @@ curl -s https://interviewer.learningpath.ai/health/live
 - Cloudflare's "Always Use HTTPS" answers HTTP requests with a 301 at the edge. This interferes with certbot's HTTP challenge. Set the DNS record to **DNS only** (grey cloud), run certbot, then switch it back to proxied (orange).
 - Once proxied, set SSL/TLS mode to **Full (strict)**. **Flexible** causes a redirect loop because nginx redirects to HTTPS.
 
+### 2.5 Routine redeploy (code changes, database already populated)
+
+Local (PowerShell): build the archive exactly as in 2.2 and `scp` it. Then on server2:
+
+```bash
+cd ~/interviewer-platform
+tar -xzvf ~/interviewer_platform.tar.gz -C ~/interviewer-platform
+rm -f ~/interviewer_platform.tar.gz
+grep -n "thirdeyedata" docker-compose.prod.yml      # must print nothing (the domain is interviewer.learningpath.ai)
+
+docker compose -f docker-compose.prod.yml build backend frontend
+docker compose -f docker-compose.prod.yml up -d --no-deps backend frontend
+
+# ALWAYS recreate the proxy after an extract (see 3.7), or /api calls 404 against a stale nginx.conf
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps reverse_proxy
+docker exec interviewer_proxy nginx -t
+
+# the recreated frontend loses the manual permission fix (see 3.3)
+docker exec interviewer_frontend chmod 644 /usr/share/nginx/html/logo_main.png
+```
+
+Then run the checks in section 7. Build only what changed: a config-only change needs no build (5.7). If the commit adds or changes database columns, read 2.7 before starting the new backend, because `create_all` does not alter existing tables.
+
+### 2.6 Fresh database: wipe MySQL and start clean (done 2026-10-27)
+
+**This deletes every user, job role, assessment and result.** Resumes in the `interviewer_media` volume and Redis data are left alone. server2 hosts about 60 containers, so remove the one volume by its exact name and never use `docker volume prune`.
+
+```bash
+cd ~/interviewer-platform
+# extract the new archive first (2.5, up to and including the grep)
+
+docker compose -f docker-compose.prod.yml stop backend
+docker compose -f docker-compose.prod.yml rm -sf db
+docker volume ls --format '{{.Name}}' | grep interviewer        # read the names before deleting anything
+docker volume rm interviewer-platform_interviewer_mysql_data    # exact name printed above
+
+docker compose -f docker-compose.prod.yml build backend frontend
+docker compose -f docker-compose.prod.yml up -d db redis
+```
+
+MySQL needs about 90 s to initialise an empty volume on server2. Wait until `docker logs interviewer_mysql --tail 8` shows `ready for connections ... port: 3306` (not `port: 0`, which is the temporary init server). See 3.8 if compose reports the container unhealthy.
+
+Create the schema from ONE process before the workers start (3.1), then start the rest:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps backend \
+  python -c "import models, database; models.Base.metadata.create_all(bind=database.engine); print('tables ok')"
+
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps reverse_proxy
+docker exec interviewer_frontend chmod 644 /usr/share/nginx/html/logo_main.png
+docker logs interviewer_backend --since 2m | grep -iE "traceback|Provisioned"
+```
+
+If a previous attempt already crashed halfway (partial tables and indexes), reset the still-empty database first. The app user's grants survive a `DROP DATABASE`:
+
+```bash
+docker exec interviewer_mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE $MYSQL_DATABASE; CREATE DATABASE $MYSQL_DATABASE;"'
+```
+
+**First admin.** The backend provisions the organization `ThirdEye Data` and the account `admin@thirdeyedata.ai` (role SUPER_ADMIN) on startup. The account is created **locked** unless `ADMIN_INITIAL_PASSWORD` is set in `backend/.env`. No default password exists in the source any more. `scripts/set_admin_password.py` rejects SUPER_ADMIN accounts (3.9), so set the password with this instead (prompts with no echo, same policy and hashing, signs out existing sessions):
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend python -c "
+import getpass, database, models, utils
+from services import local_auth
+from sqlalchemy.sql import func
+email = 'admin@thirdeyedata.ai'
+pw = getpass.getpass('New password: ')
+if pw != getpass.getpass('Repeat: '):
+    raise SystemExit('The two entries differ; nothing changed.')
+errs = local_auth.password_policy_errors(pw, email)
+if errs:
+    raise SystemExit('Rejected: ' + ' | '.join(errs))
+with database.SessionLocal() as db:
+    u = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+    assert u and models.is_admin_role(u.role), 'admin account not found'
+    u.hashed_password = utils.get_password_hash(pw)
+    u.is_active = True
+    n = local_auth.revoke_user_sessions(db, u.id)
+    db.commit()
+print('Password updated; sessions signed out:', n)
+"
+```
+
+The password needs a lower-case letter, an upper-case letter and a digit, a minimum length, and no leading or trailing whitespace. To give the admin a display name (the column starts empty):
+
+```bash
+docker exec interviewer_mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot "$MYSQL_DATABASE" -e "UPDATE users SET full_name='"'"'Your Name Here'"'"' WHERE email='"'"'admin@thirdeyedata.ai'"'"'; SELECT id,email,role,full_name FROM users;"'
+```
+
+There is no sign-up. Admin and Student accounts are created by an administrator in the app (User Management). Existing Clerk-era accounts cannot sign in after the Clerk removal.
+
+### 2.7 Upgrading an existing database in place (NOT run on server2; read from the code, test before relying on it)
+
+Used when the data must be kept across the Clerk removal / recruitment-workflow release. The release changes the schema of tables that already exist, and `create_all` only creates missing tables.
+
+- `migrate_recruitment_workflow.py` is **required** on MySQL. It adds columns to `job_descriptions` and `roleready_sessions`, moves the candidate email uniqueness to `(organization_id, email)`, and refuses to run without a verified backup (`mysqldump` plus a restore test). The backend image has no `mysql` / `mysqldump` client, so install it in a one-off container. The backup goes to the persistent media volume:
+
+  ```bash
+  docker exec interviewer_mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction --routines "$MYSQL_DATABASE"' > ~/hiringai_pre_upgrade_$(date +%F).sql
+  tail -1 ~/hiringai_pre_upgrade_$(date +%F).sql            # must end with "-- Dump completed"
+
+  docker compose -f docker-compose.prod.yml build backend frontend
+  docker compose -f docker-compose.prod.yml stop backend
+  docker compose -f docker-compose.prod.yml run --rm --no-deps -u root backend sh -c '
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends default-mysql-client >/dev/null &&
+    python migrate_recruitment_workflow.py --backup-dir /app/media/backups &&
+    python migrate_local_auth.py --neutralize-placeholders'
+  ```
+
+  Duplicate or blank candidate emails make it write `backend/migration_conflicts.json` and exit 1 without changing anything. The MariaDB client from Debian talking to MySQL 8 is untested here; if the backup step fails, the script aborts before touching the schema.
+- `migrate_local_auth.py --neutralize-placeholders` replaces leftover Clerk placeholder password hashes with unusable ones. The API also applies the additive columns on every startup.
+- `migrate_super_admin.py` handles **SQLite only**. On MySQL the backend promotes `admin@thirdeyedata.ai` to SUPER_ADMIN on startup, but any other legacy role value (`HR`, `RECRUITER`, `ORGANIZATION_ADMIN`, `PLATFORM_ADMIN`) must be fixed by hand. Check first: `SELECT role, COUNT(*) FROM users GROUP BY role;`
+- `migrate_student_nullable_org.py` is SQLite-only too. Only needed on MySQL if inserts fail with "organization_id cannot be null", and then it must be done as manual `ALTER TABLE ... MODIFY organization_id INT NULL` statements.
+- The old default admin password stays valid in an upgraded database. Replace it right away with the snippet in 2.6.
+
 ---
 
 ## 3. Known Issues Hit on First Deploy (and Fixes That Need No Rebuild)
@@ -137,6 +261,10 @@ docker logs interviewer_backend --since 2m
 `docker compose run` has no `--no-build` flag. It reuses the image if it already exists locally.
 
 Once the tables exist, `create_all` finds nothing to create and the race cannot happen on later restarts. This was the fix that stuck.
+
+**Still happens on an EMPTY MySQL (2026-10-27).** `main.py` now has `create_tables_with_retry()`, but it only retries on "already exists", "schema has changed" and "database is locked". On a brand-new MySQL volume the four workers deadlock on `CREATE INDEX` instead (`pymysql OperationalError 1213 Deadlock found when trying to get lock`, for example on `ix_users_company_id`). That is not in the retry list, so a worker dies, gunicorn shuts down with `Worker failed to boot`, and Docker restarts the container in a loop. Crashed attempts can also leave tables with missing indexes, because `create_all` never adds an index to a table that already exists.
+
+Fix, no code change: stop the backend, reset the empty database, create the schema once from a single process, then start (the exact commands are in 2.6). For a permanent fix, either add the deadlock error (1213, and lock wait timeout) to the retry list, or serialize startup with a MySQL `GET_LOCK` so only one worker runs `create_all`. Both need an image rebuild.
 
 **Do NOT use `--preload` as the fix.** It was tried and caused 500 errors (`Command Out of Sync`, `_NoResultMetaData ... _indexes_for_keys`). With `--preload` the SQLAlchemy pool is created in the master and shared by all forked workers, so several processes use the same MySQL connection and the protocol gets corrupted. If a future fix needs `--preload`, `main.py` must call `database.engine.dispose()` right after `create_all`.
 
@@ -205,7 +333,7 @@ The permanent fix is a `chmod -R a+rX` in the frontend Dockerfile (section 5.3).
    docker exec interviewer_backend grep -n "def initialize_student_session" /app/routers/roleready.py   # must have no "async"
    ```
 
-   Remove the mount line after the next rebuild, since the fix will then be in the image.
+   Remove the mount line after the next rebuild, since the fix will then be in the image. (Done: the 2026-10-27 extract replaced the server's compose file with the repo's, which has no such mount.)
 
 **Remaining limit:** Cloudflare cuts any proxied request at about 100 s (shown as a 524). If `initialize` can legitimately take longer, the endpoint should create a job and let the browser poll for the result. That is a code change.
 
@@ -221,7 +349,7 @@ t=time.time(); print(call_gemini('Reply with the word OK')); print('seconds:', r
 ### 3.5 Console warnings that are not bugs
 
 - `/vite.svg` returns 404. This is a missing favicon and is harmless. Point the favicon in `frontend/index.html` at a file that exists.
-- Clerk warns that development keys are in use. See 6.3.
+- Clerk was removed on 2026-10-27, so its "development keys" warning no longer appears. See 6.3 for the current auth settings.
 
 ### 3.6 Requests for `/.env`, `/.env.local` and similar in the proxy logs
 
@@ -230,6 +358,34 @@ Automated scanners probe these paths. They return `200` because the SPA falls ba
 ```bash
 curl -s https://interviewer.learningpath.ai/.env | head -5     # must print HTML, never KEY=value lines
 ```
+
+### 3.7 Login shows "Not Found": the proxy kept its old nginx.conf (hit 2026-10-20)
+
+**Symptom:** the sign-in modal shows `Not Found`. `POST /api/auth/login/` returns 404 while `POST /api/api/auth/login/` returns 401 (the backend handled it).
+
+**Cause:** `interviewer_proxy` bind-mounts `./nginx/nginx.conf`. Extracting the archive replaces that file, but a running container keeps seeing the old file. The old config had `proxy_pass http://backend_api/;` (trailing slash), which strips `/api` before the backend. The current frontend calls `/api/...`, so the stripped path 404s.
+
+**Diagnose:**
+
+```bash
+docker exec interviewer_proxy grep -n "proxy_pass" /etc/nginx/nginx.conf   # container's copy
+grep -n "proxy_pass" nginx/nginx.conf                                      # file on disk, they should match
+```
+
+**Fix:** `docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps reverse_proxy`, then `docker exec interviewer_proxy nginx -t`. This is why 2.5 always recreates the proxy. The repo config also has a defensive `location /api/api/` block that forwards a doubled prefix to `/api/`.
+
+### 3.8 `up -d` fails: "container interviewer_mysql is unhealthy" on a fresh volume (hit 2026-10-27)
+
+Initialising an empty MySQL 8 volume took about 90 s on server2, longer than the compose healthcheck allows (30 s start period plus 5 tries 10 s apart). `docker compose up -d` then aborts with `dependency failed to start`, even though MySQL is fine. The healthcheck only runs `mysqladmin ping`, so it can also pass while the temporary init server is running. Wait for `ready for connections ... port: 3306` in `docker logs interviewer_mysql`, then run `up -d` again. Raising `start_period` for the `db` service in compose avoids the message.
+
+### 3.9 `scripts/set_admin_password.py` says "No ADMIN account ... exists" (hit 2026-10-27)
+
+The script requires `role == ADMIN` exactly, but the platform admin is `SUPER_ADMIN`, so it rejects the account and changes nothing. Use the inline snippet in 2.6. The fix in the script is to check `models.is_admin_role(user.role)` instead (needs a backend rebuild).
+
+### 3.10 Startup log noise that is not a bug
+
+- `Duplicate entry 'admin@thirdeyedata.ai' for key 'users.ix_users_email'` printed as `[Startup Note] Platform Admin initialization`: the four workers each try to provision the admin, one wins, the others hit the unique key. Harmless.
+- Four `100%|... 6.25M/6.25M` progress bars: each worker downloads a ~6 MB model file at startup (almost certainly the YOLO proctoring weights via the ultralytics auto-download; inferred from the size, not confirmed). See the model-file note in 5.1.
 
 ---
 
@@ -270,7 +426,7 @@ The site moved from `interviewer.thirdeyedata.ai` to **`interviewer.learningpath
    docker exec interviewer_backend printenv CORS_ORIGINS FRONTEND_URL
    ```
 
-6. **Clerk:** add `https://interviewer.learningpath.ai` to the allowed origins and redirect URLs in the Clerk dashboard.
+6. **Clerk:** no longer used (removed 2026-10-27), so there is nothing to change in a Clerk dashboard.
 7. **Cloudflare:** if the record was set to DNS only, turn the proxy back on (orange) and set SSL/TLS mode to **Full (strict)**.
 
 The frontend needs no rebuild for a domain change. It calls the API through the relative path `/api`.
@@ -311,6 +467,8 @@ On 2026-10-13 all build cache was wiped on server2 with `docker builder prune -a
 Measured on server2: `interviewer-platform-backend` is **10.5 GB**. The comparable `pjs-global-demo-backend` is 3.8 GB, and most other apps on the server are 0.1 to 2 GB. The frontend runtime image is only 98 MB, but `npm ci` is slow because of unused dependencies. Neither Dockerfile has a `.dockerignore`.
 
 Work through the items in order. 5.1 and 5.2 give the biggest savings.
+
+**Status as of commit `c9d0817c` (read from the repo, not re-measured on the server):** the CPU-only torch install (5.1) and `--timeout 180` in the CMD (5.4) are in `backend/Dockerfile`, and `.dockerignore` files exist (5.5: `backend/.dockerignore`, and a root one for the unified image). Not re-checked: the npm removals (5.3), dropping `google-generativeai` (5.4), the root `Dockerfile` (5.6). Record the new image sizes here after the next rebuild.
 
 ### 5.1 Backend: install CPU-only PyTorch (biggest win)
 
@@ -467,9 +625,17 @@ The repo-root `Dockerfile` (unified nginx + Python image) is not used by `docker
 
 See 5.5. After adding `.dockerignore`, rebuild the backend image and delete the old image from server2 so the old layers holding `backend/.env` do not linger.
 
-### 6.3 Clerk is on development keys
+### 6.3 Authentication settings (local auth, replaces Clerk)
 
-The frontend is built with a `pk_test_...` publishable key. For real use, create a Clerk **production** instance, add `interviewer.learningpath.ai` to it, and replace the key in the compose build args (frontend, needs a rebuild) and the secret key in `backend/.env`.
+Clerk is gone. Accounts live in the `users` table and sessions in `auth_sessions`. Settings in `backend/.env`:
+
+- `DEBUG=False` (or `ENVIRONMENT=production`) makes the app treat itself as production: the JWT secret is enforced and the session cookie is `Secure`. With `DEBUG=True` the signing key silently falls back to a public placeholder, so never run the server that way.
+- `JWT_SECRET_KEY`: at least 32 characters, or the backend refuses to start in production.
+- `ADMIN_INITIAL_PASSWORD` (optional, first run only): password for a freshly provisioned `admin@thirdeyedata.ai`. Unset means the account is created locked (2.6). Remove it after first use.
+- `SESSION_TTL_HOURS` (default 12) and `SESSION_IDLE_MINUTES` (default 120) set the absolute and idle session lifetime.
+- `CLERK_*`, `PLATFORM_ADMIN_CLERK_USER_ID` and `ADMIN_DEFAULT_PASSWORD` are no longer read. `VITE_CLERK_PUBLISHABLE_KEY` was removed from the compose build args.
+
+Anyone who knew the old default admin password (`ThirdEyeAdmin@2026!`) must not be able to use it: on an upgraded database replace it immediately (2.6), on a fresh database it never exists.
 
 ### 6.4 CORS and URLs
 
@@ -487,4 +653,10 @@ curl -I https://interviewer.learningpath.ai                    # 200 over HTTPS
 curl -s https://interviewer.learningpath.ai/health/live
 ```
 
-In the browser: sign in with Clerk, open an assessment, and test one Gemini-backed feature and one voice interview. Watch `docker logs -f interviewer_backend` while testing.
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://interviewer.learningpath.ai/api/auth/me    # 401 without a session
+curl -s -X POST https://interviewer.learningpath.ai/api/auth/login/ -H 'Content-Type: application/json' \
+  -d '{"username":"nobody@example.com","password":"x"}'                                    # {"detail":"Incorrect username or password"}, 404 means a stale proxy (3.7)
+```
+
+In the browser: sign in as the admin (email + password), open an assessment, and test one Gemini-backed feature and one voice interview. Watch `docker logs -f interviewer_backend` while testing.
