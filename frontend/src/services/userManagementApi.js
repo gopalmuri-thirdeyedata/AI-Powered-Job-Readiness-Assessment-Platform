@@ -30,6 +30,21 @@ export const userManagementApi = {
     activate: async (id) => (await axios.post(`${BASE}/${id}/activate`, {}, { headers: headers() })).data,
     resetPassword: async (id, newPassword) =>
         (await axios.post(`${BASE}/${id}/reset-password`, { new_password: newPassword }, { headers: headers() })).data,
+    // E-mails the student's login e-mail and assigned password. No body: the server takes the recipient and the password from its own
+    // records (the password is never in the browser, a URL or a response). It never changes a password.
+    shareCredentials: async (id) => (await axios.post(`${BASE}/${id}/share-credentials`, {}, { headers: headers(), timeout: 60000 })).data,
+    // Bulk e-mails each selected student their login credentials in a single operation.
+    bulkShareCredentials: async (userIds) =>
+        (await axios.post(`${BASE}/share-credentials/bulk`, { user_ids: userIds }, { headers: headers(), timeout: 120000 })).data,
+    // Bulk generates secure new passwords, revokes active sessions, and e-mails credentials to selected students.
+    replacePasswordsAndShare: async (userIds) =>
+        (await axios.post(`${BASE}/replace-passwords-and-share/bulk`, { user_ids: userIds }, { headers: headers(), timeout: 120000 })).data,
+};
+
+/** Machine-readable reason of a failed Share (PASSWORD_NOT_AVAILABLE, EMAIL_NOT_CONFIGURED, SEND_IN_PROGRESS, ...), or ''. */
+export const shareFailureCode = (err) => {
+    const detail = err?.response?.data?.detail;
+    return detail && typeof detail === 'object' && typeof detail.code === 'string' ? detail.code : '';
 };
 
 /** Client-side mirror of the server password policy (the server remains the authority). */
@@ -50,9 +65,11 @@ export const passwordProblems = (password, email = '') => {
 export const apiError = (err, fallback = 'Something went wrong. Please try again.') => {
     const detail = err?.response?.data?.detail;
     if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && !Array.isArray(detail) && typeof detail.message === 'string') return detail.message;
     if (Array.isArray(detail) && detail.length) {
         return detail.map((d) => (typeof d === 'string' ? d : (d?.msg || '')).replace(/^Value error, /, '')).filter(Boolean).join(' ');
     }
+    if (err?.response?.status === 404) return 'The requested resource or endpoint was not found (404).';
     if (err?.response?.status === 403) return 'You do not have permission to do that.';
     if (err?.code === 'ECONNABORTED' || err?.message === 'Network Error') return 'Network problem. Please check your connection.';
     return fallback;

@@ -15,8 +15,12 @@ from starlette.concurrency import run_in_threadpool
 
 import database
 import models
+import utils
 from routers.auth import TenantContext, require_admin_user
+from routers.users import _tenant_users
 from services import assessment_clock as clock
+from services import assessment_invitation_service as invitations
+from services import email_service
 from services import gemini_client
 from services import jd_blueprint_service as blueprints
 from services import jd_document_service as jd_documents
@@ -36,6 +40,10 @@ class JobRoleCreate(BaseModel):
     role: Optional[str] = Field(None, max_length=200)
     description: str = Field(..., min_length=1, max_length=20000)
     required_skills: Optional[List[str]] = None
+
+
+class InvitationRequest(BaseModel):
+    student_ids: List[int] = Field(..., min_length=1, max_length=invitations.MAX_RECIPIENTS_PER_REQUEST)
 
 
 class JobRoleUpdate(BaseModel):
@@ -316,6 +324,98 @@ def create_new_share_link(role_id: int, db: Session = Depends(database.get_db),
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The link was already renewed. Reload to see it.")
     db.refresh(job)
     return serialize_role(job, include_blueprint=True)
+
+
+# ------------------------------------------------------------------------------
+# Optional: e-mail the shared link to existing students (copying the link by hand is unaffected and needs none of this)
+# ------------------------------------------------------------------------------
+INVITABLE_STUDENT_LIMIT = 500
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
+
+
+def _invitable_students(db: Session, tenant_id: int):
+    """Active Student accounts of the caller's organization: the only people an administrator may invite."""
+    return _tenant_users(db, tenant_id).filter(models.User.role == models.UserRole.STUDENT.value, models.User.is_active.is_(True))
+
+
+def _invitation_link(job: models.JobDescription) -> str:
+    url = share_url(job.share_token)
+    host = url.split("://", 1)[-1].split("/", 1)[0].split(":")[0] if url else ""
+    if utils.is_production() and (host in _LOCAL_HOSTS or not url):
+        # an e-mailed link to localhost would be useless to every recipient
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="The public application URL (FRONTEND_URL) is not configured for production, so invitation links would not work.")
+    return url
+
+
+@router.get("/{role_id}/share-students")
+def list_share_students(role_id: int, q: Optional[str] = None, db: Session = Depends(database.get_db),
+                        tenant_context: TenantContext = Depends(require_admin_user)):
+    """Students the caller may invite to this assessment, with the tracked invitation status of its current link."""
+    from sqlalchemy import func, or_
+    job = _get_role(db, tenant_context.tenant_id, role_id)
+    query = _invitable_students(db, tenant_context.tenant_id)
+    if q and q.strip():
+        needle = q.strip().lower()[:100]
+        profile_ids = db.query(models.StudentProfile.user_id).filter(func.lower(models.StudentProfile.full_name).contains(needle, autoescape=True))
+        query = query.filter(or_(
+            func.lower(models.User.email).contains(needle, autoescape=True),
+            func.lower(func.coalesce(models.User.full_name, "")).contains(needle, autoescape=True),
+            models.User.id.in_(profile_ids),
+        ))
+    total = query.count()
+    rows = query.order_by(func.lower(models.User.email)).limit(INVITABLE_STUDENT_LIMIT).all()
+    tracked = invitations.current_invitations(db, job, [u.id for u in rows])
+    problem = invitations.link_problem(job)
+    expiry = link_policy.expires_at(job)
+    return {
+        "items": [{"id": u.id, "name": invitations.student_display_name(db, u), "email": u.email,
+                   "invitation": invitations.invitation_summary(tracked.get(u.id))} for u in rows],
+        "total": total,
+        "truncated": total > len(rows),
+        "can_send": problem is None,
+        "cannot_send_reason": problem["message"] if problem else None,
+        "email_configured": email_service.is_configured(),
+        "link_expires_at": expiry.isoformat() if expiry else None,
+    }
+
+
+@router.post("/{role_id}/invitations")
+def send_assessment_invitations(role_id: int, payload: InvitationRequest, db: Session = Depends(database.get_db),
+                                tenant_context: TenantContext = Depends(require_admin_user)):
+    """
+    E-mails the job's current shared link to the selected students and reports the outcome PER RECIPIENT (sent / failed / skipped).
+    "sent" means the mail server accepted the message, not that it reached an inbox. Repeating the request never re-sends a
+    "sent" invitation; sending again for "failed" ones is the safe retry. Nothing is created for the student: no account,
+    registration or attempt, and the link, its 24 h expiry and the publish state are untouched.
+    """
+    job = _get_role(db, tenant_context.tenant_id, role_id)
+    problem = invitations.link_problem(job)
+    if problem:
+        raise HTTPException(status_code=problem["status"], detail=problem["message"])
+    link_url = _invitation_link(job)
+
+    ids = list(dict.fromkeys(payload.student_ids))  # a repeated id in one request is still one e-mail
+    students = _invitable_students(db, tenant_context.tenant_id).filter(models.User.id.in_(ids)).all()
+    if len(students) != len(ids):
+        # outside the caller's organization, not a student, or deactivated: never revealed which, nothing is sent
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="One or more selected students are not available. Reload the student list and try again.")
+    by_id = {s.id: s for s in students}
+    ordered = [by_id[i] for i in ids]
+
+    try:
+        results = invitations.send_invitations(
+            db, job=job, students=ordered, link_url=link_url,
+            organization_name=tenant_context.organization.name, invited_by=tenant_context.user.id)
+    except email_service.EmailNotConfigured as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+    summary = {key: sum(1 for r in results if r["status"] == key) for key in ("sent", "failed", "skipped")}
+    _audit(db, tenant_context, "JOB_ROLE_INVITATIONS_SENT", job.title,
+           f"sent={summary['sent']}; failed={summary['failed']}; skipped={summary['skipped']}")
+    db.commit()
+    return {"results": results, "summary": summary}
 
 
 @router.post("/{role_id}/close")

@@ -32,6 +32,9 @@ export const adminApi = {
     publishRole: (id) => adminPost(`/api/admin/job-roles/${id}/publish`),
     closeRole: (id) => adminPost(`/api/admin/job-roles/${id}/close`),
     newShareLink: (id) => adminPost(`/api/admin/job-roles/${id}/new-link`),
+    // Optional e-mail invitations (copying the shared link by hand does not use any of this)
+    listShareStudents: (id, q) => adminGet(`/api/admin/job-roles/${id}/share-students`, q ? { q } : undefined),
+    sendInvitations: (id, studentIds) => adminPost(`/api/admin/job-roles/${id}/invitations`, { student_ids: studentIds }, 120000),
     overview: () => adminGet('/api/admin/recruitment/overview-stats'),
     listCandidates: (params) => adminGet('/api/admin/recruitment/candidates', params),
     dossier: (id) => adminGet(`/api/admin/recruitment/candidates/${id}/dossier`),
@@ -56,6 +59,9 @@ const sessionUrl = (s, path) => `${PUBLIC}/session/${s.uuid}/${path}`;
 
 export const candidateApi = {
     getMeta: async (shareToken) => (await axios.get(`${PUBLIC}/${shareToken}`)).data,
+    // For a handed-over (retake) token: is it usable, and must its holder sign in as a student first? Starts nothing.
+    registrationInfo: async (shareToken, registrationToken) =>
+        (await axios.post(`${PUBLIC}/${shareToken}/registration-info`, {}, { headers: { ...jsonHeaders, 'X-Registration-Token': registrationToken } })).data,
     register: async (shareToken, body) => (await axios.post(`${PUBLIC}/${shareToken}/register`, body, { headers: jsonHeaders })).data,
     // The server refuses to start without the rules acknowledgement (acknowledged: true) and creates the attempt + deadline only here.
     start: async (shareToken, registrationToken, acknowledged = false) =>
@@ -80,6 +86,24 @@ export const candidateApi = {
         (await axios.post(sessionUrl(s, 'submit-interview'), { answers, transcript: transcript ?? [], violations: violations ?? null },
             { headers: sessionHeaders(s), timeout: 180000 })).data,
     finalize: async (s) => (await axios.post(sessionUrl(s, 'finalize'), {}, { headers: sessionHeaders(s) })).data,
+};
+
+// ------------------------------------------------------------------------------
+// Invited-student API (the signed-in student's own session cookie + CSRF header, added by the auth client).
+// Identity and role are never sent: the server takes them from the account.
+// ------------------------------------------------------------------------------
+const STUDENT = `${API_URL}/api/student-assessment`;
+const studentGet = async (path) => (await axios.get(`${STUDENT}${path}`, { headers: { Accept: 'application/json' } })).data;
+const studentPost = async (path, body = {}) => (await axios.post(`${STUDENT}${path}`, body, { headers: jsonHeaders })).data;
+
+export const studentAssessmentApi = {
+    // registration created from the account: starts nothing (no attempt, no timer)
+    // retakeToken (optional): the single-use token of an administrator-authorised retake link; the server binds it to this account
+    access: (shareToken, retakeToken) => studentPost(`/${shareToken}/access`, retakeToken ? { retake_token: retakeToken } : {}),
+    result: (shareToken) => studentGet(`/${shareToken}/result`),
+    submitReview: (sessionUuid, review) => studentPost(`/attempts/${sessionUuid}/review`, { review }),
+    // the server releases the report only to the owner of a completed, evaluated attempt whose review is saved
+    getReport: (sessionUuid) => studentGet(`/attempts/${sessionUuid}/report`),
 };
 
 // Server error -> short human message (supports string and {message} details)

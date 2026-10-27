@@ -49,6 +49,25 @@ accounts are created only by an authenticated administrator (Admin Dashboard -> 
 
 Password policy: 10-72 bytes, upper + lower case + digit, no leading/trailing space, not a common password, not containing the email name.
 
+## Sharing a student's credentials (User Management -> Share)
+
+A password is stored only as a bcrypt hash and can never be recovered, so Share can only deliver a password the server was handed a
+moment ago: at **account creation** or at **Replace password**. That password is kept in `credential_deliveries`, **encrypted**
+(Fernet; key derived from `JWT_SECRET_KEY` or set in `CREDENTIAL_DELIVERY_KEY`), bound to the student, and **only when SMTP is configured**.
+It is deleted when the e-mail has been accepted by the mail server, when it expires (`CREDENTIAL_SHARE_TTL_MINUTES`, default 120;
+`0` = keep nothing), or when the student changes their password. Right before sending it is checked against the account's current hash;
+a mismatch deletes it and nothing is sent.
+
+* `POST /api/admin/users/:id/share-credentials` (same organization / role rules as Replace password; **students only**, active accounts
+  only). The recipient is the account's e-mail from the database; the request carries nothing. It never changes a password.
+* An older student, one already shared, or one whose retention expired answers 409 `PASSWORD_NOT_AVAILABLE`: use **Replace password**,
+  then **Share**. Failures (SMTP missing/invalid, connection, TLS, authentication, rejected recipient, temporary failure) are explained
+  without internals, change nothing and can be retried until the retained password expires. One send at a time per student.
+* Audit: `CREDENTIALS_SHARE_SENT` / `CREDENTIALS_SHARE_FAILED` (actor, student id, time) - never the password or the message.
+* **Remaining risk:** an e-mailed password sits in the mail systems of the sender, the recipient and everything in between, outside
+  PrepWin's control. Treat it as a temporary credential and ask students to change it at first sign-in
+  (the student "Change password" flow already revokes other sessions). Prefer a short retention window.
+
 ## Operations
 
 | Task | Command (from `backend/`) |
@@ -59,7 +78,9 @@ Password policy: 10-72 bytes, upper + lower case + digit, no leading/trailing sp
 | Provision the Super Admin / normalize legacy roles (dry run unless `--execute`) | `python migrate_super_admin.py [--execute]` |
 | Remove specific student accounts safely (dry run by default, verified backup, one transaction) | `python scripts/remove_student_accounts.py --email a@x.com [--execute]` |
 
-Self-service "forgot password" by email is intentionally absent: SMTP was removed from the product. Password replacement is
+Self-service "forgot password" by email is intentionally absent: SMTP is used only for optional assessment-link invitations and
+for the administrator-triggered **Share** of a student's login credentials (`services/email_service.py`), never for self-service
+authentication or reset links. Password replacement is
 administrator-controlled (User Management -> Replace password) or, for the platform admin, `scripts/set_admin_password.py`.
 
 ## What changed from the Clerk design

@@ -134,6 +134,55 @@ were removed from the admin UI; their old URLs redirect to the workspace. Their 
   nothing. They keep working until an admin closes them; reopening a closed legacy link stamps a 24 h window (same URL). The UI labels
   them "No expiry". The RoleReady *invitation* expiry (7 days) is a separate system and unchanged.
 
+## Invited students: sign in, mandatory review, report
+
+The shared link is opened by **students who already have an account** (created by an Admin / Super Admin, shared by e-mail or by hand).
+The name / phone / e-mail registration form is no longer part of this flow (the public `/register` endpoint remains for the older
+accountless candidate path and the admin-authorised retake hand-off).
+
+1. `/assessment/join/:token` shows the public metadata and a sign-in (the one PrepWin login, rate-limited and throttled as everywhere).
+   An Admin / Super Admin account is refused and signed out again.
+2. `POST /api/student-assessment/:token/access` (authenticated STUDENT of the assessment's organization) creates the student's own
+   `candidate_registrations` row from the account (`student_user_id`) and returns the start capability. **No attempt and no timer.**
+   The same student can come back before starting: a fresh capability is issued and the old one stops working.
+3. Instructions -> device check -> the explicit **Start Assessment** (`POST /api/public/assessment/:token/start`). For a registration made
+   from a student account the start additionally requires the same signed-in student (the capability alone is not enough).
+   Timers, scoring, evaluation and the single-attempt rule are the unchanged shared engine.
+4. After the three sections the student lands on `/assessment/join/:token/complete`: the **exam review** (>= 30 words) is stored once in
+   `assessment_reviews` (UNIQUE per attempt, immutable, owned by the student). It never changes the attempt or its scores.
+5. `GET /api/student-assessment/attempts/:uuid/report` releases the student's own report only when: the caller is authenticated, owns the
+   attempt, the attempt is COMPLETED with its stored report, **and** a review of >= 30 words is saved (recounted on the server). Anything
+   else is refused (403 `REVIEW_REQUIRED`, 409 `EVALUATION_PENDING` / `REPORT_NOT_READY`; another student's attempt is a 404). The PDF is
+   built in the browser from that response (no answer keys, source code, transcripts or proctoring data are included). After the download
+   has been *started* the page counts down 8 s and returns to `/student/dashboard`; a failed download never redirects.
+
+**Hardening rules**
+
+* *Legacy `/register` vs students.* An e-mail that belongs to a student account (compared in every normalized form; any account state)
+  is refused with a neutral 409 that points to the signed-in access of the link. The check runs before any row is read for reservation
+  or written, and is repeated inside the same transaction right before commit, so a student account that appears mid-request cannot end up
+  with an accountless registration. Unrelated e-mails register exactly as before; duplicates and the single attempt are unchanged. An
+  accountless registration that already exists for someone who later becomes a student is never deleted: while unused it is adopted by
+  that student's first signed-in access.
+* *Organizations.* A student may open an assessment only if its organization is one the account is authoritatively linked to (the
+  account, its profile, or an **active** membership). No default organization exists and nothing widens access. An account with no link at
+  all gets "not linked to an organization" and an `STUDENT_ORGANIZATION_UNRESOLVED` ActivityLog entry (once per student and assessment)
+  for the owning organization's administrators. `python scripts/audit_student_organizations.py` reports (dry run by default) and, with
+  `--execute`, backfills only unambiguous cases (SQLite: verified backup first; every change is an ActivityLog row; re-running is a no-op;
+  valid assignments, conflicts and mismatches are only reported). Run it once per environment after deploying.
+* *Retake links.* `?registration_token=` of a retake that belongs to a student registration never works on its own. The entry page asks
+  the server (`POST /api/public/assessment/:token/registration-info`, nothing is started) whether sign-in is required; if so it shows the
+  student login on the same URL and, after sign-in, sends the token together with the account to `POST /api/student-assessment/:token/access`,
+  which accepts it only for the registration's own student (anyone else: generic 403; used: 409; expired/closed link: 410). Only the
+  instructions page, the completion page and the student dashboard are ever navigated to, computed from the share token: no redirect
+  parameter exists. Accountless retakes keep their original hand-over.
+* *Sittings.* For a sitting that belongs to a student account, every session endpoint (state, heartbeat, draft, submit, run, finalize)
+  also requires that same signed-in student; the session token + lease alone are refused (401). Accountless candidate sittings are unchanged.
+
+Word counting is the same on both sides: a word is a run of non-whitespace characters (`backend/services/review_policy.py`,
+`frontend/src/utils/wordCount.js`, one shared test-vector file). Schema: `python migrate_student_assessment_access.py` (additive and
+idempotent; also applied on API start-up).
+
 ## Rollout (existing database)
 
 ```bash

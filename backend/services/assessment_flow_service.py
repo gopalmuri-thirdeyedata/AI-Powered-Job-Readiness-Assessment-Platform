@@ -165,7 +165,27 @@ def get_open_job_by_token(db: Session, share_token: str) -> models.JobDescriptio
     return job
 
 
-def start_assessment(db: Session, share_token: str, registration_token: Optional[str], acknowledged: bool = False) -> Dict[str, Any]:
+def describe_registration(db: Session, share_token: str, registration_token: Optional[str]) -> Dict[str, Any]:
+    """
+    What an unauthenticated visitor holding a handed-over registration token (an administrator-authorised retake link) needs to know:
+    is it usable, and must the holder sign in as a student first? Reveals nothing beyond that and starts nothing.
+    """
+    job = get_open_job_by_token(db, share_token)
+    if not registration_token:
+        raise _http(401, "Registration capability required.")
+    reg = db.query(models.CandidateRegistration).filter(
+        models.CandidateRegistration.registration_token_hash == sha256_hex(registration_token),
+        models.CandidateRegistration.job_description_id == job.id,
+    ).first()
+    if reg is None:
+        raise _http(403, "This link is not valid.")
+    if reg.attempt_session_uuid is not None or reg.status != "REGISTERED":
+        raise _http(409, "This link has already been used.")
+    return {"valid": True, "student_login_required": reg.student_user_id is not None}
+
+
+def start_assessment(db: Session, share_token: str, registration_token: Optional[str], acknowledged: bool = False,
+                     student_user_id: Optional[int] = None) -> Dict[str, Any]:
     job = get_open_job_by_token(db, share_token)
     if not registration_token:
         raise _http(401, "Registration capability required.")
@@ -179,6 +199,9 @@ def start_assessment(db: Session, share_token: str, registration_token: Optional
     ).first()
     if probe is None or not hmac.compare_digest(probe.registration_token_hash, token_hash):
         raise _http(403, "Invalid registration capability.")
+    if probe.student_user_id is not None and probe.student_user_id != student_user_id:
+        # a registration made from a student account is only usable by that signed-in student (the token alone is not enough)
+        raise _http(401, "Sign in with your student account to start this assessment.")
 
     # Serialize concurrent starts for this registration (SQLite write lock / MySQL row lock) ...
     begin_write(db, "candidate_registrations", probe.id)
@@ -293,7 +316,7 @@ def abandon_by_token(db: Session, session_uuid: str, session_token: Optional[str
 
 
 def load_session(db: Session, session_uuid: str, session_token: Optional[str], lease_token: Optional[str],
-                 *, require_lease: bool = True, allow_terminal: bool = False) -> models.RoleReadySession:
+                 *, require_lease: bool = True, allow_terminal: bool = False, viewer=None) -> models.RoleReadySession:
     probe = db.query(models.RoleReadySession).filter(
         models.RoleReadySession.session_uuid == session_uuid,
         models.RoleReadySession.workflow_type == WORKFLOW_TYPE,
@@ -304,6 +327,14 @@ def load_session(db: Session, session_uuid: str, session_token: Optional[str], l
         raise _http(401, "Session capability required.")
     if not _hash_matches(session_token, probe.session_capability_hash):
         raise _http(403, "Invalid session capability.")
+    if viewer is not None and probe.registration_id:
+        # A sitting that belongs to a student account is only usable by that signed-in student: the session capability alone is not
+        # enough (accountless candidate sittings have no owner and are unaffected). `viewer()` -> id of the signed-in account or None.
+        owner = db.query(models.CandidateRegistration.student_user_id).filter(
+            models.CandidateRegistration.id == probe.registration_id).scalar()
+        if owner is not None and viewer() != owner:
+            db.rollback()
+            raise _http(401, "Sign in with your student account to continue this assessment.")
 
     probe_pk = probe.id
     # End the read-only transaction opened by the probe so that, on MySQL (REPEATABLE READ), the snapshot used by

@@ -21,7 +21,7 @@ export async function loadModule(relativeEntry) {
     fs.mkdirSync(cacheDir, { recursive: true });
     const entry = path.resolve(root, relativeEntry);
     const key = createHash('sha1').update(entry + fs.readFileSync(entry, 'utf8')).digest('hex').slice(0, 12);
-    const outfile = path.join(cacheDir, `${path.basename(entry).replace(/\W/g, '_')}.${key}.mjs`);
+    const outfile = path.join(cacheDir, `${path.basename(entry).replace(/\W/g, '_')}.${key}.${process.pid}.mjs`);
     await build({
         entryPoints: [entry],
         outfile,

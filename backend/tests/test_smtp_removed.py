@@ -1,5 +1,7 @@
-"""SMTP/email delivery has been removed: no code path may send mail, and the recruiter flows that used to
-depend on it must hand the login link / credentials back to the recruiter instead."""
+"""Email delivery is confined to two administrator-triggered features, both going through services/email_service.py: optional
+assessment invitations (tests/test_assessment_invitations.py) and Share credentials (tests/test_share_credentials.py). Every other flow
+stays mail-free, and the recruiter flows that used to depend on e-mail must keep handing the login link / credentials back to the
+recruiter instead."""
 import re
 import smtplib
 from pathlib import Path
@@ -61,9 +63,11 @@ def test_email_helpers_are_gone(monkeypatch):
 
 def test_no_source_file_sends_email_or_imports_smtp():
     pattern = re.compile(r"smtplib|email_templates|EMAIL_HOST|MIMEMultipart|MIMEText|send_email")
-    # routers/interview.py is frozen (zero git diff is enforced by other tests) and still calls the no-op shim
-    allowed = {"routers/interview.py"}
+    # routers/interview.py is frozen (zero git diff is enforced by other tests) and still calls the no-op shim;
+    # services/email_service.py is the single, centralized SMTP client used by assessment invitations
+    allowed = {"routers/interview.py", "services/email_service.py"}
     offenders = []
+    smtp_importers = []
     for path in BACKEND.rglob("*.py"):
         rel = path.relative_to(BACKEND).as_posix()
         if rel.startswith(("venv/", ".venv/", "tests/", "__pycache__/")) or "/__pycache__/" in rel:
@@ -74,12 +78,18 @@ def test_no_source_file_sends_email_or_imports_smtp():
             text = re.sub(r"def send_email\(.*?return False\n", "", text, flags=re.S)
         if rel not in allowed and pattern.search(text):
             offenders.append(rel)
+        if re.search(r"\bsmtplib\b", text):
+            smtp_importers.append(rel)
     assert offenders == []
+    assert sorted(smtp_importers) == ["services/email_service.py"]
 
 
-def test_env_example_has_no_smtp_settings():
+def test_env_example_documents_smtp_without_any_secret():
     example = (BACKEND / ".env.example").read_text(encoding="utf-8")
-    assert "EMAIL_HOST" not in example and "SMTP" not in example
+    assert "EMAIL_HOST" not in example
+    values = dict(line.split("=", 1) for line in example.splitlines() if re.match(r"^SMTP_[A-Z]+=", line))
+    assert {"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"} <= set(values)
+    assert values["SMTP_PASSWORD"].strip() == "" and values["SMTP_USER"].strip() == ""
 
 
 def test_assign_returns_login_details_instead_of_emailing(db_session, setup_test_data, no_mail):

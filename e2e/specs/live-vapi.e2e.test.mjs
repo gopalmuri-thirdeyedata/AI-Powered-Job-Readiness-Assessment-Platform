@@ -21,7 +21,7 @@ describe('live Vapi call (opt-in)', { skip: !enabled && 'set E2E_LIVE_VAPI_CALL=
     const ui = await U.newPage(context, stack.api);
     try {
       await U.stubNoPersonProctoring(ui.page);
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       const uuid = U.sessionUuid(ui);
       await U.answerAptitude(ui);
       await U.openCoding(ui);

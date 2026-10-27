@@ -74,6 +74,22 @@ def vapi_http(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_smtp(monkeypatch):
+    """
+    backend/.env carries real SMTP credentials and load_dotenv() puts them in the test process, so any test that reaches the
+    invitation endpoints unmocked would send real e-mail. Every SMTP connection attempt fails loudly instead; tests that
+    exercise sending install their own fake (tests/test_assessment_invitations.py).
+    """
+    import smtplib
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a test tried to open a real SMTP connection; install a fake SMTP server instead")
+
+    monkeypatch.setattr(smtplib, "SMTP", refuse)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _reset_sandbox_circuit():
     """The execution-service circuit breaker is process-wide state: every test starts with it closed."""
     from services import piston_service

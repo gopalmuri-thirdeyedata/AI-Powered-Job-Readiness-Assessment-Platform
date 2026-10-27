@@ -25,13 +25,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
+import secrets
+import string
+
 import database
 import models
 import utils
 from routers.auth import TenantContext, require_organization_admin_context
-from services import local_auth
+from services import credential_delivery, local_auth
+from services.rate_limiter import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
+
+_bulk_share_limiter = SlidingWindowLimiter(limit=10, window_seconds=60)
+_bulk_replace_limiter = SlidingWindowLimiter(limit=10, window_seconds=60)
 
 SUPER, ADMIN, STUDENT = (models.UserRole.SUPER_ADMIN.value, models.UserRole.ADMIN.value, models.UserRole.STUDENT.value)
 ASSIGNABLE_ROLES = (SUPER, ADMIN, STUDENT)
@@ -59,6 +66,10 @@ class UpdateUserRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str = Field(..., max_length=200)
+
+
+class BulkShareCredentialsRequest(BaseModel):
+    user_ids: List[int] = Field(..., min_length=1, max_length=100)
 
 
 # ------------------------------------------------------------------------------
@@ -90,6 +101,30 @@ def _clean_phone(raw: Optional[str]) -> Optional[str]:
         return local_auth.normalize_phone(raw)
     except ValueError as exc:
         raise _fail(422, str(exc))
+
+
+def generate_secure_password(email: Optional[str] = None) -> str:
+    """Generates a cryptographically secure, unique password satisfying the password policy."""
+    special_chars = "!@#$%^&*_-+="
+    alphabet = string.ascii_letters + string.digits + special_chars
+    rand = secrets.SystemRandom()
+    for _ in range(100):
+        chars = [
+            rand.choice(string.ascii_lowercase),
+            rand.choice(string.ascii_lowercase),
+            rand.choice(string.ascii_uppercase),
+            rand.choice(string.ascii_uppercase),
+            rand.choice(string.digits),
+            rand.choice(string.digits),
+            rand.choice(special_chars),
+            rand.choice(special_chars),
+        ] + [rand.choice(alphabet) for _ in range(8)]
+        rand.shuffle(chars)
+        pwd = "".join(chars)
+        if not local_auth.password_policy_errors(pwd, email):
+            return pwd
+    token = secrets.token_urlsafe(12)
+    return f"P@ss{token}1A!"
 
 
 def _tenant_users(db: Session, tenant_id: int):
@@ -196,7 +231,9 @@ def list_users(
         ))
     total = query.count()
     rows = query.order_by(models.User.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": [_serialize(db, u) for u in rows], "total": total, "page": page, "page_size": page_size}
+    ready = credential_delivery.ready_user_ids(db, [u.id for u in rows if u.role == STUDENT])
+    items = [{**_serialize(db, u), "credentials_ready": u.id in ready} for u in rows]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -242,6 +279,8 @@ def create_user(
         elif role == ADMIN:
             db.add(models.OrganizationMember(organization_id=ctx.tenant_id, user_id=user.id, role="ADMIN", status="active"))
         # SUPER_ADMIN is platform scope: no organization membership is needed (or granted)
+        if role == STUDENT:
+            credential_delivery.retain(db, user, payload.password, ctx.user.id)   # encrypted + short-lived, for "Share"
         _audit(db, ctx, "user_created", user, f"role={role}")
         db.commit()  # user, profile/membership and audit row are one transaction
     except IntegrityError:
@@ -328,6 +367,304 @@ def reset_password(
     target.hashed_password = utils.get_password_hash(payload.new_password)
     target.password_changed = False
     revoked = local_auth.revoke_user_sessions(db, target.id)
+    if target.role == STUDENT:
+        credential_delivery.retain(db, target, payload.new_password, ctx.user.id)   # the new password replaces any retained one
+    else:
+        credential_delivery.discard(db, target.id)
     _audit(db, ctx, "user_password_reset", target, f"sessions_revoked={revoked}")
     db.commit()
     return {"message": f"Password replaced for {target.email}. Their existing sessions were signed out."}
+
+
+@router.post("/share-credentials/bulk")
+@router.post("/share-credentials/bulk/")
+def bulk_share_credentials(
+    payload: BulkShareCredentialsRequest,
+    ctx: TenantContext = Depends(require_organization_admin_context),
+    db: Session = Depends(database.get_db),
+):
+    """
+    E-mails each selected student their login credentials in a single bulk operation.
+    Processes each student independently so a failure does not stop the batch.
+    Retained credentials are deleted upon SMTP acceptance.
+    Never logs or returns plaintext credentials.
+    """
+    if not _bulk_share_limiter.allow((ctx.tenant_id, ctx.user.id)):
+        raise _fail(429, "Too many bulk credential sharing requests. Please wait a minute and try again.")
+
+    ids = list(dict.fromkeys(payload.user_ids))
+    results = []
+
+    for user_id in ids:
+        target = _tenant_users(db, ctx.tenant_id).filter(models.User.id == user_id).first()
+        if target is None:
+            results.append({
+                "id": user_id,
+                "name": None,
+                "email": None,
+                "status": "unauthorized",
+                "code": "UNAUTHORIZED",
+                "message": "User not found or you do not have permission to manage this account.",
+            })
+            continue
+
+        if target.role not in MANAGEABLE_ROLES.get(_caller_role(ctx), ()):
+            results.append({
+                "id": user_id,
+                "name": target.full_name,
+                "email": target.email,
+                "status": "unauthorized",
+                "code": "ROLE_NOT_MANAGEABLE",
+                "message": f"Your role cannot manage {target.role.replace('_', ' ').title()} accounts.",
+            })
+            continue
+
+        profile = _profile(db, target)
+        student_name = target.full_name or (profile.full_name if profile else None) or "Student"
+
+        if target.role != STUDENT:
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "skipped",
+                "code": "NOT_A_STUDENT",
+                "message": "Login credentials can only be shared for student accounts.",
+            })
+            continue
+
+        if not target.is_active:
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "skipped",
+                "code": "ACCOUNT_INACTIVE",
+                "message": "Activate this account before sharing its login credentials.",
+            })
+            continue
+
+        try:
+            res = credential_delivery.send_credentials(db, user=target, actor_id=ctx.user.id, org_id=ctx.tenant_id)
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "sent",
+                "code": "SENT",
+                "message": res["message"],
+            })
+        except credential_delivery.CredentialShareError as exc:
+            status_label = "skipped" if exc.code in ("PASSWORD_NOT_AVAILABLE", "SEND_IN_PROGRESS") else "failed"
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": status_label,
+                "code": exc.code,
+                "message": exc.message,
+            })
+        except Exception:
+            db.rollback()
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "failed",
+                "code": "EMAIL_FAILED",
+                "message": "The e-mail could not be sent. Nothing was changed; you can try again.",
+            })
+
+    sent_count = sum(1 for r in results if r["status"] == "sent")
+    failed_count = sum(1 for r in results if r["status"] == "failed")
+    skipped_count = sum(1 for r in results if r["status"] in ("skipped", "unauthorized"))
+
+    return {
+        "total": len(ids),
+        "sent": sent_count,
+        "failed": failed_count,
+        "skipped": skipped_count,
+        "summary": {
+            "total": len(ids),
+            "sent": sent_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
+        },
+        "results": results,
+    }
+
+
+@router.post("/replace-passwords-and-share/bulk")
+@router.post("/replace-passwords-and-share/bulk/")
+def bulk_replace_passwords_and_share(
+    payload: BulkShareCredentialsRequest,
+    ctx: TenantContext = Depends(require_organization_admin_context),
+    db: Session = Depends(database.get_db),
+):
+    """
+    Generates a new secure password for each selected student, updates their account,
+    revokes sessions, and e-mails their new credentials in a single bulk operation.
+    Distinguishes password replacement failure from email delivery failure.
+    If email delivery fails, the new password remains safely retained for retry via standard Share.
+    Never returns or logs plaintext passwords.
+    """
+    if not _bulk_replace_limiter.allow((ctx.tenant_id, ctx.user.id)):
+        raise _fail(429, "Too many bulk credential sharing requests. Please wait a minute and try again.")
+
+    ids = list(dict.fromkeys(payload.user_ids))
+    results = []
+
+    for user_id in ids:
+        target = _tenant_users(db, ctx.tenant_id).filter(models.User.id == user_id).first()
+        if target is None:
+            results.append({
+                "id": user_id,
+                "name": None,
+                "email": None,
+                "status": "unauthorized",
+                "stage": "authorization",
+                "code": "UNAUTHORIZED",
+                "message": "User not found or you do not have permission to manage this account.",
+            })
+            continue
+
+        if target.role not in MANAGEABLE_ROLES.get(_caller_role(ctx), ()):
+            results.append({
+                "id": user_id,
+                "name": target.full_name,
+                "email": target.email,
+                "status": "unauthorized",
+                "stage": "authorization",
+                "code": "ROLE_NOT_MANAGEABLE",
+                "message": f"Your role cannot manage {target.role.replace('_', ' ').title()} accounts.",
+            })
+            continue
+
+        profile = _profile(db, target)
+        student_name = target.full_name or (profile.full_name if profile else None) or "Student"
+
+        if target.role != STUDENT:
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "skipped",
+                "stage": "validation",
+                "code": "NOT_A_STUDENT",
+                "message": "Password replacement and credential sharing can only be performed for student accounts.",
+            })
+            continue
+
+        if not target.is_active:
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "skipped",
+                "stage": "validation",
+                "code": "ACCOUNT_INACTIVE",
+                "message": "Activate this account before replacing and sharing its login credentials.",
+            })
+            continue
+
+        new_password = generate_secure_password(target.email)
+
+        # Step 1: Update student password, revoke active sessions, and retain encrypted credential
+        try:
+            target.hashed_password = utils.get_password_hash(new_password)
+            target.password_changed = False
+            revoked = local_auth.revoke_user_sessions(db, target.id)
+            credential_delivery.retain(db, target, new_password, ctx.user.id)
+            _audit(db, ctx, "user_password_reset_bulk", target, f"sessions_revoked={revoked}")
+            db.commit()
+        except Exception:
+            db.rollback()
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "failed",
+                "stage": "password_replacement",
+                "code": "PASSWORD_REPLACE_FAILED",
+                "message": "Failed to update student password.",
+            })
+            continue
+        finally:
+            del new_password
+
+        # Step 2: Deliver credentials via SMTP
+        try:
+            res = credential_delivery.send_credentials(db, user=target, actor_id=ctx.user.id, org_id=ctx.tenant_id)
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "sent",
+                "stage": "email_delivery",
+                "code": "SENT",
+                "message": res["message"],
+            })
+        except credential_delivery.CredentialShareError as exc:
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "failed",
+                "stage": "email_delivery",
+                "code": exc.code,
+                "message": f"Password was replaced, but email delivery failed: {exc.message} You can retry sharing without replacing the password again.",
+            })
+        except Exception:
+            db.rollback()
+            results.append({
+                "id": user_id,
+                "name": student_name,
+                "email": target.email,
+                "status": "failed",
+                "stage": "email_delivery",
+                "code": "EMAIL_FAILED",
+                "message": "Password was replaced, but the email could not be sent. You can retry sharing without replacing the password again.",
+            })
+
+    sent_count = sum(1 for r in results if r["status"] == "sent")
+    failed_count = sum(1 for r in results if r["status"] == "failed")
+    skipped_count = sum(1 for r in results if r["status"] in ("skipped", "unauthorized"))
+
+    return {
+        "total": len(ids),
+        "sent": sent_count,
+        "failed": failed_count,
+        "skipped": skipped_count,
+        "summary": {
+            "total": len(ids),
+            "sent": sent_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
+        },
+        "results": results,
+    }
+
+
+@router.post("/{user_id}/share-credentials")
+@router.post("/{user_id}/share-credentials/")
+def share_credentials(
+    user_id: int,
+    ctx: TenantContext = Depends(require_organization_admin_context),
+    db: Session = Depends(database.get_db),
+):
+    """
+    E-mails the student's login e-mail (from the database) and the password that was assigned when the account was created or last
+    replaced. It never changes a password. A password that is no longer available (older than the retention window, already shared,
+    or changed since) cannot be recovered: the answer says to use Replace password first. Nothing here returns or logs a password.
+    """
+    target = _load_target(db, ctx, user_id, manage=True)          # same organization and role-hierarchy rules as every other action
+    if target.role != STUDENT:
+        raise _fail(403, "Login credentials can only be shared for student accounts.")
+    if not target.is_active:
+        raise _fail(409, "Activate this account before sharing its login credentials.")
+    try:
+        result = credential_delivery.send_credentials(db, user=target, actor_id=ctx.user.id, org_id=ctx.tenant_id)
+    except credential_delivery.CredentialShareError as exc:
+        raise _fail(exc.status, {"code": exc.code, "message": exc.message})
+    return {"status": "sent", "message": result["message"]}
+

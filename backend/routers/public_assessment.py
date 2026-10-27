@@ -96,6 +96,22 @@ def _meta(job: models.JobDescription, org_name: Optional[str]) -> Dict[str, Any]
     }
 
 
+STUDENT_EMAIL_MESSAGE = ("This email address cannot be used for accountless registration. "
+                         "If you have a PrepWin student account, please sign in from this assessment link instead.")
+
+
+def _is_student_account_email(db: Session, raw_email: Optional[str]) -> bool:
+    """True when the e-mail belongs to a student account (any state). Compared in every normalized form an account may be stored in."""
+    from services import local_auth
+    forms = {utils.normalize_email(raw_email), local_auth.normalize_email(raw_email)} - {""}
+    if not forms:
+        return False
+    return db.query(models.User.id).filter(
+        models.User.role == models.UserRole.STUDENT.value,
+        func.lower(func.trim(models.User.email)).in_(forms),
+    ).first() is not None
+
+
 @router.get("/{share_token}")
 def get_assessment_metadata(share_token: str, request: Request, db: Session = Depends(database.get_db)):
     _rate_limit(meta_limiter, request)
@@ -123,6 +139,10 @@ def register_candidate(share_token: str, payload: RegisterRequest, request: Requ
     if len(normalized_email) > 150:
         raise HTTPException(status_code=422, detail="Email address is too long.")
 
+    if _is_student_account_email(db, payload.email):
+        # Checked first, before any row is read for reservation or written: a student uses the signed-in student access of this link.
+        raise HTTPException(status_code=409, detail=STUDENT_EMAIL_MESSAGE)
+
     existing = db.query(models.CandidateRegistration).filter(
         models.CandidateRegistration.job_description_id == job.id,
         func.lower(func.trim(models.CandidateRegistration.email)) == normalized_email,
@@ -146,6 +166,12 @@ def register_candidate(share_token: str, payload: RegisterRequest, request: Requ
     )
     try:
         db.add(reg)
+        db.flush()
+        # A student account created while this request was running must not end up with an accountless registration for its e-mail:
+        # re-check inside the same transaction, right before it commits.
+        if _is_student_account_email(db, payload.email):
+            db.rollback()
+            raise HTTPException(status_code=409, detail=STUDENT_EMAIL_MESSAGE)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -159,42 +185,69 @@ def start_assessment(share_token: str, request: Request, body: Optional[StartReq
                      x_registration_token: Optional[str] = Header(None, alias="X-Registration-Token"),
                      db: Session = Depends(database.get_db)):
     _rate_limit(start_limiter, request)
-    return flow.start_assessment(db, share_token, x_registration_token, acknowledged=bool(body and body.acknowledged))
+    return flow.start_assessment(db, share_token, x_registration_token, acknowledged=bool(body and body.acknowledged),
+                                 student_user_id=_signed_in_user_id(request, db))
+
+
+def _signed_in_user_id(request: Request, db: Session) -> Optional[int]:
+    """Id of the account behind the request's session (cookie or Bearer), or None. Only student-made registrations look at it."""
+    from routers.auth import get_current_user
+    try:
+        header = request.headers.get("authorization") or ""
+        token = header[7:] if header.lower().startswith("bearer ") else None
+        return get_current_user(request, token, db).id
+    except HTTPException:
+        return None
+
+
+@router.post("/{share_token}/registration-info")
+def registration_info(share_token: str, request: Request, x_registration_token: Optional[str] = Header(None, alias="X-Registration-Token"),
+                      db: Session = Depends(database.get_db)):
+    """Lets the entry page decide, for a handed-over (retake) token, whether the holder must sign in as a student first. Starts nothing."""
+    _rate_limit(start_limiter, request)
+    return flow.describe_registration(db, share_token, x_registration_token)
 
 
 # ------------------------------------------------------------------------------
 # Session endpoints: X-Session-Token (capability) + X-Session-Lease (volatile, in-memory on the client)
 # ------------------------------------------------------------------------------
-def _session_headers(x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
-                     x_session_lease: Optional[str] = Header(None, alias="X-Session-Lease")):
-    return x_session_token, x_session_lease
+class _SessionAuth(tuple):
+    """(session token, lease) plus `viewer`: a lazy lookup of the signed-in account, used only for sittings that belong to a student."""
+    viewer = None
+
+
+def _session_headers(request: Request, x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
+                     x_session_lease: Optional[str] = Header(None, alias="X-Session-Lease"), db: Session = Depends(database.get_db)):
+    auth = _SessionAuth((x_session_token, x_session_lease))
+    auth.viewer = lambda: _signed_in_user_id(request, db)
+    return auth
 
 
 @router.get("/session/{session_uuid}/state")
 def get_session_state(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease, allow_terminal=True)
+    session = flow.load_session(db, session_uuid, token, lease, allow_terminal=True, viewer=headers.viewer)
     return flow.get_state(db, session)
 
 
 @router.post("/session/{session_uuid}/heartbeat")
 def heartbeat(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.record_heartbeat(db, session)
 
 
 @router.put("/session/{session_uuid}/draft")
 def save_draft(session_uuid: str, body: DraftRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.save_draft(db, session, body.section, body.payload, violations=body.violations)
 
 
 @router.post("/session/{session_uuid}/submit-aptitude")
 def submit_aptitude(session_uuid: str, body: SubmitRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.submit_section(db, session, "APTITUDE", {"answers": body.answers if isinstance(body.answers, dict) else {}}
                                if body.answers is not None else None, violations=body.violations)
 
@@ -202,21 +255,21 @@ def submit_aptitude(session_uuid: str, body: SubmitRequest, headers=Depends(_ses
 @router.post("/session/{session_uuid}/start-coding")
 def start_coding(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.start_section(db, session, "CODING")
 
 
 @router.post("/session/{session_uuid}/run-code")
 def run_code(session_uuid: str, body: RunCodeRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.run_code(db, session, body.problem_id, body.language, body.code)
 
 
 @router.post("/session/{session_uuid}/submit-coding")
 def submit_coding(session_uuid: str, body: SubmitRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.submit_section(db, session, "CODING", {"solutions": body.solutions or {}} if body.solutions is not None else None,
                                violations=body.violations)
 
@@ -224,7 +277,7 @@ def submit_coding(session_uuid: str, body: SubmitRequest, headers=Depends(_sessi
 @router.post("/session/{session_uuid}/start-interview")
 def start_interview(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.start_section(db, session, "INTERVIEW")
 
 
@@ -232,14 +285,14 @@ def start_interview(session_uuid: str, headers=Depends(_session_headers), db: Se
 def vapi_init(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     """Provisions the voice interviewer (same builder as the Student Platform). Needs the capability + lease and an active interview."""
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     return flow.vapi_init(db, session)
 
 
 @router.post("/session/{session_uuid}/submit-interview")
 def submit_interview(session_uuid: str, body: SubmitRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease)
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
     payload = None
     if body.answers is not None or body.transcript is not None:
         payload = {"answers": body.answers if body.answers is not None else [], "transcript": body.transcript or []}
@@ -249,7 +302,7 @@ def submit_interview(session_uuid: str, body: SubmitRequest, headers=Depends(_se
 @router.post("/session/{session_uuid}/finalize")
 def finalize(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
-    session = flow.load_session(db, session_uuid, token, lease, require_lease=False, allow_terminal=True)
+    session = flow.load_session(db, session_uuid, token, lease, require_lease=False, allow_terminal=True, viewer=headers.viewer)
     return flow.finalize(db, session)
 
 

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Loader2, Pencil, Power, Search, ShieldCheck, GraduationCap, UserPlus, Users, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Loader2, Mail, Pencil, Power, Search, ShieldCheck, GraduationCap, UserPlus, Users, X } from 'lucide-react';
 import WorkspacePage from '../../components/admin/WorkspacePage';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, Toast, cardCls, formatDate, ghostBtn, inputCls, primaryBtn } from '../../components/admin/adminUi';
-import { apiError, passwordProblems, userManagementApi } from '../../services/userManagementApi';
+import { apiError, passwordProblems, shareFailureCode, userManagementApi } from '../../services/userManagementApi';
 import { useAuth } from '../../auth/useAuth';
 import { ROLE_LABELS, creatableRoles, manageableRoles } from '../../auth/roles';
 
@@ -251,6 +251,72 @@ const DetailsDialog = ({ userId, onClose, onChanged, onResetPassword, onToggleAc
     );
 };
 
+/* ─────────────────────────── Bulk results ─────────────────────────── */
+const BulkResultsDialog = ({ data, onClose }) => {
+    return (
+        <Dialog title="Credential Sharing Results" onClose={onClose} wide>
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-center">
+                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Selected</div>
+                        <div className="text-xl font-bold text-slate-800 dark:text-white mt-0.5">{data.total}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-[#5d8c2c]/10 border border-[#5d8c2c]/30 text-center">
+                        <div className="text-xs font-semibold text-[#4c7324] dark:text-[#9fd05a]">Sent</div>
+                        <div className="text-xl font-bold text-[#4c7324] dark:text-[#9fd05a] mt-0.5">{data.sent}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-center">
+                        <div className="text-xs font-semibold text-red-600 dark:text-red-400">Failed</div>
+                        <div className="text-xl font-bold text-red-600 dark:text-red-400 mt-0.5">{data.failed}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-center">
+                        <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">Skipped</div>
+                        <div className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5">{data.skipped}</div>
+                    </div>
+                </div>
+
+                <div className="text-[12px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <span className="font-semibold">Note:</span> Sent indicates the mail server accepted the message; delivery to the inbox is not guaranteed. Retained credentials for successful recipients were deleted.
+                </div>
+
+                <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/70">
+                    {(data.results || []).map((r, idx) => {
+                        const isSent = r.status === 'sent';
+                        const isFailed = r.status === 'failed';
+                        const badgeCls = isSent
+                            ? 'bg-[#5d8c2c]/15 text-[#4c7324] border-[#5d8c2c]/30 dark:bg-emerald-950/40 dark:text-[#9fd05a] dark:border-emerald-800/60'
+                            : isFailed
+                            ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900'
+                            : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900';
+                        return (
+                            <div key={r.id || idx} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-xs">
+                                <div className="min-w-0">
+                                    <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{r.name || 'Student'}</div>
+                                    <div className="text-slate-500 dark:text-slate-400 text-[11px] truncate">{r.email || (r.id ? `User ID ${r.id}` : '—')}</div>
+                                </div>
+                                <div className="flex sm:flex-col sm:items-end gap-1 shrink-0">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${badgeCls}`}>
+                                        {r.status}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs text-right truncate" title={r.message}>
+                                        {r.message}
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div className="flex justify-end pt-2">
+                    <button type="button" className={primaryBtn} onClick={onClose}>
+                        Close
+                    </button>
+                </div>
+            </div>
+        </Dialog>
+    );
+};
+
 /* ─────────────────────────── Page ─────────────────────────── */
 const UserManagementPage = () => {
     const { user: me } = useAuth();
@@ -263,6 +329,15 @@ const UserManagementPage = () => {
     const [toast, setToast] = useState(null);
     const [dialog, setDialog] = useState(null); // { type: 'create' | 'details' | 'reset', ... }
     const [confirm, setConfirm] = useState(null); // user to (de)activate
+    const [sharingId, setSharingId] = useState(null); // student whose credentials e-mail is being sent
+    const [needsReplace, setNeedsReplace] = useState(null); // student whose password is no longer available to share
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+    const [bulkReplaceConfirmOpen, setBulkReplaceConfirmOpen] = useState(false);
+    const [bulkSending, setBulkSending] = useState(false);
+    const [bulkResults, setBulkResults] = useState(null);
+    const sharingRef = useRef(false);
+    const bulkRef = useRef(false);
     const timer = useRef(null);
 
     useEffect(() => {
@@ -270,6 +345,10 @@ const UserManagementPage = () => {
         timer.current = setTimeout(() => { setDebouncedQ(filters.q); setPage(1); }, 300);
         return () => clearTimeout(timer.current);
     }, [filters.q]);
+
+    useEffect(() => {
+        setSelectedIds([]);
+    }, [debouncedQ, filters.role, filters.status, page]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -303,10 +382,90 @@ const UserManagementPage = () => {
         }
     };
 
+    const displayedEligible = data.items.filter((u) => {
+        const isSelf = me && Number(me.user_id) === u.id;
+        return !isSelf && manageableRoles(me?.role).includes(u.role) && u.role === 'STUDENT';
+    });
+    const allSelected = displayedEligible.length > 0 && displayedEligible.every((u) => selectedIds.includes(u.id));
+    const someSelected = displayedEligible.some((u) => selectedIds.includes(u.id));
+
+    const toggleSelectAll = () => {
+        if (allSelected) {
+            const eligibleIdSet = new Set(displayedEligible.map((u) => u.id));
+            setSelectedIds((prev) => prev.filter((id) => !eligibleIdSet.has(id)));
+        } else {
+            const toAdd = displayedEligible.map((u) => u.id);
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...toAdd])));
+        }
+    };
+
+    const toggleSelectOne = (id) => {
+        setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    };
+
+    const handleBulkShare = async () => {
+        if (bulkRef.current || selectedIds.length === 0) return;
+        bulkRef.current = true;
+        setBulkConfirmOpen(false);
+        setBulkSending(true);
+        try {
+            const res = await userManagementApi.bulkShareCredentials(selectedIds);
+            setBulkResults(res);
+        } catch (err) {
+            say(apiError(err, 'The credentials could not be sent. Please try again.'), 'error');
+        } finally {
+            bulkRef.current = false;
+            setBulkSending(false);
+            load();
+        }
+    };
+
+    const handleBulkReplaceAndShare = async () => {
+        if (bulkRef.current || selectedIds.length === 0) return;
+        bulkRef.current = true;
+        setBulkReplaceConfirmOpen(false);
+        setBulkSending(true);
+        try {
+            const res = await userManagementApi.replacePasswordsAndShare(selectedIds);
+            setBulkResults(res);
+        } catch (err) {
+            say(apiError(err, 'Could not replace passwords and send credentials. Please try again.'), 'error');
+        } finally {
+            bulkRef.current = false;
+            setBulkSending(false);
+            load();
+        }
+    };
+
+    const closeBulkResults = () => {
+        setBulkResults(null);
+        setSelectedIds([]);
+        load();
+    };
+
+    // Share: the server e-mails the student's login e-mail + the password assigned at creation / Replace password. The password is
+    // never in this page; if it is no longer available the admin is sent to Replace password first (Share never changes a password).
+    const shareCredentials = async (target) => {
+        if (sharingRef.current) return;                      // one send at a time: a double click cannot send twice
+        sharingRef.current = true;
+        setSharingId(target.id);
+        try {
+            const res = await userManagementApi.shareCredentials(target.id);
+            say(res.message);
+        } catch (err) {
+            if (shareFailureCode(err) === 'PASSWORD_NOT_AVAILABLE') setNeedsReplace(target);
+            else say(apiError(err, 'The credentials could not be sent. Please try again.'), 'error');
+        } finally {
+            sharingRef.current = false;
+            setSharingId(null);
+            load();
+        }
+    };
+
     return (
         <WorkspacePage title="User Management" description="Create and manage the Student and Admin accounts that can sign in to PrepWin. There is no public sign-up: every account starts here.">
             <div className="space-y-4">
-                <PanelIntro onRefresh={load} loading={loading}>Passwords are stored securely and are never shown again after an account is created. Use Replace password to give someone a new one.</PanelIntro>
+                <PanelIntro onRefresh={load} loading={loading}>Passwords are stored securely and are never shown again after an account is created. Use Replace password to give someone a new one. Share e-mails a student their login details right after you create the account or replace the password.</PanelIntro>
 
                 <div className={`${cardCls} p-3 sm:p-4 flex flex-col lg:flex-row gap-3 lg:items-center`}>
                     <div className="relative flex-1 min-w-0">
@@ -319,8 +478,59 @@ const UserManagementPage = () => {
                     <select aria-label="Filter by status" className={`${inputCls} lg:w-40`} value={filters.status} onChange={(e) => { setFilters((f) => ({ ...f, status: e.target.value })); setPage(1); }}>
                         <option value="">Any status</option><option value="active">Active</option><option value="inactive">Deactivated</option>
                     </select>
+                    <button
+                        type="button"
+                        id="bulk-share-header-btn"
+                        className={selectedIds.length > 0 ? primaryBtn : ghostBtn}
+                        disabled={selectedIds.length === 0 || bulkSending}
+                        onClick={() => setBulkConfirmOpen(true)}
+                        title={selectedIds.length === 0 ? 'Select at least one eligible student to share credentials' : 'Share credentials with selected students'}
+                    >
+                        {bulkSending ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+                        <span>Share Credentials{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}</span>
+                    </button>
                     <button type="button" className={primaryBtn} onClick={() => setDialog({ type: 'create' })}><UserPlus size={15} /> Create account</button>
                 </div>
+
+                {selectedIds.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#5d8c2c]/10 border border-[#5d8c2c]/30 text-slate-800 dark:text-slate-100">
+                        <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-[#5d8c2c] text-white text-xs font-bold">
+                                {selectedIds.length}
+                            </span>
+                            <span className="text-sm font-bold">
+                                {selectedIds.length} {selectedIds.length === 1 ? 'student' : 'students'} selected
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button type="button" className={ghostBtn} onClick={() => setSelectedIds([])}>
+                                Clear selection
+                            </button>
+                            <button
+                                type="button"
+                                id="bulk-share-credentials-btn"
+                                className={ghostBtn}
+                                disabled={bulkSending}
+                                onClick={() => setBulkConfirmOpen(true)}
+                                title="Share credentials using existing retained passwords (skips accounts without retained passwords)"
+                            >
+                                {bulkSending ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+                                <span>Share Credentials</span>
+                            </button>
+                            <button
+                                type="button"
+                                id="bulk-replace-and-share-btn"
+                                className={primaryBtn}
+                                disabled={bulkSending}
+                                onClick={() => setBulkReplaceConfirmOpen(true)}
+                                title="Generate new secure passwords and email them to selected students"
+                            >
+                                {bulkSending ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />}
+                                <span>Replace Passwords & Share</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {error && <ErrorBanner onRetry={load}>{error}</ErrorBanner>}
 
@@ -334,6 +544,18 @@ const UserManagementPage = () => {
                         <table className="w-full text-sm text-left">
                             <thead>
                                 <tr className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                                    <th className="w-10 px-4 py-3 text-center">
+                                        <input
+                                            type="checkbox"
+                                            id="select-all-students"
+                                            aria-label="Select all eligible students on this page"
+                                            checked={allSelected}
+                                            ref={(el) => { if (el) el.indeterminate = !allSelected && someSelected; }}
+                                            disabled={displayedEligible.length === 0}
+                                            onChange={toggleSelectAll}
+                                            className="w-4 h-4 rounded border-slate-300 text-[#5d8c2c] focus:ring-[#5d8c2c] cursor-pointer"
+                                        />
+                                    </th>
                                     <th className="px-4 py-3 font-bold">Name</th><th className="px-4 py-3 font-bold">Email</th><th className="px-4 py-3 font-bold">Role</th>
                                     <th className="px-4 py-3 font-bold">Status</th><th className="px-4 py-3 font-bold hidden md:table-cell">Last sign-in</th><th className="px-4 py-3 font-bold text-right">Actions</th>
                                 </tr>
@@ -342,8 +564,21 @@ const UserManagementPage = () => {
                                 {data.items.map((u) => {
                                     const isSelf = me && Number(me.user_id) === u.id;
                                     const canManage = !isSelf && manageableRoles(me?.role).includes(u.role);
+                                    const isEligibleStudent = canManage && u.role === 'STUDENT';
                                     return (
                                         <tr key={u.id} className="border-b border-slate-100 dark:border-slate-800/70 last:border-0 hover:bg-slate-50/70 dark:hover:bg-slate-800/30">
+                                            <td className="w-10 px-4 py-3 text-center">
+                                                {isEligibleStudent ? (
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`select-user-${u.id}`}
+                                                        aria-label={`Select ${u.email}`}
+                                                        checked={selectedIds.includes(u.id)}
+                                                        onChange={() => toggleSelectOne(u.id)}
+                                                        className="w-4 h-4 rounded border-slate-300 text-[#5d8c2c] focus:ring-[#5d8c2c] cursor-pointer"
+                                                    />
+                                                ) : null}
+                                            </td>
                                             <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{u.full_name || '—'}{isSelf && <span className="ml-1.5 text-[10px] font-bold text-slate-400">(you)</span>}</td>
                                             <td className="px-4 py-3 text-slate-600 dark:text-slate-300 break-all">{u.email}</td>
                                             <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
@@ -352,6 +587,13 @@ const UserManagementPage = () => {
                                             <td className="px-4 py-3">
                                                 <div className="flex justify-end gap-1.5">
                                                     <button type="button" className={ghostBtn} onClick={() => setDialog({ type: 'details', userId: u.id, isSelf, canManage })} aria-label={`View ${u.email}`}><Eye size={14} /><span className="hidden lg:inline">View</span></button>
+                                                    {canManage && u.role === 'STUDENT' && (
+                                                        <button type="button" className={ghostBtn} onClick={() => shareCredentials(u)} disabled={sharingId !== null || !u.is_active}
+                                                            aria-label={`Share login credentials with ${u.email}`} aria-busy={sharingId === u.id}
+                                                            title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? "E-mail this student's login details" : 'Set a new password with Replace password first'}>
+                                                            {sharingId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}<span className="hidden lg:inline">{sharingId === u.id ? 'Sending...' : 'Share'}</span>
+                                                        </button>
+                                                    )}
                                                     {canManage && <button type="button" className={ghostBtn} onClick={() => setDialog({ type: 'reset', user: u })} aria-label={`Replace password for ${u.email}`}><KeyRound size={14} /></button>}
                                                     {canManage && <button type="button" className={ghostBtn} onClick={() => setConfirm(u)} aria-label={`${u.is_active ? 'Deactivate' : 'Activate'} ${u.email}`}><Power size={14} /></button>}
                                                 </div>
@@ -376,11 +618,21 @@ const UserManagementPage = () => {
             </div>
 
             {dialog?.type === 'create' && (
-                <CreateUserDialog allowedRoles={creatableRoles(me?.role)} onClose={() => setDialog(null)} onCreated={(res) => { setDialog(null); say(res.message); setPage(1); load(); }} />
+                <CreateUserDialog allowedRoles={creatableRoles(me?.role)} onClose={() => setDialog(null)} onCreated={(res) => { setDialog(null); say(res.user?.role === 'STUDENT' ? `${res.message} Click Share to e-mail the login details to the student.` : res.message); setPage(1); load(); }} />
             )}
             {dialog?.type === 'reset' && (
-                <ResetPasswordDialog user={dialog.user} onClose={() => setDialog(null)} onDone={(message) => { setDialog(null); say(message); load(); }} />
+                <ResetPasswordDialog user={dialog.user} onClose={() => setDialog(null)}
+                    onDone={(message) => { const student = dialog.user.role === 'STUDENT'; setDialog(null); say(student ? `${message} Click Share to e-mail the new password to the student.` : message); load(); }} />
             )}
+            <ConfirmationModal
+                isOpen={Boolean(needsReplace)}
+                onClose={() => setNeedsReplace(null)}
+                onConfirm={() => { const target = needsReplace; setNeedsReplace(null); setDialog({ type: 'reset', user: target }); }}
+                type="warning"
+                title="Password can't be shared yet"
+                message={`${needsReplace?.email}'s password is stored securely and cannot be recovered or shown, so it can't be e-mailed. Replace the password first, then click Share to send the new one.`}
+                confirmText="Replace password"
+            />
             {dialog?.type === 'details' && (
                 <DetailsDialog userId={dialog.userId} isSelf={dialog.isSelf} canManage={dialog.canManage} manageable={manageableRoles(me?.role)} onClose={() => setDialog(null)} onChanged={(m) => { say(m); load(); }}
                     onResetPassword={(u) => setDialog({ type: 'reset', user: u })} onToggleActive={(u) => setConfirm(u)} />
@@ -396,6 +648,38 @@ const UserManagementPage = () => {
                     : `${confirm?.email} will be able to sign in again.`}
                 confirmText={confirm?.is_active ? 'Deactivate' : 'Activate'}
             />
+            <ConfirmationModal
+                isOpen={bulkConfirmOpen}
+                onClose={() => setBulkConfirmOpen(false)}
+                onConfirm={handleBulkShare}
+                type="info"
+                title="Share Credentials"
+                message={`Send login credentials to ${selectedIds.length} selected ${selectedIds.length === 1 ? 'student' : 'students'}?\n\nEach student will receive an individual email with their login credentials if available. Retained passwords will be cleared once accepted by the mail server.`}
+                confirmText={`Send to ${selectedIds.length} ${selectedIds.length === 1 ? 'Student' : 'Students'}`}
+            />
+            <ConfirmationModal
+                isOpen={bulkReplaceConfirmOpen}
+                onClose={() => setBulkReplaceConfirmOpen(false)}
+                onConfirm={handleBulkReplaceAndShare}
+                type="warning"
+                title="Replace Passwords & Share Credentials?"
+                message={`Are you sure you want to replace passwords for ${selectedIds.length} selected ${selectedIds.length === 1 ? 'student' : 'students'}?\n\nThis will generate a new secure password for each student, sign them out of any active sessions, and email them their new login details. Their previous passwords will no longer work.`}
+                confirmText={`Replace Passwords & Send Emails`}
+            />
+            {bulkSending && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Sending credentials">
+                    <div className={`relative z-10 w-full max-w-sm ${cardCls} p-6 text-center space-y-3`}>
+                        <Loader2 size={36} className="mx-auto text-[#5d8c2c] animate-spin" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Sending Credentials</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Processing emails for {selectedIds.length} {selectedIds.length === 1 ? 'student' : 'students'}... Please do not close this window.
+                        </p>
+                    </div>
+                </div>
+            )}
+            {bulkResults && (
+                <BulkResultsDialog data={bulkResults} onClose={closeBulkResults} />
+            )}
             <Toast toast={toast} onClose={() => setToast(null)} />
         </WorkspacePage>
     );

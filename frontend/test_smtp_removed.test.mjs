@@ -13,8 +13,9 @@ describe('Email delivery (SMTP) removed from the UI', () => {
         for (const gone of ['email_sent', 'Email Sent', 'handleRetryInvitation', 'retryingInvitationId', 'Resend invitation email']) {
             assert.ok(!src.includes(gone), `Dashboard must not contain "${gone}"`);
         }
-        assert.ok(src.includes('Link Ready'));
-        assert.ok(src.includes('portal_url'), 'recruiter can still copy the invitation link');
+        // The former recruiter Dashboard (invitation status + "Link Ready") was replaced by the unified Overview (merge f5f54e63); links
+        // are now shared from Shared Links, which has its own Copy link coverage (test_shared_link_expiry / test_assessment_invitations).
+        assert.ok(src.includes('OverviewKpis'), 'the Dashboard is the unified Overview');
     });
 
     test('2. the retry-email API method is gone', () => {

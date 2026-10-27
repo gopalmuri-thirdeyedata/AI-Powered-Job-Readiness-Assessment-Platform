@@ -48,7 +48,11 @@ describe('Round submit animation holds before the next round', () => {
         const cod = page.slice(page.indexOf('const handleSubmitCoding'), page.indexOf('const continueToInterview'));
         assert.ok(cod.includes('await holdAnimation(submitStartedAt)'));
         const itv = page.slice(page.indexOf('const handleSubmitInterview'), page.indexOf('// ── Auto-submit handlers'));
-        assert.ok((itv.match(/await holdAnimation\(submitStartedAt\)/g) || []).length === 2, 'both success and fallback paths hold');
+        // A failed interview submission is no longer "completed anyway" (it keeps the screen and offers a retry), so only the SUCCESS path
+        // holds the animation; the failure path must never present the assessment as finished.
+        assert.equal((itv.match(/await holdAnimation\(submitStartedAt\)/g) || []).length, 1, 'the success path holds');
+        const failure = itv.slice(itv.indexOf('} catch'));
+        assert.ok(!failure.includes('holdAnimation') && failure.includes('interviewSubmitLockRef.current = false'), 'the failure path allows a retry and does not hold or complete');
     });
 });
 

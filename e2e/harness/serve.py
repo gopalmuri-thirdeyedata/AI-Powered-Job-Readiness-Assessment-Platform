@@ -127,6 +127,23 @@ def advance(seconds: int):
     return {"offset_seconds": OFFSET["seconds"]}
 
 
+@router.post("/session-state")
+def force_session_state(session_uuid: str, state: str):
+    """Put an attempt into an outage state (test-only), exactly what the platform does on a verified infrastructure failure."""
+    if state not in ("INFRASTRUCTURE_FAILURE", "MANUAL_REVIEW_REQUIRED"):
+        raise HTTPException(400, "only outage states can be forced")
+    db = _db()
+    try:
+        s = db.query(models.RoleReadySession).filter_by(session_uuid=session_uuid).first()
+        if s is None:
+            raise HTTPException(404, "no such session")
+        s.current_state = state
+        db.commit()
+        return {"state": state}
+    finally:
+        db.close()
+
+
 @router.get("/info")
 def info():
     return {"offset_seconds": OFFSET["seconds"], "executions": list(EXEC_LOG), "vapi_calls": list(VAPI_CALLS)}

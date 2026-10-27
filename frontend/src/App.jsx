@@ -32,6 +32,7 @@ const CandidateInvitationPortal = lazy(() => import('./pages/roleready/Candidate
 const SharedAssessmentEntry = lazy(() => import('./pages/candidate/SharedAssessmentEntry'));
 const ExamInstructions = lazy(() => import('./pages/candidate/ExamInstructions'));
 const RecruitmentAssessmentPage = lazy(() => import('./pages/candidate/RecruitmentAssessmentPage'));
+const StudentAssessmentComplete = lazy(() => import('./pages/candidate/StudentAssessmentComplete'));
 
 // Recruiter Pages (Lazy Loaded)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -91,6 +92,7 @@ function App() {
                         <Route path="/assessment/join/:shareToken" element={<SharedAssessmentEntry />} />
                         <Route path="/assessment/join/:shareToken/instructions" element={<ExamInstructions />} />
                         <Route path="/assessment/join/:shareToken/assessment" element={<RecruitmentAssessmentPage />} />
+                        <Route path="/assessment/join/:shareToken/complete" element={<StudentAssessmentComplete />} />
 
                         {/* RoleReady Core Assessment Routes - Protected */}
                         <Route path="/assessment/setup" element={<RoleReadyAuthGuard><RoleReadySetup /></RoleReadyAuthGuard>} />

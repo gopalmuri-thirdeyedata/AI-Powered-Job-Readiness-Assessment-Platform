@@ -23,31 +23,31 @@ const open = async (opts) => {
   return { browser, context, ui };
 };
 
-describe('registration and the explicit start', () => {
-  test('exactly three fields: no password, OTP, social sign-in or candidate account', async () => {
+describe('student sign-in and the explicit start', () => {
+  test('the link asks only for the account email and password: no name / phone registration form, no OTP, no social sign-in', async () => {
     const { browser, ui } = await open();
     try {
       await ui.page.goto(`${stack.web}/assessment/join/${org.share_token}`);
-      await ui.page.getByPlaceholder('e.g. Priya Sharma').waitFor();
+      await ui.page.getByPlaceholder('you@example.com').waitFor();
       const inputs = await ui.page.locator('input:visible, textarea:visible').evaluateAll((els) => els.map((e) => ({ type: e.type, ph: e.placeholder })));
-      assert.deepEqual(inputs.map((i) => i.ph).sort(), ['Phone number', 'e.g. Priya Sharma', 'you@example.com'].sort(), JSON.stringify(inputs));
-      assert.ok(inputs.every((i) => i.type !== 'password'));
+      assert.equal(inputs.length, 2, JSON.stringify(inputs));
+      assert.deepEqual(inputs.map((i) => i.type).sort(), ['email', 'password']);
       const text = (await ui.text()).toLowerCase();
-      for (const forbidden of ['password', 'sign in with google', 'continue with google', 'create account', 'send code', 'enter the code']) assert.ok(!text.includes(forbidden), forbidden);
-      assert.match(text, /no account or verification code is needed/, 'the page states that nothing else is required');
-      // validation is per field and nothing is sent when it fails
-      await ui.page.getByRole('button', { name: 'Continue' }).click();
+      for (const forbidden of ['full name', 'phone number', 'e.g. priya sharma', 'sign in with google', 'continue with google', 'create account', 'send code', 'enter the code']) assert.ok(!text.includes(forbidden), forbidden);
+      assert.equal(ui.count(/\/register$/), 0, 'the old candidate registration request is never made');
+      // an empty form sends nothing
+      await ui.page.getByRole('button', { name: 'Sign in' }).click();
       await ui.page.waitForTimeout(500);
-      assert.equal(ui.count(/\/register$/), 0, 'an invalid form never reaches the server');
-      assert.match(await ui.text(), /required|valid|enter/i);
+      assert.equal(ui.count(/\/api\/auth\/login/), 0, 'an empty form never reaches the server');
+      assert.match(await ui.text(), /enter your email address and password/i);
     } finally { await browser.close(); }
   });
 
-  test('one reusable link: a second candidate uses the same URL and gets an independent registration', async () => {
+  test('one reusable link: a second student uses the same URL and gets an independent registration', async () => {
     const a = await open(); const b = await open();
     try {
-      const ea = await U.registerCandidate(a.ui, stack.web, org.share_token);
-      const eb = await U.registerCandidate(b.ui, stack.web, org.share_token);
+      const ea = await U.registerCandidate(a.ui, stack.web, org.share_token, await stack.newOrgStudent(org));
+      const eb = await U.registerCandidate(b.ui, stack.web, org.share_token, await stack.newOrgStudent(org));
       assert.notEqual(ea, eb);
       assert.match(a.ui.page.url(), new RegExp(`/assessment/join/${org.share_token}/instructions`));
       assert.match(b.ui.page.url(), new RegExp(`/assessment/join/${org.share_token}/instructions`));
@@ -57,7 +57,8 @@ describe('registration and the explicit start', () => {
   test('nothing starts the clock until the Start Assessment click; the click creates exactly one attempt with a 20 / 60 minute clock', async () => {
     const { browser, ui } = await open();
     try {
-      await U.registerCandidate(ui, stack.web, org.share_token);
+      await U.registerCandidate(ui, stack.web, org.share_token, await stack.newOrgStudent(org));
+      assert.equal(ui.count(/\/start$/), 0, 'signing in starts nothing');
       assert.equal(await ui.page.getByRole('button', { name: 'Continue to Device Check' }).isDisabled(), true, 'the acknowledgement gates the next step');
       await U.acknowledgeAndOpenDeviceCheck(ui);
       await ui.page.reload();                                                 // reading time, reloads and the device check never start anything
@@ -83,7 +84,7 @@ describe('the full journey in the browser', () => {
   test('aptitude -> coding (Python + Java, errors surfaced) -> interview -> reports show the persisted scores', async () => {
     const { browser, ui } = await open();
     try {
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       const uuid = U.sessionUuid(ui);
 
       // ---- aptitude: drafts autosave, the section is submitted once
@@ -150,7 +151,7 @@ describe('integrity, interruptions and the clock', () => {
     const { browser, ui } = await open();
     await U.stubNoPersonProctoring(ui.page);                      // deterministic: nobody is in front of the camera
     try {
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       const uuid = U.sessionUuid(ui);
       for (let i = 0; i < 60; i++) {                                       // the fake camera never shows a person: events accumulate
         const m = (await ui.text()).match(/Integrity events:\s*(\d+)/);
@@ -173,7 +174,7 @@ describe('integrity, interruptions and the clock', () => {
   test('frame analysis uses the sitting capability: authorized in the browser, refused without it', async () => {
     const { browser, ui } = await open();
     try {
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       for (let i = 0; i < 20 && !ui.t.responses.some((r) => r.path === '/api/proctor/analyze-frame'); i++) await ui.page.waitForTimeout(1000);
       const analyzed = ui.t.responses.filter((r) => r.path === '/api/proctor/analyze-frame');
       assert.ok(analyzed.length > 0 && analyzed.every((r) => r.status === 200), JSON.stringify(analyzed.slice(0, 3)));
@@ -185,7 +186,7 @@ describe('integrity, interruptions and the clock', () => {
   test('a page refresh ends the sitting for the candidate (no resume) and, once the heartbeat is stale, the attempt is abandoned', async () => {
     const { browser, ui } = await open();
     try {
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       const uuid = U.sessionUuid(ui);
       await U.answerAptitude(ui, { count: 3, submit: false });
       await ui.page.reload();
@@ -206,7 +207,7 @@ describe('integrity, interruptions and the clock', () => {
   test('past the 60-minute deadline the attempt is closed, earned sections are kept and there is no overall score', async () => {
     const { browser, ui } = await open();
     try {
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       const uuid = U.sessionUuid(ui);
       await U.answerAptitude(ui);
       await U.openCoding(ui);
@@ -228,7 +229,7 @@ describe('integrity, interruptions and the clock', () => {
 
 describe('the voice interview lifecycle', () => {
   const toInterview = async (ui, { denyMic = false } = {}) => {
-    await U.startRecruitmentAttempt(ui, stack, org.share_token);
+    await U.startRecruitmentAttempt(ui, stack, org);
     await U.answerAptitude(ui);
     await U.openCoding(ui);
     if (!denyMic) await U.stubVapiRest(ui.page);                     // the denial scenario talks to the real Vapi API (opt-in)
@@ -270,7 +271,7 @@ describe('the voice interview lifecycle', () => {
   test('a connection that never completes is released by the watchdog instead of spinning forever', async () => {
     const { browser, ui } = await open();
     try {
-      await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      await U.startRecruitmentAttempt(ui, stack, org);
       await U.answerAptitude(ui);
       await U.openCoding(ui);
       await ui.page.route('**/api.vapi.ai/**', () => { /* never answered */ });
@@ -311,7 +312,7 @@ describe('tenant isolation in the hiring team views', () => {
   test("another organization's admin can neither list nor open this organization's candidates", async () => {
     const { browser, ui } = await open();
     try {
-      const email = await U.startRecruitmentAttempt(ui, stack, org.share_token);
+      const email = await U.startRecruitmentAttempt(ui, stack, org);
       const other = await stack.newOrg('rec2');
       const mine = (await stack.call('GET', `/api/admin/recruitment/candidates?search=${encodeURIComponent(email)}`, { token: org.token })).body.items;
       assert.equal(mine.length, 1);

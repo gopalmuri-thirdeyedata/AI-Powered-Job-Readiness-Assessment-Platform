@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link2, Lock } from 'lucide-react';
+import { Link2, Lock, Users } from 'lucide-react';
 import ConfirmationModal from '../ConfirmationModal';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
 import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, StatusBadge, Toast, cardCls, formatDate, ghostBtn, primaryBtn } from './adminUi';
 import SharedLinkField from './SharedLinkField';
+import ShareWithStudents from './ShareWithStudents';
 import { activeLinkRoles, expiredLinkRoles, expiryNote } from './shareLinks';
 
 /**
@@ -17,6 +18,7 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
     const [toast, setToast] = useState(null);
     const [closeTarget, setCloseTarget] = useState(null);
     const [busyId, setBusyId] = useState(null);
+    const [shareOpenId, setShareOpenId] = useState(null); // role whose optional "Share with Students" panel is open
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -92,10 +94,14 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
                                 <span className="text-xs text-slate-500">{role.registration_count ?? 0} registered</span>
                             </div>
                             {role.status === 'PUBLISHED'
-                                ? <button type="button" className={ghostBtn} disabled={busyId === role.id} onClick={() => setCloseTarget(role)}><Lock size={14} /> Close</button>
+                                ? <div className="flex flex-wrap gap-2">
+                                    <button type="button" className={ghostBtn} aria-expanded={shareOpenId === role.id} onClick={() => setShareOpenId(shareOpenId === role.id ? null : role.id)}><Users size={14} /> Share with Students</button>
+                                    <button type="button" className={ghostBtn} disabled={busyId === role.id} onClick={() => setCloseTarget(role)}><Lock size={14} /> Close</button>
+                                </div>
                                 : <button type="button" className={primaryBtn} disabled={busyId === role.id} onClick={() => reopen(role)}>Reopen</button>}
                         </div>
                         {role.status === 'PUBLISHED' && <div className="mt-3"><SharedLinkField role={role} onCopy={onCopied} /></div>}
+                        {role.status === 'PUBLISHED' && shareOpenId === role.id && <ShareWithStudents role={role} onToast={setToast} />}
                         {role.status === 'CLOSED' && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Closed: the link no longer accepts new candidates. Reopen to make the same link work again.</p>}
                         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400" data-testid="link-expiry">{expiryNote(role, formatDate)}</p>
                     </article>

@@ -85,13 +85,14 @@ describe('Candidate shared-link flow: registration -> Exam Instructions -> devic
         assert.ok(instructionsSrc.includes('saveAcknowledgement(shareToken)'));
     });
 
-    test('6. successful registration navigates to the instructions page and never starts the attempt', () => {
-        assert.ok(entrySrc.includes('<CandidateRegistrationModal'));
-        const registerBlock = entrySrc.slice(entrySrc.indexOf('const handleRegister'), entrySrc.indexOf('if (loadError)'));
-        assert.ok(registerBlock.includes('candidateApi.register'));
-        assert.ok(!registerBlock.includes('candidateApi.start'), 'registering must not start the attempt');
-        assert.ok(registerBlock.includes('saveRegistration(shareToken, res.registration_token)'));
-        assert.ok(registerBlock.includes('navigate(instructionsPath, { replace: true })'), 'registration leads straight to the instructions page');
+    test('6. a signed-in student is taken to the instructions page and access never starts the attempt', () => {
+        // The invited-student workflow replaced the name / phone / email popup with sign-in (see test_student_assessment_flow.test.mjs).
+        assert.ok(!entrySrc.includes('<CandidateRegistrationModal') && !entrySrc.includes('candidateApi.register'), 'the old form is not part of this workflow');
+        const accessBlock = entrySrc.slice(entrySrc.indexOf('studentAssessmentApi.access'), entrySrc.indexOf('if (loadError)'));
+        assert.ok(accessBlock.includes('studentAssessmentApi.access'));
+        assert.ok(!accessBlock.includes('candidateApi.start'), 'access must not start the attempt');
+        assert.ok(accessBlock.includes('saveRegistration(shareToken, res.registration_token)'));
+        assert.ok(accessBlock.includes('navigate(instructionsPath, { replace: true })'), 'access leads straight to the instructions page');
         assert.ok(entrySrc.includes('`/assessment/join/${shareToken}/instructions`'));
         assert.ok(!entrySrc.includes('candidateApi.start') && !entrySrc.includes('type="checkbox"'), 'the entry page no longer hosts the start button or the acknowledgement');
     });

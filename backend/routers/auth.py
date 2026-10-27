@@ -308,6 +308,8 @@ def change_password(
 
     current_user.hashed_password = utils.get_password_hash(payload.new_password)
     current_user.password_changed = True
+    from services import credential_delivery
+    credential_delivery.discard(db, current_user.id)   # a retained "assigned" password is no longer the password
     local_auth.revoke_user_sessions(db, current_user.id)
     raw, row = local_auth.create_session(db, current_user, ip=client_ip(request), user_agent=request.headers.get("user-agent"))
     db.commit()

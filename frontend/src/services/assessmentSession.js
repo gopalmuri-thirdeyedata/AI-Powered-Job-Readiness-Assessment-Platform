@@ -84,3 +84,20 @@ export const clearSession = () => {
         store()?.removeItem(SESSION_KEY);
     } catch { /* ignore */ }
 };
+
+// Marks (per share link, this tab only) that the sitting was opened by a signed-in student, so that finishing it leads to the
+// completion page (review + report) instead of the anonymous "Assessment submitted" screen. It carries no secret and no identity:
+// every student endpoint re-checks the signed-in account on the server.
+const STUDENT_PREFIX = 'pw_student:';
+export const saveStudentAccess = (shareToken) => {
+    try {
+        store()?.setItem(STUDENT_PREFIX + shareToken, '1');
+    } catch { /* ignore */ }
+};
+export const hasStudentAccess = (shareToken) => {
+    try {
+        return store()?.getItem(STUDENT_PREFIX + shareToken) === '1';
+    } catch {
+        return false;
+    }
+};

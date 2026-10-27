@@ -30,16 +30,18 @@ export const timers = async (ui) => ((await ui.text()).match(/(\d\d:\d\d)\s+TOTA
 export const toSeconds = (mmss) => { const [m, s] = mmss.split(':').map(Number); return m * 60 + s; };
 
 // ------------------------------------------------------------------------------ recruitment candidate
-export async function registerCandidate(ui, web, shareToken, { name = 'E2E Candidate', phone = '4155550123' } = {}) {
+/**
+ * Opens the shared link and signs in with the student's own account (the invited-student workflow: no name / phone form).
+ * Resolves with the student's email once the instructions page is showing; nothing has been started at that point.
+ */
+export async function registerCandidate(ui, web, shareToken, student) {
   const { page } = ui;
   await page.goto(`${web}/assessment/join/${shareToken}`);
-  const email = `e2e.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.com`;
-  await page.getByPlaceholder('e.g. Priya Sharma').fill(name);
-  await page.getByPlaceholder('Phone number').fill(phone);
-  await page.getByPlaceholder('you@example.com').fill(email);
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await page.waitForURL(/instructions/, { timeout: 15000 });
-  return email;
+  await page.getByPlaceholder('you@example.com').fill(student.email);
+  await page.locator('input[autocomplete="current-password"]').fill(student.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL(/instructions/, { timeout: 20000 });
+  return student.email;
 }
 
 export async function acknowledgeAndOpenDeviceCheck(ui) {
@@ -123,9 +125,10 @@ export const stubVapiRest = (page) => page.route('**/api.vapi.ai/**', (route) =>
   status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'call_e2e', webCallUrl: 'https://e2e-fake.daily.co/room' }),
 }));
 
-/** From the candidate's first screen to a started attempt (register -> instructions -> device check -> explicit start). */
-export async function startRecruitmentAttempt(ui, stack, shareToken) {
-  const email = await registerCandidate(ui, stack.web, shareToken);
+/** From the student's first screen to a started attempt (sign in -> instructions -> device check -> explicit start). `org` is a stack.newOrg() result. */
+export async function startRecruitmentAttempt(ui, stack, org) {
+  const student = await stack.newOrgStudent(org);
+  const email = await registerCandidate(ui, stack.web, org.share_token, student);
   await acknowledgeAndOpenDeviceCheck(ui);
   await clickStart(ui);
   return email;

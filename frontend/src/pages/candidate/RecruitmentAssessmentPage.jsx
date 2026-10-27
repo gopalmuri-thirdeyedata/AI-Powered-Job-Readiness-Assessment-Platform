@@ -5,7 +5,7 @@ import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment';
 import { candidateApi, errorMessage } from '../../services/recruitmentApi';
 import { createRecruitmentAssessmentApi } from '../../services/assessmentApi';
 import {
-    clearAcknowledgement, clearLease, clearSession, getLease, hasAcknowledged, loadRegistration, loadSession,
+    clearAcknowledgement, clearLease, clearSession, getLease, hasAcknowledged, hasStudentAccess, loadRegistration, loadSession,
 } from '../../services/assessmentSession';
 
 const HEARTBEAT_MS = 15000;
@@ -132,6 +132,8 @@ const RecruitmentAssessmentPage = () => {
     }
     if (phase === 'closed') {
         const done = ['COMPLETED', 'EVALUATION_PENDING'].includes(outcome?.state);
+        // A signed-in student continues to their own completion page; other candidates keep this screen.
+        if (done && hasStudentAccess(shareToken)) return <Navigate to={`/assessment/join/${shareToken}/complete`} replace />;
         return (
             <Screen icon={done ? CheckCircle2 : Clock} title={done ? 'Assessment submitted' : 'Assessment closed'} tone={done ? 'ok' : 'muted'}>
                 {done

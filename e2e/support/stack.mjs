@@ -104,5 +104,14 @@ export async function startStack(opts = {}) {
       return { ...admin, ...job };
     },
     async newStudent(tag) { return (await call('POST', `/__e2e/student?tag=${tag}`)).body; },
+    /** A student account of the org's own organization, created through the real admin API (what an administrator does). */
+    async newOrgStudent(org, name = 'E2E Student') {
+      const tag = `${Date.now()}.${Math.floor(Math.random() * 1e6)}`;
+      const email = `e2e.student.${tag}@students.prepwin-e2e.com`;
+      const password = 'Zx9#pLm2!qWe-4417';
+      const r = await call('POST', '/api/admin/users/', { token: org.token, json: { role: 'STUDENT', full_name: name, email, password } });
+      if (r.status !== 201) throw new Error(`could not create the e2e student: ${r.status} ${JSON.stringify(r.body)}`);
+      return { name, email, password };
+    },
   };
 }

@@ -1,0 +1,19 @@
+[
+  {"name": "empty", "text": "", "words": 0},
+  {"name": "spaces only", "text": "     ", "words": 0},
+  {"name": "whitespace mix only", "text": " \t\n\r\n  　 ", "words": 0},
+  {"name": "one word", "text": "hello", "words": 1},
+  {"name": "leading and trailing whitespace", "text": "   alpha beta   ", "words": 2},
+  {"name": "repeated spaces", "text": "a    b     c", "words": 3},
+  {"name": "line breaks (LF, CRLF, blank lines)", "text": "one\ntwo\r\nthree\n\n\nfour", "words": 4},
+  {"name": "tabs", "text": "x\ty\t\tz", "words": 3},
+  {"name": "no-break space separates words", "text": "alpha beta", "words": 2},
+  {"name": "ideographic space separates words", "text": "alpha　beta", "words": 2},
+  {"name": "line separator separates words", "text": "alpha beta gamma", "words": 3},
+  {"name": "punctuation attached to a word is one word", "text": "well,done.really?yes!", "words": 1},
+  {"name": "hyphen-only tokens still count (definition is whitespace-delimited)", "text": "- - -", "words": 3},
+  {"name": "control separators that only some languages treat as whitespace are NOT separators", "text": "a\u001cb\u001dc", "words": 1},
+  {"name": "zero-width space is not whitespace", "text": "a​b", "words": 1},
+  {"name": "non-latin words", "text": "こんにちは 世界 привет", "words": 3},
+  {"name": "emoji tokens", "text": "great 😀 exam 👍", "words": 4}
+]

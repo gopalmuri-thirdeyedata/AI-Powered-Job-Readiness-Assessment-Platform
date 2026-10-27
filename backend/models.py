@@ -205,6 +205,32 @@ class JobShareLinkHistory(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     retired_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class AssessmentInvitation(Base):
+    """
+    E-mail invitation of one existing student to one published assessment link. One row per (assessment, link, student):
+    that unique key is what makes a repeated request a no-op instead of a second e-mail.
+
+    status: PENDING (claimed, being sent) | SENT (accepted by the SMTP server; NOT proof of inbox delivery) | FAILED (retryable).
+    Sending never creates a student account, a registration or an attempt; the recipient follows the normal link workflow.
+    """
+    __tablename__ = "assessment_invitations"
+    id = Column(Integer, primary_key=True, index=True)
+    job_description_id = Column(Integer, ForeignKey("job_descriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    student_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    share_token = Column(String(64), nullable=False)  # the link this invitation carried (a renewed link allows a fresh invitation)
+    recipient_email = Column(String(150), nullable=False)
+    status = Column(String(20), nullable=False, default="PENDING", server_default="PENDING")
+    attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_error = Column(String(255), nullable=True)  # short, credential-free reason; never a raw server response
+    invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)  # when the SMTP server accepted the message
+
+    __table_args__ = (UniqueConstraint("job_description_id", "student_user_id", "share_token", name="uix_invitation_job_student_link"),)
+
+
 class Candidate(Base):
     __tablename__ = "candidates"
     id = Column(Integer, primary_key=True, index=True)
@@ -754,6 +780,9 @@ class CandidateRegistration(Base):
     email = Column(String(150), nullable=False)
     blueprint_version = Column(Integer, nullable=True)  # blueprint version active at registration time
     attempt_session_uuid = Column(String(64), unique=True, nullable=True)
+    # Set only when the registration was created from an authenticated student account (invited-student workflow). The attempt,
+    # its review and its report then belong to that account; NULL = the older accountless candidate registration.
+    student_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(30), default="REGISTERED", nullable=False)  # REGISTERED, CONSUMED
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -765,6 +794,43 @@ class CandidateRegistration(Base):
         UniqueConstraint("job_description_id", "email", name="uix_jd_candidate_reg_email"),
         Index("uix_jd_reg_norm_email", "job_description_id", text("(lower(trim(email)))"), unique=True),
     )
+
+
+class AssessmentReview(Base):
+    """
+    The mandatory exam review a student writes after finishing an assessment attempt (at least 30 words, enforced by the server).
+    Exactly one per attempt and immutable once saved: the UNIQUE(session_id) key is the source of truth for "may download the report".
+    Saving a review never touches the attempt, its scores or its evaluation.
+    """
+    __tablename__ = "assessment_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("roleready_sessions.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    student_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    review_text = Column(Text, nullable=False)
+    word_count = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CredentialDelivery(Base):
+    """
+    A student's just-assigned password, held ENCRYPTED and only until it has been e-mailed to the student (the "Share" action in User
+    Management), it expires, or the password changes. It exists because a stored password hash cannot be reversed: without it the
+    server could not send what an administrator has just set. There is never a plaintext copy; the key lives in the server configuration,
+    not in the database. One row per student; a newer password replaces the older one.
+    """
+    __tablename__ = "credential_deliveries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    ciphertext = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime, nullable=False)          # UTC, server clock
+    sending_at = Column(DateTime, nullable=True)           # claim marker while a send is in flight (prevents duplicate sends)
+    attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_error = Column(String(255), nullable=True)        # short, credential-free reason of the last failed attempt
 
 
 class JobBlueprintVersion(Base):

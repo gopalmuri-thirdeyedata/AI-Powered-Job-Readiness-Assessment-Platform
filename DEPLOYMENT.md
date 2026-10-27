@@ -79,7 +79,9 @@ This document provides step-by-step instructions for deploying the **HiringAI En
 | `SESSION_IDLE_MINUTES` | Optional | Idle timeout in minutes (default 120) |
 | `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_SAMESITE` | Optional | Cookie overrides. `Secure` is on by default in production; serve the app over HTTPS |
 | `ADMIN_INITIAL_PASSWORD` | Optional | First run only. Without it a new platform admin is created locked: run `python scripts/set_admin_password.py` |
+| `CREDENTIAL_SHARE_TTL_MINUTES` / `CREDENTIAL_DELIVERY_KEY` | Optional | User Management "Share": minutes an assigned student password stays (encrypted) available to e-mail (default 120, `0` disables); optional explicit Fernet key (default: derived from `JWT_SECRET_KEY`, so rotating that secret makes retained passwords unreadable, which is safe: Share then asks for Replace password). Needs the SMTP settings above |
 | `PLATFORM_ADMIN_EMAIL` | Yes | Explicit owner email (`admin@thirdeyedata.ai`) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional | Enables e-mailing assessment links to selected students ("Share with Students"). Without them that panel says e-mail is not configured; copying the link always works. Port 587 = STARTTLS, 465 = implicit TLS; credentials are never sent unencrypted. `SMTP_FROM` defaults to `SMTP_USER`; optional `SMTP_SECURITY` = `auto`/`starttls`/`ssl`/`none`. Invitation links use `FRONTEND_URL`, which must be the public URL (sending is refused in production if it points at localhost) |
 | `GROQ_API_KEY` | Yes | Primary Groq API key |
 | `GROQ_API_KEY_FALLBACK_1` | Optional | Fallback Groq API key 1 |
 | `GROQ_API_KEY_FALLBACK_2` | Optional | Fallback Groq API key 2 |
