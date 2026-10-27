@@ -52,14 +52,21 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=https://interviewer.learningpath.ai
       - CORS_ORIGINS=https://interviewer.learningpath.ai,http://localhost:8212,http://127.0.0.1:8212
+      # In-house code runner on the private runner_net (no auth token: the network is private)
+      - JUDGE0_API_URL=http://code_runner:2358/submissions
+      - CODE_EXECUTION_ENGINE=judge0
+      - SANDBOX_MAX_CONCURRENCY=2
     volumes:
       - interviewer_media:/app/media
     networks:
       - interviewer_net
+      - runner_net
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      code_runner:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
@@ -67,6 +74,31 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  code_runner:
+    build:
+      context: ./code-runner
+    container_name: interviewer_code_runner
+    restart: always
+    init: true            # reaps the orphaned children a fork bomb leaves behind (PID 1 is a Python server that does not)
+    networks:
+      - runner_net
+    mem_limit: 3g
+    memswap_limit: 3g
+    cpus: 3.0
+    pids_limit: 512
+    read_only: true
+    tmpfs:
+      - /tmp/runs:size=256m,mode=0755,noexec,nosuid
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:2358/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:
@@ -101,6 +133,9 @@ networks:
     ipam:
       config:
         - subnet: 10.97.0.0/24
+  runner_net:
+    driver: bridge
+    internal: true        # no outbound internet, no route to the host
 
 volumes:
   interviewer_mysql_data:
