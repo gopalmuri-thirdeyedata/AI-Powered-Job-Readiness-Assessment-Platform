@@ -1,11 +1,11 @@
 """
 Recruitment shared-link workflow on the shared assessment engine:
   * backend-enforced rules acknowledgement,
-  * the Student Platform's evaluators / formats / Vapi interview serve public candidates (explicit adapter, capability auth),
+  * the Student Platform's evaluators / formats / voice interview serve public candidates (explicit adapter, capability auth),
   * parity with the Student Platform: identical answers => identical section scores and overall score in both workflows,
   * proctoring evidence and rubric confidentiality.
 
-Sandbox, Gemini and Vapi are MOCKED here (local subprocess / fakes). Nothing in this file proves a live external call.
+Sandbox, Gemini and the voice service are MOCKED here (local subprocess / fakes). Nothing in this file proves a live external call.
 """
 import json
 from datetime import timedelta
@@ -17,7 +17,7 @@ from services import assessment_clock
 from services import assessment_engine as engine
 from services import assessment_flow_service as flow
 from services import assessment_policy as policy
-from services import interview_evaluation, roleready_service as rs, vapi_service
+from services import elevenlabs_service, gemini_client, interview_evaluation, roleready_service as rs
 from tests import recruitment_helpers as h
 from tests.test_roleready_pipeline import db_session, setup_test_data  # noqa: F401  (student fixtures)
 
@@ -126,50 +126,91 @@ def _to_interview(db, env):
 
 
 @pytest.fixture
-def fake_vapi(monkeypatch):
+def fake_voice(monkeypatch):
     seen = {}
+    real = elevenlabs_service.build_voice_session
 
-    def fake(**kw):
+    def spy(**kw):
         seen.update(kw)
-        return "asst_test_123", vapi_service.build_assistant_payload(**kw)
+        return real(**kw)
 
-    monkeypatch.setattr(vapi_service, "create_or_build_assistant", fake)
+    monkeypatch.setattr(elevenlabs_service, "build_voice_session", spy)
     return seen
 
 
-def test_vapi_init_provisions_the_shared_voice_interviewer_within_the_section_limit(db, env, clk, fake_vapi):
+def test_voice_init_defines_the_shared_voice_interviewer_within_the_section_limit(db, env, clk, fake_voice):
     s = _to_interview(db, env)
     clk.advance(300)
-    r = client.post(h.sess_url(s, "vapi-init"), headers=h.sh(s))
+    r = client.post(h.sess_url(s, "voice-init"), headers=h.sh(s))
     assert r.status_code == 200
     body = r.json()
-    assert body["assistantId"] == "asst_test_123" and body["assistantConfig"]["maxDurationSeconds"] == 1200 - 300
+    assert body["voiceConfig"]["maxDurationSeconds"] == 1200 - 300 and "Test Candidate" in body["voiceConfig"]["firstMessage"]
     assert body["remaining_seconds"] == 900 and len(body["questions"]) == 5
-    assert fake_vapi["max_duration_seconds"] == 900 and fake_vapi["candidate_name"] == "Test Candidate"
-    blob = r.text + json.dumps(fake_vapi["questions"])
+    assert fake_voice["max_duration_seconds"] == 900 and fake_voice["candidate_name"] == "Test Candidate"
+    blob = r.text + json.dumps(fake_voice["questions"])
     assert "evaluation_criteria" not in blob and "expected_technical_concepts" not in blob   # the rubric never reaches the browser or the voice model
+    assert "system_prompt" not in r.text and "assistantId" not in r.text                     # the interview prompt stays on the server
 
 
-def test_vapi_init_is_gated_like_every_other_candidate_call(db, env, clk, fake_vapi):
+def test_voice_init_is_gated_like_every_other_candidate_call(db, env, clk, fake_voice):
     s = started(env)
-    assert client.post(h.sess_url(s, "vapi-init"), headers=h.sh(s)).status_code == 403            # interview not unlocked yet
-    assert client.post(h.sess_url(s, "vapi-init")).status_code == 401                                # no capability
-    assert client.post(h.sess_url(s, "vapi-init"), headers={"X-Session-Token": "bad", "X-Session-Lease": s["session_lease"]}).status_code == 403
+    assert client.post(h.sess_url(s, "voice-init"), headers=h.sh(s)).status_code == 403            # interview not unlocked yet
+    assert client.post(h.sess_url(s, "voice-init")).status_code == 401                                # no capability
+    assert client.post(h.sess_url(s, "voice-init"), headers={"X-Session-Token": "bad", "X-Session-Lease": s["session_lease"]}).status_code == 403
     other = started(env)
-    assert client.post(h.sess_url(s, "vapi-init"), headers=h.sh(other)).status_code == 403          # another candidate's capability
+    assert client.post(h.sess_url(s, "voice-init"), headers=h.sh(other)).status_code == 403          # another candidate's capability
     s2 = _to_interview(db, env)
     clk.advance(21 * 60)
-    late = client.post(h.sess_url(s2, "vapi-init"), headers=h.sh(s2))
-    assert late.status_code in (408, 409)                                                           # nothing is provisioned after the deadline
+    late = client.post(h.sess_url(s2, "voice-init"), headers=h.sh(s2))
+    assert late.status_code in (408, 409)                                                           # nothing is set up after the deadline
 
 
-def test_vapi_init_is_rate_limited_per_sitting(db, env, fake_vapi):
+def test_voice_init_is_rate_limited_per_sitting(db, env, fake_voice):
     s = _to_interview(db, env)
-    codes = [client.post(h.sess_url(s, "vapi-init"), headers=h.sh(s)).status_code for _ in range(6)]
-    assert codes[:4] == [200] * 4 and codes[4:] == [429, 429]            # every call provisions a billable voice assistant
+    codes = [client.post(h.sess_url(s, "voice-init"), headers=h.sh(s)).status_code for _ in range(6)]
+    assert codes[:4] == [200] * 4 and codes[4:] == [429, 429]            # every call rebuilds the interview definition
 
 
-def test_voice_interview_answers_and_transcript_are_evaluated_and_reported(db, env, monkeypatch, fake_vapi):
+def _turn(s, **form):
+    return client.post(h.sess_url(s, "voice-turn"), headers={k: v for k, v in h.sh(s).items() if k != "Content-Type"}, **form)
+
+
+def test_voice_turn_speaks_the_opening_then_answers_a_recorded_reply(db, env, elevenlabs_http, monkeypatch):
+    monkeypatch.setattr(gemini_client, "call_gemini_text", lambda prompt, system_prompt, temperature=0.1: "Thanks. What was the hardest part?")
+    s = _to_interview(db, env)
+    assert _turn(s, data={"opening": "true"}).status_code == 409                         # not initialised yet
+    assert client.post(h.sess_url(s, "voice-init"), headers=h.sh(s)).status_code == 200
+    opening = _turn(s, data={"opening": "true"})
+    assert opening.status_code == 200 and opening.json()["audio_base64"] and "Test Candidate" in opening.json()["reply_text"]
+    assert opening.json()["user_text"] == ""
+
+    history = json.dumps([{"role": "ai", "text": opening.json()["reply_text"]}])
+    r = _turn(s, data={"history": history, "opening": "false"}, files={"audio": ("answer.webm", b"RIFFfake", "audio/webm")})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user_text"] == elevenlabs_http.transcript and body["reply_text"] and body["audio_base64"]
+    stt_call = next(c for c in elevenlabs_http.calls if c["url"].endswith("/speech-to-text"))
+    assert stt_call["headers"]["xi-api-key"] == "test-api-key-not-real"                   # the key is only ever sent from the server
+
+
+def test_voice_turn_with_no_speech_keeps_listening_and_is_gated(db, env, elevenlabs_http):
+    s = _to_interview(db, env)
+    assert client.post(h.sess_url(s, "voice-init"), headers=h.sh(s)).status_code == 200
+    elevenlabs_http.transcript = ""
+    r = _turn(s, data={"history": "[]"}, files={"audio": ("answer.webm", b"RIFFfake", "audio/webm")})
+    assert r.status_code == 200 and r.json()["user_text"] == "" and r.json()["audio_base64"] is None
+    assert client.post(h.sess_url(s, "voice-turn")).status_code == 401                    # no capability
+
+
+def test_voice_turn_hides_provider_failures(db, env, elevenlabs_http):
+    s = _to_interview(db, env)
+    assert client.post(h.sess_url(s, "voice-init"), headers=h.sh(s)).status_code == 200
+    elevenlabs_http.fail_with = 500
+    r = _turn(s, data={"opening": "true"})
+    assert r.status_code == 503 and "upstream failure" not in r.text
+
+
+def test_voice_interview_answers_and_transcript_are_evaluated_and_reported(db, env, monkeypatch, fake_voice):
     captured = {}
 
     def evaluator(questions, answers, role, jd_summary="", resume_summary="", transcript=None, call_gemini_fn=None):
@@ -284,7 +325,7 @@ def test_both_workflows_score_identical_answers_identically(db, env, db_session,
 def test_student_session_is_not_reachable_through_the_public_candidate_api(db, env, db_session, setup_test_data):
     sess = rs.create_student_session(db=db_session, student_profile=setup_test_data["student_profile"], target_role="Dev", target_company="X")
     hdr = setup_test_data["auth_headers"]
-    for method, path in (("get", "state"), ("post", "heartbeat"), ("post", "vapi-init")):
+    for method, path in (("get", "state"), ("post", "heartbeat"), ("post", "voice-init")):
         r = getattr(client, method)(f"/api/public/assessment/session/{sess.session_uuid}/{path}", headers={**hdr, "X-Session-Token": "x", "X-Session-Lease": "y"})
         assert r.status_code == 404, (path, r.status_code)
 

@@ -48,7 +48,7 @@ export default function LoginModal({ isOpen, onClose }) {
             const data = await login(cleanEmail, password);
             setPassword('');
             onClose();
-            navigate(data.redirect || (data.role === 'STUDENT' ? '/student/dashboard' : '/admin/dashboard'), { replace: true });
+            navigate(data.redirect || (data.role === 'STUDENT' ? '/assessment/setup' : '/admin/dashboard'), { replace: true });
         } catch (err) {
             setError(err.message || 'Sign-in failed. Please try again.');
         } finally {

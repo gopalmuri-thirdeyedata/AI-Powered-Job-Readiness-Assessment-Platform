@@ -91,7 +91,7 @@ def test_public_metadata_serves_the_generated_rules_and_nothing_internal(env):
     body = client.get(f"/api/public/assessment/{env['token']}").json()
     assert body["rules"] == rules.candidate_rules()
     blob = json.dumps(body["rules"]).lower()
-    for internal in ("/api/", "heartbeat", "lease", "sqlite", "judge0", "vapi", "yolo", "sweeper", "capability", "token"):
+    for internal in ("/api/", "heartbeat", "lease", "sqlite", "judge0", "elevenlabs", "yolo", "sweeper", "capability", "token"):
         assert internal not in blob, f"rules must not expose implementation detail: {internal}"
 
 

@@ -24,7 +24,7 @@ const Screen = ({ icon: Icon, title, children, tone = 'muted' }) => (
 /**
  * Recruitment assessment: /assessment/join/:shareToken/assessment
  *
- * The sections themselves (aptitude, Monaco coding, Vapi voice interview, timers, drafts, proctoring) are the Student Platform's
+ * The sections themselves (aptitude, Monaco coding, voice interview, timers, drafts, proctoring) are the Student Platform's
  * shared AssessmentWorkspace. This page supplies only what is specific to accountless candidates:
  *   - the capability adapter (registration -> attempt -> session capability + in-memory lease),
  *   - the 15-second heartbeat that proves this tab is the live sitting (the no-resume rule is enforced by the SERVER),

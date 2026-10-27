@@ -94,7 +94,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
-        VITE_VAPI_PUBLIC_KEY: ${VITE_VAPI_PUBLIC_KEY:-85876843-8675-47b9-b5bd-f4387a97473d}
     container_name: hiringai_frontend_prod
     restart: always
     networks:

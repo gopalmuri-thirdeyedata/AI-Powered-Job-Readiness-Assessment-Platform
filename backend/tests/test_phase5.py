@@ -484,7 +484,6 @@ class TestPhase5JobDescriptionAndAISkills(unittest.TestCase):
     def test_22_frozen_interview_and_fullscreen_files_remain_untouched(self):
         """22. Verifies 0 git diff across all strictly frozen interview and fullscreen files."""
         strictly_frozen = [
-            "backend/routers/interview.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js",
             "frontend/src/hooks/useAssessmentFullscreen.js",

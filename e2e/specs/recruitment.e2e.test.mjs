@@ -2,8 +2,8 @@
 //
 // What is real: the frontend, the FastAPI backend, the scoring/timing code, Chrome with fake camera + microphone devices,
 // and the Python / Java runtimes of this machine (the code sandbox stand-in for Judge0).
-// What is NOT real here (and therefore not proven): Gemini (offline mock mode), Vapi (REST stubbed; the SDK talks to an
-// intercepted endpoint), Judge0. The opt-in live Vapi check is in live-vapi.e2e.test.mjs.
+// What is NOT real here (and therefore not proven): Gemini (offline mock mode), ElevenLabs (stubbed in the backend harness; a
+// real spoken conversation needs a person and a microphone), Judge0.
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startStack } from '../support/stack.mjs';
@@ -112,7 +112,7 @@ describe('the full journey in the browser', () => {
       assert.ok(executed.includes('python') && executed.includes('java'), `both runtimes were used: ${executed}`);
 
       // ---- interview (voice is covered separately; here the written fallback keeps the journey free of external calls)
-      await U.stubVapiRest(ui.page);
+      await U.stubVoiceApi(ui.page);
       await U.submitCodingToInterview(ui);
       await U.answerWrittenInterview(ui);
       await U.finishInterview(ui);
@@ -231,7 +231,7 @@ describe('the voice interview lifecycle', () => {
     await U.startRecruitmentAttempt(ui, stack, org.share_token);
     await U.answerAptitude(ui);
     await U.openCoding(ui);
-    if (!denyMic) await U.stubVapiRest(ui.page);                     // the denial scenario talks to the real Vapi API (opt-in)
+    if (!denyMic) await U.stubVoiceApi(ui.page);                     // the denial scenario never reaches the voice API
     if (denyMic) await ui.page.evaluate(() => { window.__denyMic = true; });
     await U.submitCodingToInterview(ui);
   };
@@ -252,10 +252,9 @@ describe('the voice interview lifecycle', () => {
     } finally { await browser.close(); }
   });
 
-  // Needs a REAL Vapi call object: the SDK only asks the browser for the microphone after the room exists, and a stubbed room
-  // fails first. Opt in with E2E_VAPI_BROWSER_LIVE=1 (talks to api.vapi.ai with the frontend's public key; no call minutes are
-  // used because the call never connects). The classification logic itself is unit tested in test_vapi_session.test.mjs.
-  test('a blocked microphone shows an actionable permission message', { skip: !process.env.E2E_VAPI_BROWSER_LIVE && 'needs a live Vapi call object (set E2E_VAPI_BROWSER_LIVE=1)' }, async () => {
+  // The voice session asks the browser for the microphone itself, so the denial is observable without any provider. The
+  // classification logic is also unit tested in test_voice_session.test.mjs.
+  test('a blocked microphone shows an actionable permission message', async () => {
     const { browser, context } = await U.launch();
     await U.armMicDenial(context);
     const ui = await U.newPage(context, stack.api);
@@ -273,7 +272,7 @@ describe('the voice interview lifecycle', () => {
       await U.startRecruitmentAttempt(ui, stack, org.share_token);
       await U.answerAptitude(ui);
       await U.openCoding(ui);
-      await ui.page.route('**/api.vapi.ai/**', () => { /* never answered */ });
+      await ui.page.route('**/voice-turn', () => { /* never answered */ });
       await U.submitCodingToInterview(ui);
       await ui.page.waitForSelector('text=Connection Failed', { timeout: 40000 });
       assert.match(await ui.text(), /timed out/i);

@@ -18,10 +18,8 @@ COPY frontend/ ./
 
 # Build arguments for frontend environment variables
 ARG VITE_API_URL=/api
-ARG VITE_VAPI_PUBLIC_KEY=85876843-8675-47b9-b5bd-f4387a97473d
 
-ENV VITE_API_URL=$VITE_API_URL \
-    VITE_VAPI_PUBLIC_KEY=$VITE_VAPI_PUBLIC_KEY
+ENV VITE_API_URL=$VITE_API_URL
 
 # Compile optimized static bundle to /app/frontend/dist
 RUN npm run build

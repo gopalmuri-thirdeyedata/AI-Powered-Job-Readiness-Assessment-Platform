@@ -18,10 +18,8 @@ COPY . .
 
 # Build arguments for Vite environment variables
 ARG VITE_API_URL
-ARG VITE_VAPI_PUBLIC_KEY
 
-ENV VITE_API_URL=$VITE_API_URL \
-    VITE_VAPI_PUBLIC_KEY=$VITE_VAPI_PUBLIC_KEY
+ENV VITE_API_URL=$VITE_API_URL
 
 # Build production assets
 RUN npm run build

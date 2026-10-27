@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import models
 from main import app
-from services import piston_service, roleready_service
+from services import judge0_service, roleready_service
 from tests.test_roleready_pipeline import db_session, setup_test_data  # noqa: F401
 from tests.test_roleready_plan_requirements import _advance_to_coding, _url
 
@@ -23,7 +23,7 @@ def _reset(monkeypatch):
     roleready_service._run_code_calls.clear()
     roleready_service._run_code_active.clear()
     roleready_service._coding_eval_events.clear()
-    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    monkeypatch.setattr(judge0_service, "_sleep", lambda *_: None)
     yield
 
 
@@ -61,7 +61,7 @@ def _wait_for(predicate, timeout=15.0):
 
 def test_a_fast_grade_comes_back_with_the_submit(db_session, setup_test_data, monkeypatch):
     session, h = _advance_to_coding(db_session, setup_test_data)
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, session)))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, session)))
     res = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS})
     body = res.json()
     assert res.status_code == 200 and body["status"] == "success"
@@ -73,7 +73,7 @@ def test_a_fast_grade_comes_back_with_the_submit(db_session, setup_test_data, mo
 def test_a_slow_grade_does_not_hold_the_student_and_finishes_in_the_background(db_session, setup_test_data, monkeypatch):
     monkeypatch.setattr(roleready_service, "CODING_EVAL_WAIT_SECONDS", 0.4)
     session, h = _advance_to_coding(db_session, setup_test_data)
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=1.5))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=1.5))
 
     started = time.perf_counter()
     res = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS})
@@ -99,7 +99,7 @@ def test_pressing_submit_twice_grades_once_and_never_double_runs_the_tests(db_se
     monkeypatch.setattr(roleready_service, "CODING_EVAL_WAIT_SECONDS", 0.3)
     session, h = _advance_to_coding(db_session, setup_test_data)
     calls = []
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=0.6, calls=calls))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=0.6, calls=calls))
 
     first = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS})
     second = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS})
@@ -113,7 +113,7 @@ def test_pressing_submit_twice_grades_once_and_never_double_runs_the_tests(db_se
 def test_different_code_cannot_replace_a_submission_that_is_being_graded(db_session, setup_test_data, monkeypatch):
     monkeypatch.setattr(roleready_service, "CODING_EVAL_WAIT_SECONDS", 0.2)
     session, h = _advance_to_coding(db_session, setup_test_data)
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=1.0))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=1.0))
     assert client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS}).status_code == 200
     other = {"1": {"code": "print('cheat')", "language": "python"}}
     res = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": other})
@@ -126,7 +126,7 @@ def test_the_final_report_waits_for_a_grade_that_is_still_running(db_session, se
     """Finishing the interview before the grade lands must still produce the real overall score, not a zero."""
     monkeypatch.setattr(roleready_service, "CODING_EVAL_WAIT_SECONDS", 0.2)
     session, h = _advance_to_coding(db_session, setup_test_data)
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=1.2))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=1.2))
     assert client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS}).json()["status"] == "evaluating"
     assert client.post(_url(session, "start-interview"), headers=h).status_code == 200
 
@@ -143,7 +143,7 @@ def test_a_grade_lost_to_a_server_restart_is_recovered(db_session, setup_test_da
     """EVALUATING with no thread running and an old timestamp means its worker died: it is graded again."""
     session, h = _advance_to_coding(db_session, setup_test_data)
     rnd = _round(db_session, session)
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(rnd))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(rnd))
     rnd.status = "EVALUATING"
     rnd.submission_payload = SOLUTIONS
     rnd.submitted_at = datetime.utcnow() - timedelta(seconds=roleready_service.CODING_EVAL_STALE_SECONDS + 60)
@@ -168,7 +168,7 @@ def test_a_grade_that_is_young_is_not_mistaken_for_a_lost_one(db_session, setup_
 def test_if_the_sandbox_stays_down_the_report_still_completes_and_says_so(db_session, setup_test_data, monkeypatch):
     monkeypatch.setattr(roleready_service, "CODING_FINAL_WAIT_SECONDS", 3)
     session, h = _advance_to_coding(db_session, setup_test_data)
-    monkeypatch.setattr(piston_service, "execute_code",
+    monkeypatch.setattr(judge0_service, "execute_code",
                         lambda *a, **k: {"status": "service_error", "output": "down", "stdout": "", "stderr": "",
                                          "compile_output": "", "timed_out": False, "execution_time_ms": None, "raw": {}})
     assert client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS}).json()["status"] == "evaluating"
@@ -185,7 +185,7 @@ def test_if_the_sandbox_stays_down_the_report_still_completes_and_says_so(db_ses
 
 def test_an_empty_submission_from_the_timer_scores_zero_without_the_sandbox(db_session, setup_test_data, monkeypatch):
     calls = []
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, _advance_to_coding(db_session, setup_test_data)[0]), calls=calls))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, _advance_to_coding(db_session, setup_test_data)[0]), calls=calls))
     session, h = _advance_to_coding(db_session, setup_test_data)
     calls.clear()
     res = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": {}})
@@ -196,7 +196,7 @@ def test_an_empty_submission_from_the_timer_scores_zero_without_the_sandbox(db_s
 def test_grading_threads_do_not_leak_or_block_the_server(db_session, setup_test_data, monkeypatch):
     monkeypatch.setattr(roleready_service, "CODING_EVAL_WAIT_SECONDS", 0.2)
     session, h = _advance_to_coding(db_session, setup_test_data)
-    monkeypatch.setattr(piston_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=0.5))
+    monkeypatch.setattr(judge0_service, "execute_code", _correct_sandbox(_round(db_session, session), delay=0.5))
     client.post(_url(session, "submit-coding"), headers=h, json={"solutions": SOLUTIONS})
     assert _wait_for(lambda: _round(db_session, session).status == "EVALUATED")
     assert _wait_for(lambda: not any(t.name.startswith("coding-eval-") for t in threading.enumerate()), timeout=5)

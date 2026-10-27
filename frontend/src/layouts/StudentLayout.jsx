@@ -20,6 +20,7 @@ import {
     Sun,
     Moon,
     LayoutTemplate,
+    Lock,
 } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 import { isAdminRole } from '../auth/roles';
@@ -27,6 +28,7 @@ import studentApi from '../services/studentApi';
 import CareerCopilotDrawer from '../components/student/CareerCopilotDrawer';
 import AssessmentRequiredGate from '../components/student-ui/AssessmentRequiredGate';
 import { useTheme } from '../context/ThemeContext';
+import { useAssessmentLock } from '../context/AssessmentLockContext';
 import useStudentTaskStatus, { clearStudentTaskCompleted } from '../hooks/useStudentTaskStatus';
 import { clearStudentSession } from '../utils/authStorage';
 import { PROFILE_UPDATED_EVENT } from '../utils/profileForm';
@@ -138,6 +140,7 @@ const StudentLayout = () => {
     const [isLoading, setIsLoading] = useState(true);
     // New students are not redirected: the dashboard page itself shows the take-assessment screen
     const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus();
+    const { promptContactAdmin } = useAssessmentLock();
 
     // Student workspace: the server-verified STUDENT session decides. No session -> the single login; an ADMIN session has its own dashboard.
     useEffect(() => {
@@ -347,16 +350,17 @@ const StudentLayout = () => {
 
                 {/* Right: Take Assessment CTA, theme toggle & user pill */}
                 <div className="flex items-center gap-2.5 shrink-0">
-                    <Link
-                        to="/assessment/setup"
+                    <button
+                        type="button"
+                        onClick={promptContactAdmin}
                         id="student-topbar-assessment-btn"
                         className="group relative overflow-hidden h-10 sm:h-9 min-w-[40px] justify-center inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs font-semibold transition-all shadow-xs hover:shadow-md hover:shadow-emerald-500/25 cursor-pointer shrink-0"
-                        title="Start AI Role Assessment"
+                        title="Assessments are assigned by your admin"
                     >
                         <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 -left-full w-1/2 -skew-x-12 bg-white/25 transition-transform duration-700 ease-out group-hover:translate-x-[400%] motion-reduce:hidden" />
-                        <Sparkles className="relative w-3.5 h-3.5 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110" />
+                        <Lock className="relative w-3.5 h-3.5 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110" />
                         <span className="relative hidden sm:inline">Take Assessment</span>
-                    </Link>
+                    </button>
 
                     <button
                         type="button"

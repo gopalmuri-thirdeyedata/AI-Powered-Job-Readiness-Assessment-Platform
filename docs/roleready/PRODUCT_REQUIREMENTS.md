@@ -24,9 +24,9 @@ PrepWin bridges the gap between academic preparation and industry recruitment st
 3. **Strict Sequential Assessment Progression:**
    - **Round 1 (Aptitude):** Timed MCQ battery assessing numerical reasoning, logical problem-solving, and domain aptitude.
    - *Gating:* Round 2 remains locked until Round 1 is submitted and evaluated on the server.
-   - **Round 2 (Coding):** 1 to 3 live programming problems executed in a sandboxed runtime (Piston/Judge0) with public and hidden test cases, accompanied by webcam proctoring and fullscreen monitoring.
+   - **Round 2 (Coding):** 1 to 3 live programming problems executed in a sandboxed runtime (Judge0) with public and hidden test cases, accompanied by webcam proctoring and fullscreen monitoring.
    - *Gating:* Round 3 remains locked until Round 2 is submitted and evaluated on the server.
-   - **Round 3 (Technical & Behavioral Interview):** Conversational AI voice/audio interview utilizing speech-to-speech interaction (Vapi/WebRTC) asking JD-specific and resume-grounded technical questions.
+   - **Round 3 (Technical & Behavioral Interview):** Conversational AI voice/audio interview utilizing spoken interaction (ElevenLabs speech + Gemini) asking JD-specific and resume-grounded technical questions.
 4. **Individual & Consolidated Readiness Reporting:**
    - Per-round scorecards and diagnostic feedback.
    - Consolidated Job Readiness Report featuring:
@@ -67,8 +67,8 @@ PrepWin bridges the gap between academic preparation and industry recruitment st
 - **Backend:** FastAPI (Python 3.11+), SQLAlchemy 2.0 ORM, MySQL 8 / PostgreSQL with JSON capabilities, Pydantic V2 schemas.
 - **Frontend:** React 18, Vite, Tailwind CSS, Lucide icons, Monaco / CodeMirror editor, WebRTC audio streaming.
 - **AI Engine:** Google Gemini 2.5 Flash / Groq LLM abstraction for question generation, resume synthesis, and evaluation.
-- **Code Execution:** Piston / Judge0 containerized sandbox supporting Python, JavaScript, Java, C++, and Go.
-- **Interview Voice Pipeline:** Vapi conversational AI WebRTC integration with fallback audio capture and speech evaluation.
+- **Code Execution:** Judge0 containerized sandbox supporting Python, JavaScript, Java, C++, and Go.
+- **Interview Voice Pipeline:** ElevenLabs speech-to-text / text-to-speech with a Gemini interviewer, a written-answer fallback and speech evaluation.
 - **Proctoring Engine:** Client-side webcam continuous face detection, tab switch detection, and fullscreen enforcement with server violation persistence.
 
 ---

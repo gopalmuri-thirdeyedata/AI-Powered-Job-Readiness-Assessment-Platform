@@ -2,7 +2,7 @@
 DSA & Aptitude Topic-Wise Practice Service (Phase 4).
 Provides structured problem solving for coding and aptitude topics.
 Maintains test case confidentiality (hidden test cases never sent to client).
-Evaluates submissions server-side via Judge0/Piston sandbox.
+Evaluates submissions server-side via Judge0 sandbox.
 """
 
 from typing import List, Dict, Any, Optional
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 import models
-from services import piston_service
+from services import judge0_service
 
 # ==============================================================================
 # CURATED STANDARD PRACTICE QUESTION CATALOG
@@ -272,7 +272,7 @@ def evaluate_practice_submission(
     db: Session
 ) -> Dict[str, Any]:
     """
-    Server-side evaluation for coding (Judge0/Piston) or Aptitude (MCQ).
+    Server-side evaluation for coding (Judge0) or Aptitude (MCQ).
     Never exposes hidden test cases or internal keys.
     """
     question = db.query(models.StudentPracticeQuestion).filter(
@@ -316,14 +316,14 @@ def evaluate_practice_submission(
             stdin = tc.get("input", "")
             expected = str(tc.get("expected_output", "")).strip()
 
-            exec_res = piston_service.execute_code(
+            exec_res = judge0_service.execute_code(
                 language_key="python",
                 code=code,
                 stdin=stdin
             )
 
             actual = str(exec_res.get("stdout", "")).strip()
-            passed = piston_service.outputs_match(exec_res.get("stdout", ""), expected)
+            passed = judge0_service.outputs_match(exec_res.get("stdout", ""), expected)
 
             if passed:
                 tests_passed += 1

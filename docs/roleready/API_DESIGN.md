@@ -29,7 +29,7 @@ All endpoints require either:
   - Requires state `CODING_UNLOCKED`. Transitions to `CODING_IN_PROGRESS`.
   - Returns: 1 to 3 coding problems (statements, constraints, starter codes, visible public test cases).
 - `POST /api/roleready/student/session/{session_uuid}/run-code`
-  - Sandboxed execution against public test cases via Piston.
+  - Sandboxed execution against public test cases via Judge0.
   - Returns: stdout, stderr, execution time, pass/fail status.
 - `POST /api/roleready/student/session/{session_uuid}/submit-coding`
   - Submits code solutions for all problems.
@@ -38,7 +38,7 @@ All endpoints require either:
   - Returns: Coding scorecard, test summary.
 - `POST /api/roleready/student/session/{session_uuid}/start-interview`
   - Requires state `INTERVIEW_UNLOCKED`. Transitions to `INTERVIEW_IN_PROGRESS`.
-  - Generates role-specific questions and returns Vapi session credentials / fallback question battery.
+  - Generates role-specific questions and returns the voice interview config / fallback question battery.
 - `POST /api/roleready/student/session/{session_uuid}/submit-interview`
   - Submits interview responses or triggers webhook evaluation.
   - Transitions to `INTERVIEW_EVALUATED` and synthesizes `COMPLETED`.

@@ -10,7 +10,7 @@ the existing blueprint is kept) → Publish creates **one reusable link** `/asse
 candidates register with Name / Phone / Email (no OTP, no accounts) → the dedicated **Exam Instructions** page
 (`/assessment/join/<share_token>/instructions`) → acknowledgement checkbox → **device check** (camera, microphone, fullscreen;
 `/assessment/join/<share_token>/assessment`) → *Start Assessment* creates the single attempt and the server-authoritative deadline →
-Aptitude (20m) → Coding (20m, Monaco, Python + Java) → voice-based AI Technical Interview (20m, Vapi), 60 minutes hard stop →
+Aptitude (20m) → Coding (20m, Monaco, Python + Java) → voice-based AI Technical Interview (20m, ElevenLabs voice), 60 minutes hard stop →
 results appear live in *Candidate Results* (search, role/status filters, sorting, pagination, dossier).
 
 Registering, opening or refreshing the instructions page, ticking the acknowledgement box and doing the device check never start
@@ -28,9 +28,9 @@ timing rules and equal-weight scoring apply to *both* workflows. Shared code:
 | Timing + scoring policy | `services/assessment_policy.py` (20/20/20 min, 60 min, 10 s arrival window, `overall_score`) | both lifecycles |
 | Round formats, aptitude / coding / interview evaluation, drafts | `services/assessment_engine.py` | both lifecycles |
 | Blueprint → student formats (the explicit adapter) | `assessment_engine.adapt_blueprint()` | recruitment |
-| Workspace UI (aptitude, Monaco, Vapi, timers, drafts, proctoring) | `pages/roleready/RoleReadyAssessment.jsx` → `AssessmentWorkspace` | both |
+| Workspace UI (aptitude, Monaco, voice interview, timers, drafts, proctoring) | `pages/roleready/RoleReadyAssessment.jsx` → `AssessmentWorkspace` | both |
 | API contract of the workspace | `services/assessmentApi.js` (`createStudentAssessmentApi`, `createRecruitmentAssessmentApi`) | both |
-| Code sandbox | `services/piston_service.py` (Judge0 adapter) | both |
+| Code sandbox | `services/judge0_service.py` (Judge0 adapter) | both |
 
 Deliberately separate (different identity and attempt model): student JWT / invitation-token auth and attempt management
 (`roleready_service`, `/api/roleready/*`) versus the public capability API (`assessment_flow_service`, `/api/public/assessment/*`:
@@ -103,7 +103,7 @@ were removed from the admin UI; their old URLs redirect to the workspace. Their 
 * The unload beacon (`POST .../abandon`) is advisory and never abandons. Abandonment is decided from server evidence only: a request
   without the lease after the heartbeat went stale, or the sweeper finding no heartbeat for 60 s. Infrastructure failure is only ever
   set by a platform administrator's incident record.
-* Voice: the Vapi call's `maxDurationSeconds` is the seconds left on the server clock. If the voice connection fails, the interview
+* Voice: the voice session's `maxDurationSeconds` is the seconds left on the server clock. If the voice connection fails, the interview
   screen offers an explicit *Answer in writing instead* fallback (voice stays the default).
 
 ## Blueprints and shared links
@@ -163,7 +163,7 @@ python migrate_recruitment_workflow.py            # backup -> preflight -> migra
 | `ASSESSMENT_SWEEPER_ENABLED` | `true` | Background finalizer (runs in every worker; safe — claims are fenced) |
 | `PREPWIN_TRUSTED_PROXIES` | private ranges | Peers whose `X-Real-IP` is trusted for per-candidate rate limits (nginx overwrites it) |
 | `SANDBOX_MAX_CONCURRENCY` | `5` | Concurrent sandbox executions per process |
-| `JUDGE0_API_URL` | public Judge0 CE | Code sandbox endpoint (the platform's runner is Judge0, not Piston) |
+| `JUDGE0_API_URL` | public Judge0 CE | Code sandbox endpoint (the platform runner is Judge0) |
 | `GEMINI_API_KEY` | — | Required for blueprint generation and interview scoring |
 
 Rate limits (per process, per client IP): registration 5/min, start 30/min, public metadata 60/min, run-code 5/min per session.
@@ -185,7 +185,7 @@ Put an nginx `limit_req` zone in front for a hard global cap.
 
 ## Engineering decisions that differ from, or refine, the plan
 
-* The code runner in this repository is Judge0 CE (`services/piston_service.py`), so the "Piston" threat-model items are
+* The code runner in this repository is Judge0 CE (`services/judge0_service.py`), so the sandbox threat-model items are
   enforced as: only test **inputs** enter the sandbox, one test at a time, and they travel as stdin (expected outputs and hidden
   tests never leave the backend), 64 KB code/stdin caps, concurrency cap, result classification, and outage →
   `EVALUATION_PENDING`. (The earlier in-sandbox function-call wrapper and its runner template were removed: recruitment problems now
@@ -212,7 +212,7 @@ Put an nginx `limit_req` zone in front for a hard global cap.
   body is size-capped before it is parsed, images are strictly validated (type, size, decoded dimensions) and no error carries
   file names, paths or exception text. `GET /api/proctor/status` stays public (the device check needs it before an attempt exists)
   but returns only `{"status": "ready" | "error"}`; account holders get the diagnostic detail.
-* **Code execution (Judge0).** `services/piston_service.py` classifies compile errors, runtime errors, timeouts and sandbox
+* **Code execution (Judge0).** `services/judge0_service.py` classifies compile errors, runtime errors, timeouts and sandbox
   failures separately; a sandbox failure is never a score. A request is retried once only when nothing can have been submitted
   (connection refused, 429 with a short `Retry-After`, 502/503/504); a read timeout is never resubmitted. Asynchronous submissions
   (`JUDGE0_WAIT=false`, or an instance that returns only a token) are polled within `JUDGE0_POLL_TIMEOUT_SECONDS` (default 25).
@@ -221,14 +221,16 @@ Put an nginx `limit_req` zone in front for a hard global cap.
 * **Scoring precision.** Evaluators return full-precision section percentages; the overall is the equal-weight mean of those,
   rounded once to two decimals. Section percentages are *presented* with two decimals (`assessment_policy.display_pct`).
   Historical (`legacy_weighted_25_40_35`) results are untouched.
-* **Voice interview.** `@vapi-ai/web` 3.x (Daily client 0.93). Each session owns at most one ephemeral Vapi assistant (its id is
-  kept server-side inside the interview round's private JSON, no schema change); a replaced assistant and the final one are deleted
-  (best effort) when the interview closes. Assistants of abandoned or timed-out sittings are not deleted yet. The browser
-  stops and detaches every call on submit / unmount, ignores events from replaced instances, shows a readable error (never an
-  object - that white-screens the page), offers Retry or the written alternative, and never reports an interview as completed when
-  the submission did not reach the server. `@vapi-ai/web` 3.x declares Node >= 22.14 for tooling; the frontend Docker builder uses
-  Node 20 (a warning, not a failure, unless `engine-strict` is set): move the builder image to Node 22 when convenient.
-* **Browser tests.** `e2e/` (see its README) drives real Chrome through both workflows; `E2E_LIVE_VAPI_CALL=1` adds a live call.
+* **Voice interview.** ElevenLabs speech with a Gemini interviewer. The browser (`utils/voiceInterviewSession.js`) records each answer,
+  detects the end of an answer from a pause (about 1.8 s), sends it to `voice-turn`, and plays the reply. The backend turns the
+  recording into text (ElevenLabs speech-to-text), asks Gemini for the next question and speaks it (ElevenLabs text-to-speech). The
+  interview prompt, which carries the questions and job context, is kept server-side inside the interview round's private JSON (no
+  schema change) and dropped when the interview closes; nothing is provisioned at the provider, so there is nothing to clean up and
+  the API key never reaches the browser. The browser stops and detaches the session on submit / unmount, ignores events from replaced
+  instances, shows a readable error (never an object - that white-screens the page), offers Retry or the written alternative, and
+  never reports an interview as completed when the submission did not reach the server. The interviewer cannot be interrupted while
+  speaking (replies are short by design).
+* **Browser tests.** `e2e/` (see its README) drives real Chrome through both workflows; `E2E_LIVE_VOICE=1` uses real ElevenLabs speech instead of the stub.
 
 ## Sample data, test isolation and cleaning up job roles
 

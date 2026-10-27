@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { buildVoiceTurnForm } from '../utils/voiceInterviewSession';
 import API_URL from '../apiConfig';
 import { getAdminOrgId } from '../utils/authStorage';
 
@@ -75,7 +76,10 @@ export const candidateApi = {
     submitCoding: async (s, solutions, violations) =>
         (await axios.post(sessionUrl(s, 'submit-coding'), { solutions, violations: violations ?? null }, { headers: sessionHeaders(s), timeout: 180000 })).data,
     startInterview: async (s) => (await axios.post(sessionUrl(s, 'start-interview'), {}, { headers: sessionHeaders(s) })).data,
-    vapiInit: async (s) => (await axios.post(sessionUrl(s, 'vapi-init'), {}, { headers: sessionHeaders(s), timeout: 60000 })).data,
+    voiceInit: async (s) => (await axios.post(sessionUrl(s, 'voice-init'), {}, { headers: sessionHeaders(s), timeout: 60000 })).data,
+    voiceTurn: async (s, turn) =>
+        (await axios.post(sessionUrl(s, 'voice-turn'), buildVoiceTurnForm(turn),
+            { headers: { ...sessionHeaders(s), 'Content-Type': 'multipart/form-data' }, timeout: 60000 })).data,
     submitInterview: async (s, answers, transcript, violations) =>
         (await axios.post(sessionUrl(s, 'submit-interview'), { answers, transcript: transcript ?? [], violations: violations ?? null },
             { headers: sessionHeaders(s), timeout: 180000 })).data,

@@ -51,7 +51,7 @@ The objective of this specification is to deliver a fully integrated, production
 │  [Section 1: Aptitude Assessment] ──► 20m server limit (deadline = min(started_at + 20m, global))    │
 │          │                                                                                             │
 │          ▼                                                                                             │
-│  [Section 2: Coding Sandbox]      ──► 20m server limit, isolated Piston runner, hidden test validation │
+│  [Section 2: Coding Sandbox]      ──► 20m server limit, isolated Judge0 runner, hidden test validation │
 │          │                                                                                             │
 │          ▼                                                                                             │
 │  [Section 3: AI Tech Interview]   ──► 20m server limit, 5 JD questions, text-first reliable baseline   │
@@ -261,7 +261,7 @@ db.query(models.JobDescription).filter(
 | `POST /api/public/assessment/session/{uuid}/heartbeat` | No | Session Capability + Lease | Candidate holding active session lease | Heartbeat keepalive (every 15s) | 401 / 403 / 409 | Maintain active sitting lease |
 | `POST /api/public/assessment/session/{uuid}/submit-aptitude` | No | Session Capability + Lease | Candidate holding active session lease | Validates Round 1 & deadline window | 401 / 403 / 408 | Submit Aptitude & unlock Coding |
 | `POST /api/public/assessment/session/{uuid}/start-coding` | No | Session Capability + Lease | Candidate holding active session lease | Strict sequential check (Aptitude done) | 401 / 403 / 408 | Start Coding section & timer |
-| `POST /api/public/assessment/session/{uuid}/run-code` | No | Session Capability + Lease | Candidate holding active session lease | Sandboxed Piston runner | 401 / 403 / 408 / 429 | Run public test cases (hard cutoff) |
+| `POST /api/public/assessment/session/{uuid}/run-code` | No | Session Capability + Lease | Candidate holding active session lease | Sandboxed Judge0 runner | 401 / 403 / 408 / 429 | Run public test cases (hard cutoff) |
 | `POST /api/public/assessment/session/{uuid}/submit-coding` | No | Session Capability + Lease | Candidate holding active session lease | Validates Round 2 & deadline window | 401 / 403 / 408 | Submit Coding & unlock Interview |
 | `POST /api/public/assessment/session/{uuid}/start-interview` | No | Session Capability + Lease | Candidate holding active session lease | Strict sequential check (Coding done) | 401 / 403 / 408 | Start Interview section & timer |
 | `POST /api/public/assessment/session/{uuid}/submit-interview` | No | Session Capability + Lease | Candidate holding active session lease | Validates Round 3 & deadline window | 401 / 403 / 408 | Submit Interview responses |
@@ -748,7 +748,7 @@ To make the no-resume policy technically enforceable without relying on browser 
 | **6. Duplicate Tabs Opened** | Second tab requests without in-memory lease while primary tab heartbeat is fresh ($\le 30$s) | Rejects second tab with 409; **DOES NOT** terminate or mutate active session in Tab 1 | **HTTP 409 Conflict:** "Active sitting detected in another window. Multi-tab access prohibited." | **No Exception.** Primary tab continues uninterrupted. |
 | **7. Concurrent State Requests** | Database row locking (`SELECT ... FOR UPDATE` on `RoleReadySession`) | Serializes requests; first commits; second receives cached result or 409 | First: 200 OK.<br>Second: **200 OK (idempotent)** or **409 Conflict** | Handled transparently by database concurrency controls. |
 | **8. Backend / DB Outage (Verified)** | Health check outage tracking; server logs 500/502/503 during session | Post-recovery reconciler marks `INFRASTRUCTURE_FAILURE` (NOT `ABANDONED`). Score not zeroed | Safe status displayed: "Platform error under review." | **Admin Exception Allowed:** Org Admin reviews outage incident and can authorize a Retake. Logged in `activity_logs`. |
-| **9. Coding Runner Outage (Piston)** | Piston service unreachable (HTTP 503) during submission | Candidate code persisted; status marked `EVALUATION_PENDING` | Response: "Code received. Sandbox evaluation pending." | **Admin Action:** Dashboard provides "Retry Code Evaluation" button. Zero score penalty to candidate. |
+| **9. Coding Runner Outage (Judge0)** | Judge0 service unreachable (HTTP 503) during submission | Candidate code persisted; status marked `EVALUATION_PENDING` | Response: "Code received. Sandbox evaluation pending." | **Admin Action:** Dashboard provides "Retry Code Evaluation" button. Zero score penalty to candidate. |
 | **10. Failed Interview Eval (Gemini)** | Gemini API quota / timeout during interview finalization | Candidate transcript/answers persisted; status `EVALUATION_PENDING` | Response: "Interview responses received. AI evaluation pending." | **Admin Action:** Dashboard provides "Retry Interview Evaluation" button. Zero score penalty to candidate. |
 
 #### Narrow Administrative Retake Protocol for Infrastructure Outages
@@ -763,7 +763,7 @@ To make the no-resume policy technically enforceable without relying on browser 
 
 ## 6. Secure Coding Sandbox Threat Model & Architecture
 
-### Threat Model & Mitigation Matrix (Piston Execution Environment)
+### Threat Model & Mitigation Matrix (Judge0 Execution Environment)
 
 | Threat Category | Potential Attack Vector | Production Isolation Mitigation | Verification Mechanism |
 | :--- | :--- | :--- | :--- |
@@ -775,13 +775,13 @@ To make the no-resume policy technically enforceable without relying on browser 
 | **I/O Flooding** | `while True: print("A")` disk fill attacks | Standard input capped at 64KB; standard output / error capped at 64KB. Excess truncated. | Output capped cleanly at 64KB |
 | **Concurrency Starvation** | Flooding simultaneous code executions | Worker concurrency queue: max 5 concurrent sandbox executions per host node. | Throttled with HTTP 429 when queue full |
 | **Hidden Test Leakage** | Guessing hidden tests via memory inspection or error strings | Hidden test suites stay strictly on the backend. Candidate receives only public sample test results. | Network inspection confirms 0 hidden tests exposed |
-| **Infrastructure Outage** | Piston sandbox daemon unreachable or offline | Returns HTTP 503; flags attempt `EVALUATION_PENDING`; candidate submission preserved; zero fake scores fabricated. | Decoupled infrastructure failure from candidate score |
+| **Infrastructure Outage** | Judge0 sandbox daemon unreachable or offline | Returns HTTP 503; flags attempt `EVALUATION_PENDING`; candidate submission preserved; zero fake scores fabricated. | Decoupled infrastructure failure from candidate score |
 
 ### Compilation vs Runtime vs Infrastructure Failure Classification
 1. **Compilation Failure (e.g. syntax error):** Returns `COMPILATION_ERROR` with compiler stderr (truncated to 2KB). Scored as 0 passed tests.
 2. **Runtime Error (e.g. `ZeroDivisionError`, unhandled exception):** Returns `RUNTIME_ERROR` with stack trace. Scored as 0 passed tests.
 3. **Execution Timeout (> 5.0s):** Returns `TIME_LIMIT_EXCEEDED`. Scored as 0 passed tests.
-4. **Infrastructure Failure (Piston daemon down / connection refused):** Returns `HTTP 503 Service Unavailable`. State marked `EVALUATION_PENDING`. **Candidate is never penalized or scored zero for infrastructure outages.**
+4. **Infrastructure Failure (Judge0 daemon down / connection refused):** Returns `HTTP 503 Service Unavailable`. State marked `EVALUATION_PENDING`. **Candidate is never penalized or scored zero for infrastructure outages.**
 
 ---
 
@@ -1223,7 +1223,7 @@ const navItems = [
 - Invalid Gemini responses trigger bounded retry (1 retry).
 - Gemini failure returns `HTTP 502 Bad Gateway` without generating generic fallback questions; existing blueprint is preserved.
 - Publication is blocked if blueprint is invalid.
-- Sandboxed execution (Piston) terminates infinite loops at 5.0s with `TIME_LIMIT_EXCEEDED`.
+- Sandboxed execution (Judge0) terminates infinite loops at 5.0s with `TIME_LIMIT_EXCEEDED`.
 - Fork bombs / memory leaks killed via cgroups limits.
 - Container network egress disabled (`--network none`).
 - Hidden test cases remain confidential on the backend.
@@ -1272,7 +1272,7 @@ Task 5: Reusable Shared Link & Secure Capability-Based Registration API
 Task 6: Sequential 60-Minute Assessment Engine & Enforceable No-Resume State Machine
    │
    ▼
-Task 7: Secure Sandboxed Coding Execution (Piston Threat Model)
+Task 7: Secure Sandboxed Coding Execution (Judge0 Threat Model)
    │
    ▼
 Task 8: Admin Results API & Dossier Reporting
@@ -1615,21 +1615,21 @@ Task 10: End-to-End Workflow Verification, Regression Testing & Production Build
 
 ---
 
-### Task 7: Secure Sandboxed Coding Execution (Piston Threat Model)
+### Task 7: Secure Sandboxed Coding Execution (Judge0 Threat Model)
 - **Objective:** Enforce containerized execution isolation, memory/CPU limits, execution timeouts, and confidential hidden test case evaluation.
 - **Preconditions:** Task 6 complete.
 - **Files to Inspect:**
-  - `backend/services/piston_service.py`
+  - `backend/services/judge0_service.py`
   - `backend/services/assessment_flow_service.py`
 - **Expected Files to Modify:**
-  - `backend/services/piston_service.py`
+  - `backend/services/judge0_service.py`
   - `backend/services/assessment_flow_service.py`
   - `backend/routers/public_assessment.py`
 - **Interfaces:**
   - Consumes: Candidate source code, language, problem test cases.
   - Produces: `POST /session/{uuid}/run-code`, `POST /session/{uuid}/submit-coding`.
 - **Step-by-Step Implementation:**
-  1. In `backend/services/piston_service.py`:
+  1. In `backend/services/judge0_service.py`:
      - Configure sandbox parameters: CPU quota 1.0, memory limit 256MB, execution timeout 5.0s, PID limit 64, read-only rootfs, 10MB tmpfs, `--network none`, clean environment variables.
      - Input/output limits: Standard input max 64KB, stdout/stderr truncated at 64KB.
      - Concurrency semaphore: Max 5 concurrent sandbox executions per host.
@@ -1637,7 +1637,7 @@ Task 10: End-to-End Workflow Verification, Regression Testing & Production Build
   2. In `backend/routers/public_assessment.py`:
      - `POST /session/{uuid}/run-code`: executes code against *public* test cases only. Returns test outputs to candidate.
      - `POST /session/{uuid}/submit-coding`: executes code against *both public and confidential hidden* test cases on backend. Returns overall pass/fail metrics; hidden test inputs/outputs are never returned to client.
-     - Infrastructure decoupling: If Piston service is down, returns HTTP 503 and flags attempt `EVALUATION_PENDING` without penalizing candidate.
+     - Infrastructure decoupling: If Judge0 service is down, returns HTTP 503 and flags attempt `EVALUATION_PENDING` without penalizing candidate.
 - **Security Considerations:** Candidate code never runs in FastAPI process; hidden test cases remain completely confidential; infinite loops safely killed.
 - **Tests:**
   - `backend/tests/test_coding_sandbox_security.py`:
@@ -1838,9 +1838,9 @@ To maintain rigorous engineering truthfulness, repository details are separated 
 3. **Historical Candidate Email Duplicate State:**
    - Assumption: Existing database may or may not contain historical intra-organization duplicate emails under normalized comparison.
    - Live Verification Gate: Task 3 Phase 2 executes the preflight normalized conflict query and produces `backend/migration_conflicts.json`. If conflicts exist, migration aborts before altering any schemas.
-4. **Piston Sandbox Daemon Connectivity:**
-   - Assumption: Piston sandbox daemon is running locally at `http://localhost:2000` or via Docker container `piston`.
-   - Live Verification Gate: Task 7 performs a health check request to `PISTON_API_URL` prior to running test cases.
+4. **Judge0 Sandbox Daemon Connectivity:**
+   - Assumption: Judge0 sandbox daemon is running locally at `http://localhost:2358` or via Docker container `judge0`.
+   - Live Verification Gate: Task 7 performs a health check request to `JUDGE0_API_URL` prior to running test cases.
 5. **Gemini API Key Availability:**
    - Assumption: `GEMINI_API_KEY` is configured in `.env`.
    - Live Verification Gate: Task 4 verifies key presence; test suites mock Gemini client to avoid quota depletion.
@@ -1900,7 +1900,7 @@ To ensure strict engineering integrity, this specification explicitly separates 
 │ 3. Pending Live Verification:       │ Test baseline (Task 1) & DB preflight scans (Task 3)       │
 │ 4. Tests Actually Executed:         │ 0 Tests (Strict Plan-Only Boundary Maintained)             │
 │ 5. Empirical Evidence Obtained:     │ Static code & model inspection only; 0 runtime benchmarks  │
-│ 6. Remaining Risks Before Exec:     │ Piston sandbox daemon access; historical duplicate volume  │
+│ 6. Remaining Risks Before Exec:     │ Judge0 sandbox daemon access; historical duplicate volume  │
 │ 7. Production Readiness Verdict:    │ CONDITIONALLY GATED (PENDING TEST & PREFLIGHT PASSES)      │
 └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
@@ -1910,7 +1910,7 @@ To ensure strict engineering integrity, this specification explicitly separates 
 | Dimension | Specification Completeness | Empirical Verification Status | Calibrated Score | Evidence & Rationale |
 | :--- | :---: | :---: | :---: | :--- |
 | **Architectural Rigor** | 9.9 / 10 | Unverified (Pending Task 2) | **9.0 / 10** | Fully specified request-scoped immutable `TenantContext`, zero mutation of `current_user.organization_id`, strict multi-membership header validation, fail-closed role enforcement, and complete 9-persona role-vs-permission test matrix. |
-| **Security & Privacy** | 9.9 / 10 | Unverified (Pending Task 5 & 7) | **9.0 / 10** | Dual capability and in-memory volatile lease model (`active_lease_hash`), SHA-256 storage, zero token leakage on email match, duplicate-tab non-sabotage protection, password-free MySQL backup authentication (`--defaults-extra-file`), and Piston container threat model. |
+| **Security & Privacy** | 9.9 / 10 | Unverified (Pending Task 5 & 7) | **9.0 / 10** | Dual capability and in-memory volatile lease model (`active_lease_hash`), SHA-256 storage, zero token leakage on email match, duplicate-tab non-sabotage protection, password-free MySQL backup authentication (`--defaults-extra-file`), and Judge0 container threat model. |
 | **Timing, Sweeper & Concurrency** | 9.9 / 10 | Unverified (Pending Task 6) | **8.8 / 10** | 4-state sweeper transitions (`TIMED_OUT` vs `ABANDONED` vs `INFRASTRUCTURE_FAILURE` vs `MANUAL_REVIEW_REQUIRED`), completed sessions immutable, 3-step multi-worker lifecycle (short claim $\rightarrow$ in-memory scoring $\rightarrow$ fenced commit), optimistic lease fencing tokens, stale worker fail-closed defense (`rowcount == 0`), hard cognitive work cutoff at `deadline + 0s`, bounded 10s arrival window, and standardized UTC handling. |
 | **Data Integrity & Safe Migrations** | 9.9 / 10 | Unverified (Pending Task 3) | **8.8 / 10** | Functional expression unique indexes `(organization_id, (LOWER(TRIM(email))))` (with double parentheses on MySQL 8.0.13+ and STORED generated column fallback) closing historical normalization gap without data mutation; hardened physical backups with point-in-time baseline snapshot coordinates and isolated temporary DB restore test; single atomic exclusive transaction SQLite migration with explicit FK checks (`candidate_invitations`, `roleready_sessions`); single-attempt DB constraints; preflight conflict and blank/null email audit. |
 | **Scope Boundary & UI/UX Fidelity** | 9.9 / 10 | Unverified (Pending Task 9) | **9.2 / 10** | Text-first AI technical interview with voice deferred; strict boundary enforcement; exactly 3 registration fields; PrepWin `#5d8c2c` design tokens preserved; Student portal preserved. |

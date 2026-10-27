@@ -1,11 +1,11 @@
 // API adapters for the shared assessment workspace (pages/roleready/RoleReadyAssessment.jsx -> AssessmentWorkspace).
 //
-// The workspace (aptitude, Monaco coding, Vapi voice interview, timers, drafts, proctoring) is ONE implementation used by both
+// The workspace (aptitude, Monaco coding, voice interview, timers, drafts, proctoring) is ONE implementation used by both
 // workflows. It talks to the server only through the small interface below, so each workflow keeps its own authentication,
 // attempt management and endpoints:
 //
 //   getSession() startAptitude() submitAptitude(answers, spent, violations) startCoding() runCode(problemId, code, language)
-//   submitCoding(solutions, spent, violations) startInterview() initVapi() submitInterview(answers, spent, violations, transcript)
+//   submitCoding(solutions, spent, violations) startInterview() initVoice() voiceTurn(turn) submitInterview(answers, spent, violations, transcript)
 //   saveDraft(section, payload, violations) terminate(reason, violations, stage)
 //
 // Student  -> /api/roleready/session/*   (student JWT or invitation token; services/rolereadyApi.js)
@@ -23,7 +23,8 @@ export const createStudentAssessmentApi = (sessionUuid) => ({
     runCode: (problemId, code, language) => rolereadyApi.runCodeTest(sessionUuid, problemId, code, language),
     submitCoding: (solutions, spent, violations) => rolereadyApi.submitCoding(sessionUuid, solutions, spent, violations),
     startInterview: () => rolereadyApi.startInterview(sessionUuid),
-    initVapi: () => rolereadyApi.initVapiSession(sessionUuid),
+    initVoice: () => rolereadyApi.initVoiceSession(sessionUuid),
+    voiceTurn: (turn) => rolereadyApi.voiceTurn(sessionUuid, turn),
     submitInterview: (answers, spent, violations, transcript) => rolereadyApi.submitInterview(sessionUuid, answers, spent, violations, transcript),
     saveDraft: (section, payload) => rolereadyApi.saveDraft(sessionUuid, section, payload),
     terminate: (reason, violations, stage) => rolereadyApi.terminateSession(sessionUuid, reason, violations, stage),
@@ -185,13 +186,14 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
                 throw readable(err);
             }
         },
-        initVapi: async () => {
+        initVoice: async () => {
             try {
-                return await candidateApi.vapiInit(need());
+                return await candidateApi.voiceInit(need());
             } catch (err) {
                 throw readable(err);
             }
         },
+        voiceTurn: (turn) => candidateApi.voiceTurn(need(), turn),
         submitInterview: (answers, _spent, violations, transcript) => submit(() => candidateApi.submitInterview(need(), answers, transcript, violations)),
 
         saveDraft: async (sectionKey, payload, violations) => {

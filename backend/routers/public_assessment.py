@@ -11,7 +11,7 @@ import secrets
 from typing import Any, Dict, List, Optional
 
 from email_validator import EmailNotValidError, validate_email
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +24,7 @@ import utils
 from services import assessment_flow_service as flow
 from services import assessment_policy as policy
 from services import assessment_rules
+from services import elevenlabs_service
 from services.rate_limiter import SlidingWindowLimiter, client_ip
 
 SECTIONS = [
@@ -228,12 +229,27 @@ def start_interview(session_uuid: str, headers=Depends(_session_headers), db: Se
     return flow.start_section(db, session, "INTERVIEW")
 
 
-@router.post("/session/{session_uuid}/vapi-init")
-def vapi_init(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
-    """Provisions the voice interviewer (same builder as the Student Platform). Needs the capability + lease and an active interview."""
+@router.post("/session/{session_uuid}/voice-init")
+def voice_init(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+    """Defines the voice interview (same builder as the Student Platform). Needs the capability + lease and an active interview."""
     token, lease = headers
     session = flow.load_session(db, session_uuid, token, lease)
-    return flow.vapi_init(db, session)
+    return flow.voice_init(db, session)
+
+
+@router.post("/session/{session_uuid}/voice-turn")
+def voice_turn(session_uuid: str, audio: Optional[UploadFile] = File(None), history: str = Form("[]"), opening: bool = Form(False),
+               headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+    """One spoken exchange: the candidate's recording in, the interviewer's text and speech out."""
+    token, lease = headers
+    session = flow.load_session(db, session_uuid, token, lease)
+    audio_bytes = audio.file.read(elevenlabs_service.MAX_AUDIO_BYTES + 1) if audio is not None else None
+    try:
+        parsed_history = json.loads(history or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation history.")
+    return flow.voice_turn(db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
+                           parsed_history, opening)
 
 
 @router.post("/session/{session_uuid}/submit-interview")

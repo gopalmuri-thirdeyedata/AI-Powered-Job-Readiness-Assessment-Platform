@@ -2,7 +2,7 @@
 Coding execution for shared-link candidates, through the SHARED coding engine (services.assessment_engine) and the
 platform's Judge0 adapter. Blueprint problems are delivered in the student stdin format.
 
-These are MOCKED-SANDBOX tests: piston_service.execute_code is replaced by a local subprocess (recruitment_helpers.
+These are MOCKED-SANDBOX tests: judge0_service.execute_code is replaced by a local subprocess (recruitment_helpers.
 install_local_sandbox), so they prove the backend's confidentiality, classification and scoring logic, NOT that Judge0 runs
 the code. Live Judge0 verification is separate (see docs/recruitment-workflow.md).
 """
@@ -13,7 +13,7 @@ import pytest
 
 import database
 import models
-from services import gemini_mock_fixtures, piston_service
+from services import gemini_mock_fixtures, judge0_service
 from services import assessment_flow_service as flow
 from tests import recruitment_helpers as h
 
@@ -104,10 +104,10 @@ def test_infinite_loop_killed_at_timeout_is_time_limit_exceeded(db, env, monkeyp
     s = coding_session(db, env)
 
     def timed_out(language_key, code, stdin=""):  # Judge0 status 5 as mapped by execute_code()
-        return {"status": "failed", "output": piston_service.TIMEOUT_MESSAGE, "stdout": "", "stderr": "", "compile_output": "",
+        return {"status": "failed", "output": judge0_service.TIMEOUT_MESSAGE, "stdout": "", "stderr": "", "compile_output": "",
                 "timed_out": True, "execution_time_ms": 5000.0, "raw": {}}
 
-    monkeypatch.setattr(piston_service, "execute_code", timed_out)
+    monkeypatch.setattr(judge0_service, "execute_code", timed_out)
     body = run(s, code="while True:\n    pass\n").json()
     assert body["error_type"] == "Time Limit Exceeded" and body["all_passed"] is False
     assert all(t["timed_out"] for t in body["test_results"])
@@ -222,17 +222,17 @@ def test_sandbox_concurrency_cap_returns_429(db, env, monkeypatch):
     h.install_local_sandbox(monkeypatch)
     s = coding_session(db, env)
     held = []
-    for _ in range(piston_service.SANDBOX_MAX_CONCURRENCY):
-        assert piston_service._SANDBOX_SLOTS.acquire(blocking=False)
+    for _ in range(judge0_service.SANDBOX_MAX_CONCURRENCY):
+        assert judge0_service._SANDBOX_SLOTS.acquire(blocking=False)
         held.append(1)
     try:
         assert run(s).status_code == 429
     finally:
         for _ in held:
-            piston_service._SANDBOX_SLOTS.release()
+            judge0_service._SANDBOX_SLOTS.release()
     assert run(s).status_code == 200
 
 
 def test_stdin_input_cap_enforced():
-    res = piston_service.execute_sandboxed("python", "print(1)", stdin="x" * (piston_service.MAX_STDIN_BYTES + 1))
-    assert res["classification"] == piston_service.RUNTIME_ERROR and "64 KB" in res["output"]
+    res = judge0_service.execute_sandboxed("python", "print(1)", stdin="x" * (judge0_service.MAX_STDIN_BYTES + 1))
+    assert res["classification"] == judge0_service.RUNTIME_ERROR and "64 KB" in res["output"]

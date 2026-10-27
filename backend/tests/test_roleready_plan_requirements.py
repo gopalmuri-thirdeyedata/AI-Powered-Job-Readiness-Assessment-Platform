@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, text
 
 from main import app
 import models
-from services import piston_service, roleready_service
+from services import judge0_service, roleready_service
 from tests.test_roleready_pipeline import db_session, setup_test_data  # noqa: F401  (fixtures)
 
 client = TestClient(app)
@@ -97,7 +97,7 @@ def test_zero_percent_aptitude_unlocks_coding(db_session, setup_test_data):
 
 
 def test_zero_percent_coding_and_empty_interview_complete_session(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("never-matches"))
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox("never-matches"))
     session, h = _advance_to_coding(db_session, setup_test_data)
     res = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": {}})
     assert res.status_code == 200 and res.json()["score"] == 0.0
@@ -125,7 +125,7 @@ def test_coding_payload_is_python_and_java_only_with_one_public_sample_and_no_hi
 
 
 def test_run_code_rejects_non_python_with_400(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox())
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox())
     session, h = _advance_to_coding(db_session, setup_test_data)
     res = client.post(_url(session, "run-code"), headers=h,
                       json={"problem_id": "1", "code": "console.log(1)", "language": "javascript"})
@@ -133,7 +133,7 @@ def test_run_code_rejects_non_python_with_400(db_session, setup_test_data, monke
 
 
 def test_submit_coding_rejects_unsupported_language_and_changes_nothing(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox())
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox())
     session, h = _advance_to_coding(db_session, setup_test_data)
     res = client.post(_url(session, "submit-coding"), headers=h,
                       json={"solutions": {"1": {"code": "x", "language": "ruby"}}})
@@ -143,7 +143,7 @@ def test_submit_coding_rejects_unsupported_language_and_changes_nothing(db_sessi
 
 
 def test_run_code_never_sends_hidden_expected_output(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("zzz"))
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox("zzz"))
     session, h = _advance_to_coding(db_session, setup_test_data)
     res = client.post(_url(session, "run-code"), headers=h, json={"problem_id": "1", "code": "print(1)", "language": "python"})
     assert res.status_code == 200
@@ -163,7 +163,7 @@ def test_sandbox_down_never_blocks_the_student(db_session, setup_test_data, monk
     A single "Run" still reports the outage (503). A final submission no longer fails with it: the code is saved,
     the interview unlocks, and the grading is simply retried later (the round is marked EVAL_FAILED meanwhile).
     """
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("down", status="service_error"))
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox("down", status="service_error"))
     session, h = _advance_to_coding(db_session, setup_test_data)
     run = client.post(_url(session, "run-code"), headers=h, json={"problem_id": "1", "code": "print(1)", "language": "python"})
     assert run.status_code == 503
@@ -178,13 +178,13 @@ def test_sandbox_down_never_blocks_the_student(db_session, setup_test_data, monk
     assert rnd.status == "EVAL_FAILED"
     assert rnd.submission_payload == solutions, "the student's code must be kept"
     # recovery: sending the same submission again grades it once the sandbox is back
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("down-recovered"))
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox("down-recovered"))
     ok = client.post(_url(session, "submit-coding"), headers=h, json={"solutions": solutions})
     assert ok.status_code == 200 and ok.json()["status"] == "success"
 
 
 def test_run_code_rate_limited_after_five_runs(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox())
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox())
     session, h = _advance_to_coding(db_session, setup_test_data)
     payload = {"problem_id": "1", "code": "print(1)", "language": "python"}
     codes = [client.post(_url(session, "run-code"), headers=h, json=payload).status_code for _ in range(6)]
@@ -271,7 +271,7 @@ DOSSIER_KEYS = {
 
 
 def test_completed_session_report_contains_full_dossier(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("0 1"))
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox("0 1"))
     session, h = _advance_to_coding(db_session, setup_test_data)
     client.post(_url(session, "submit-coding"), headers=h, json={"solutions": {}})
     client.post(_url(session, "start-interview"), headers=h)
@@ -321,13 +321,13 @@ def _judge0(monkeypatch, body, status=200):
     def fake_post(url, json=None, headers=None, timeout=None):
         sent.update(url=url, json=json, timeout=timeout)
         return _Resp(body, status)
-    monkeypatch.setattr(piston_service.requests, "post", fake_post)
+    monkeypatch.setattr(judge0_service.requests, "post", fake_post)
     return sent
 
 
 def test_adapter_accepted_returns_stdout_and_sends_limits(monkeypatch):
     sent = _judge0(monkeypatch, {"stdout": "15\n", "status": {"id": 3, "description": "Accepted"}, "time": "0.042"})
-    res = piston_service.execute_code("python", "print(15)", "")
+    res = judge0_service.execute_code("python", "print(15)", "")
     assert res["status"] == "success" and res["stdout"] == "15\n" and res["execution_time_ms"] == 42.0
     assert sent["json"]["cpu_time_limit"] == 5 and sent["json"]["wall_time_limit"] == 10
     assert sent["json"]["memory_limit"] == 128000 and sent["json"]["language_id"] == 71
@@ -335,39 +335,39 @@ def test_adapter_accepted_returns_stdout_and_sends_limits(monkeypatch):
 
 def test_adapter_time_limit_is_reported_as_timeout(monkeypatch):
     _judge0(monkeypatch, {"status": {"id": 5, "description": "Time Limit Exceeded"}})
-    res = piston_service.execute_code("python", "while True: pass")
+    res = judge0_service.execute_code("python", "while True: pass")
     assert res["timed_out"] is True and res["status"] == "failed" and "Timed Out (5.0s)" in res["output"]
 
 
 def test_adapter_compile_and_runtime_errors_are_candidate_errors(monkeypatch):
     _judge0(monkeypatch, {"status": {"id": 11, "description": "Runtime Error"}, "stderr": "Traceback"})
-    assert piston_service.execute_code("python", "1/0")["status"] == "failed"
+    assert judge0_service.execute_code("python", "1/0")["status"] == "failed"
 
 
 def test_adapter_internal_error_and_http_failure_are_service_errors(monkeypatch):
-    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    monkeypatch.setattr(judge0_service, "_sleep", lambda *_: None)
     _judge0(monkeypatch, {"status": {"id": 13, "description": "Internal Error"}})
-    assert piston_service.execute_code("python", "x")["status"] == "service_error"
+    assert judge0_service.execute_code("python", "x")["status"] == "service_error"
     _judge0(monkeypatch, {}, status=503)
-    assert piston_service.execute_code("python", "x")["status"] == "service_error"
+    assert judge0_service.execute_code("python", "x")["status"] == "service_error"
 
     def boom(*a, **k):
         raise ConnectionError("refused")
-    monkeypatch.setattr(piston_service.requests, "post", boom)
-    assert piston_service.execute_code("python", "x")["status"] == "service_error"
+    monkeypatch.setattr(judge0_service.requests, "post", boom)
+    assert judge0_service.execute_code("python", "x")["status"] == "service_error"
 
 
 def test_adapter_clips_output_and_rejects_oversized_source(monkeypatch):
     _judge0(monkeypatch, {"stdout": "a" * 50_000, "status": {"id": 3, "description": "Accepted"}})
-    assert len(piston_service.execute_code("python", "x")["stdout"]) == 10 * 1024
-    res = piston_service.execute_code("python", "a" * (64 * 1024 + 1))
+    assert len(judge0_service.execute_code("python", "x")["stdout"]) == 10 * 1024
+    res = judge0_service.execute_code("python", "a" * (64 * 1024 + 1))
     assert res["status"] == "error"
 
 
 def test_adapter_honours_configurable_judge0_url(monkeypatch):
     monkeypatch.setenv("JUDGE0_API_URL", "http://judge0.internal:2358/submissions")
     sent = _judge0(monkeypatch, {"stdout": "", "status": {"id": 3, "description": "Accepted"}})
-    piston_service.execute_code("python", "x")
+    judge0_service.execute_code("python", "x")
     assert sent["url"].startswith("http://judge0.internal:2358/submissions")
 
 
@@ -433,7 +433,7 @@ def test_fallback_coding_problems_are_medium_python_and_java_only(role):
 # ─── Interview scoring behaviour (plan §6 scenarios 8 and 14) ──────────────────
 
 def _complete_to_interview(db_session, setup_test_data, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _fake_sandbox("0 1"))
+    monkeypatch.setattr(judge0_service, "execute_code", _fake_sandbox("0 1"))
     session, h = _advance_to_coding(db_session, setup_test_data)
     client.post(_url(session, "submit-coding"), headers=h, json={"solutions": {}})
     client.post(_url(session, "start-interview"), headers=h)
@@ -491,7 +491,7 @@ def test_mysql_schema_and_migration_use_mediumtext_for_resume_text():
 
 
 def test_adapter_polls_a_queued_job_until_it_finishes(monkeypatch):
-    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    monkeypatch.setattr(judge0_service, "_sleep", lambda *_: None)
     _judge0(monkeypatch, {"token": "abc"}, status=201)
     polls = []
 
@@ -500,14 +500,14 @@ def test_adapter_polls_a_queued_job_until_it_finishes(monkeypatch):
         if len(polls) < 3:
             return _Resp({"status": {"id": 1, "description": "In Queue"}})
         return _Resp({"stdout": "7\n", "status": {"id": 3, "description": "Accepted"}, "time": "0.01"})
-    monkeypatch.setattr(piston_service.requests, "get", fake_get)
-    res = piston_service.execute_code("python", "print(7)")
+    monkeypatch.setattr(judge0_service.requests, "get", fake_get)
+    res = judge0_service.execute_code("python", "print(7)")
     assert res["status"] == "success" and res["stdout"] == "7\n"
     assert len(polls) == 3 and "/abc" in polls[0]
 
 
 def test_adapter_retries_submit_on_rate_limit_then_succeeds(monkeypatch):
-    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
+    monkeypatch.setattr(judge0_service, "_sleep", lambda *_: None)
     calls = []
 
     def fake_post(url, json=None, headers=None, timeout=None):
@@ -515,17 +515,17 @@ def test_adapter_retries_submit_on_rate_limit_then_succeeds(monkeypatch):
         if len(calls) == 1:
             return _Resp({}, status=429)
         return _Resp({"stdout": "ok", "status": {"id": 3, "description": "Accepted"}})
-    monkeypatch.setattr(piston_service.requests, "post", fake_post)
-    res = piston_service.execute_code("python", "print('ok')")
+    monkeypatch.setattr(judge0_service.requests, "post", fake_post)
+    res = judge0_service.execute_code("python", "print('ok')")
     assert res["status"] == "success" and len(calls) == 2
 
 
 def test_adapter_gives_up_with_service_error_when_queue_never_finishes(monkeypatch):
-    monkeypatch.setattr(piston_service, "_sleep", lambda *_: None)
-    monkeypatch.setattr(piston_service, "RESULT_DEADLINE_SECONDS", 0.05)
+    monkeypatch.setattr(judge0_service, "_sleep", lambda *_: None)
+    monkeypatch.setattr(judge0_service, "RESULT_DEADLINE_SECONDS", 0.05)
     _judge0(monkeypatch, {"token": "slow"}, status=201)
-    monkeypatch.setattr(piston_service.requests, "get", lambda *a, **k: _Resp({"status": {"id": 1, "description": "In Queue"}}))
-    res = piston_service.execute_code("python", "print(1)")
+    monkeypatch.setattr(judge0_service.requests, "get", lambda *a, **k: _Resp({"status": {"id": 1, "description": "In Queue"}}))
+    res = judge0_service.execute_code("python", "print(1)")
     assert res["status"] == "service_error"
 
 
@@ -536,6 +536,6 @@ def test_adapter_sends_auth_token_when_configured(monkeypatch):
     def fake_post(url, json=None, headers=None, timeout=None):
         seen.update(headers or {})
         return _Resp({"stdout": "1", "status": {"id": 3, "description": "Accepted"}})
-    monkeypatch.setattr(piston_service.requests, "post", fake_post)
-    piston_service.execute_code("python", "print(1)")
+    monkeypatch.setattr(judge0_service.requests, "post", fake_post)
+    judge0_service.execute_code("python", "print(1)")
     assert seen.get("X-Auth-Token") == "secret"

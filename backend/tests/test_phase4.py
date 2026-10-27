@@ -26,7 +26,7 @@ Covers all 28 Phase 4 requirements:
   Interview Round Integration (20-25):
     20. Interview fullscreen gate and modal rendering
     21. Interview exit & recovery integration
-    22. Interview Vapi session is NOT recreated or restarted on fullscreen change
+    22. Interview voice session is NOT recreated or restarted on fullscreen change
     23. Interview evaluation service remains completely unchanged
     24. Interview timer behavior remains unchanged
     25. Interview transcript handling remains unchanged
@@ -202,11 +202,11 @@ class TestPhase4CodingIntegration(unittest.TestCase):
 
 
 class TestPhase4InterviewIntegration(unittest.TestCase):
-    """Verifies VapiInterview integration and non-regression of Vapi session logic."""
+    """Verifies VoiceInterview integration and non-regression of the voice session logic."""
 
     @classmethod
     def setUpClass(cls):
-        interview_path = os.path.join(FRONTEND_DIR, "pages", "candidate", "VapiInterview.jsx")
+        interview_path = os.path.join(FRONTEND_DIR, "pages", "candidate", "VoiceInterview.jsx")
         with open(interview_path, "r", encoding="utf-8") as f:
             cls.interview_code = f.read()
 
@@ -221,9 +221,9 @@ class TestPhase4InterviewIntegration(unittest.TestCase):
         self.assertIn("handleAnyViolation('Fullscreen exit exceeded 10-second recovery limit')", self.interview_code)
         self.assertIn("onRecoveryTimeout: handleFullscreenTimeout", self.interview_code)
 
-    def test_22_interview_vapi_session_is_not_recreated_on_fullscreen_change(self):
-        """22. Fullscreen exit or recovery does NOT recreate, stop, or re-initiate Vapi session."""
-        # Ensure no stopInterview() or new Vapi() is inside fullscreen handlers
+    def test_22_interview_voice_session_is_not_recreated_on_fullscreen_change(self):
+        """22. Fullscreen exit or recovery does NOT recreate, stop, or re-initiate the voice session."""
+        # Ensure no stopInterview() or new VoiceInterviewSession() is inside fullscreen handlers
         self.assertNotIn("stopInterview();\n            setTimeout(reEnter", self.interview_code)
         self.assertIn("onEnterSuccess: () => {", self.interview_code)
 
@@ -273,7 +273,6 @@ class TestPhase4RegressionAndFrozenIntegrity(unittest.TestCase):
     def test_28_frozen_interview_backend_and_legacy_usefullscreen_git_diff_zero(self):
         """28. Verifies 0 git diff across all frozen backend interview files and legacy useFullscreen.js."""
         files_to_check = [
-            "backend/routers/interview.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]

@@ -46,7 +46,7 @@ This guarantees students cannot modify or read peers' roadmap tasks, resumes, pr
 ## 4. Hidden Test Case & Answer Key Confidentiality
 In Phase 4 (Practice) and Phase 7 (Placement Simulation):
 1. **Public vs. Hidden Test Cases**: Practice problems contain both public and hidden test cases. When the client fetches questions, hidden test cases (`is_hidden: true`) and correct answer keys for MCQs are stripped from the response payload before serializing JSON.
-2. **Server-Side Evaluation**: Code execution and test verification occur strictly inside the backend sandbox (Judge0 / Piston). The student UI receives only aggregate pass/fail counts and public test output, never hidden test inputs or expected outputs.
+2. **Server-Side Evaluation**: Code execution and test verification occur strictly inside the backend sandbox (Judge0). The student UI receives only aggregate pass/fail counts and public test output, never hidden test inputs or expected outputs.
 
 ---
 

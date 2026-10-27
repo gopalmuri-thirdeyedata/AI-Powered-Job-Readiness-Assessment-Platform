@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const aptitudeCandidateCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'CandidateAptitudeAssessment.jsx'), 'utf-8');
 const codingCandidateCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'CandidateCodingAssessment.jsx'), 'utf-8');
-const interviewCandidateCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'VapiInterview.jsx'), 'utf-8');
+const interviewCandidateCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'VoiceInterview.jsx'), 'utf-8');
 const roundsManagerCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'RecruitmentRoundsManager.jsx'), 'utf-8');
 const manualAptitudeBuilderCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'ManualAptitudeBuilder.jsx'), 'utf-8');
 const manualCodingBuilderCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'ManualCodingBuilder.jsx'), 'utf-8');
@@ -87,9 +87,9 @@ describe('Phase 6 Frontend Integration & System Readiness Test Suite', () => {
         assert.ok(fullscreenModalCode.includes('Return to Fullscreen'));
     });
 
-    test('9. Interview round preserves Vapi session integrity during fullscreen recovery', () => {
-        // Fullscreen recovery returnToFullscreen is called without destroying vapi ref
+    test('9. Interview round preserves the voice session integrity during fullscreen recovery', () => {
+        // Fullscreen recovery returnToFullscreen is called without destroying the voice ref
         assert.ok(interviewCandidateCode.includes('returnToFullscreen'));
-        assert.ok(interviewCandidateCode.includes('vapiRef.current'));
+        assert.ok(interviewCandidateCode.includes('voiceRef.current'));
     });
 });

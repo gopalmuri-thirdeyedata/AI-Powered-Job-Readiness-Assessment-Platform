@@ -32,9 +32,9 @@ from services import assessment_clock as clock
 from services import assessment_engine as engine
 from services import assessment_policy as policy
 from services import jd_blueprint_service as blueprints
-from services import piston_service
+from services import judge0_service
 from services import share_link_policy as link_policy
-from services import vapi_service
+from services import elevenlabs_service
 from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter
 
 WORKFLOW_TYPE = "RECRUITMENT_ASSESSMENT"
@@ -58,7 +58,8 @@ TERMINAL_STATES = ("COMPLETED", "TIMED_OUT", "ABANDONED", "INFRASTRUCTURE_FAILUR
 
 run_code_limiter = SlidingWindowLimiter(limit=5, window_seconds=60)
 run_code_gate = ConcurrencyGate(limit=2)
-vapi_init_limiter = SlidingWindowLimiter(limit=4, window_seconds=60)   # each call provisions a (billable) voice assistant
+voice_init_limiter = SlidingWindowLimiter(limit=4, window_seconds=60)   # each call rebuilds the interview and stores its prompt
+voice_turn_limiter = SlidingWindowLimiter(limit=40, window_seconds=60)  # each turn calls two billable voice APIs and Gemini
 
 
 # ==============================================================================
@@ -497,7 +498,7 @@ def start_section(db: Session, session: models.RoleReadySession, section: str) -
 # ==============================================================================
 def _sandboxed_execute(language: str, code: str, stdin: str = "") -> Dict[str, Any]:
     """The platform's Judge0 adapter with the recruitment concurrency / input caps (raises SandboxBusy when saturated)."""
-    return piston_service.execute_sandboxed(language, code, stdin)
+    return judge0_service.execute_sandboxed(language, code, stdin)
 
 
 def run_code(db: Session, session: models.RoleReadySession, problem_id: str, language: Optional[str], code: str) -> Dict[str, Any]:
@@ -537,11 +538,11 @@ def run_code(db: Session, session: models.RoleReadySession, problem_id: str, lan
 
 
 # ==============================================================================
-# Vapi voice interview (the Student Platform's interview, provisioned for a public candidate)
+# Voice interview (the Student Platform's interview, provisioned for a public candidate)
 # ==============================================================================
-def vapi_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
+def voice_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
     """
-    Provision the voice assistant for the active INTERVIEW section. Same assistant builder the Student Platform uses;
+    Define the voice interview for the active INTERVIEW section. Same builder the Student Platform uses;
     the call may not outlive the section, so its maximum duration is the seconds left on the server clock.
     Rubrics and expected concepts are never sent to the browser or to the voice model.
     """
@@ -553,7 +554,7 @@ def vapi_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
     if now >= deadline:
         db.rollback()
         raise _http(408, "Assessment round deadline reached. No further work permitted.")
-    if not vapi_init_limiter.allow(session.id):
+    if not voice_init_limiter.allow(session.id):
         db.rollback()
         raise _http(429, "Too many voice-interview connection attempts. Please wait a moment and try again.")
     rnd = get_rounds(db, session.id)["INTERVIEW"]
@@ -570,10 +571,9 @@ def vapi_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
     rnd_id = rnd.id
     db.rollback()
 
-    assistant_id = None
-    assistant_config = None
+    voice_config = None
     try:
-        assistant_id, assistant_config = vapi_service.create_or_build_assistant(
+        voice_session = elevenlabs_service.build_voice_session(
             candidate_name=candidate_name,
             role=f"{role} at {company}" if company else role,
             resume_summary="",
@@ -582,25 +582,43 @@ def vapi_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
             jd_summary=jd_summary,
             max_duration_seconds=remaining,
         )
-    except Exception as exc:  # the browser can still use a configured fallback assistant; never leak the provider error
-        print(f"[Recruitment] Vapi assistant provisioning failed: {type(exc).__name__}")
-    if assistant_id:
-        try:
-            fresh = db.query(models.RoleReadyRoundAttempt).filter(models.RoleReadyRoundAttempt.id == rnd_id).first()
-            vapi_service.swap_round_assistant(db, fresh, assistant_id)           # one live assistant per sitting
-        except Exception as exc:
-            db.rollback()
-            print(f"[Recruitment] Vapi assistant bookkeeping skipped: {type(exc).__name__}")
+        fresh = db.query(models.RoleReadyRoundAttempt).filter(models.RoleReadyRoundAttempt.id == rnd_id).first()
+        elevenlabs_service.store_voice_session(db, fresh, voice_session)     # the prompt stays on the server
+        voice_config = elevenlabs_service.public_voice_config(voice_session)
+    except Exception as exc:  # never leak the provider error; the candidate is offered a retry
+        db.rollback()
+        print(f"[Recruitment] Voice interview setup failed: {type(exc).__name__}")
     return {
         "session_uuid": session.session_uuid,
-        "assistantId": assistant_id,
-        "assistantConfig": assistant_config,
+        "voiceConfig": voice_config,
         "questions": client_questions,
         "role": role, "company": company or "Target Company", "candidateName": candidate_name,
         "duration": SECTION_MINUTES,
         "started_at": started_at, "deadline_at": deadline.isoformat(), "remaining_seconds": remaining,
         "server_time": now.isoformat(),
     }
+
+
+def voice_turn(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool) -> Dict[str, Any]:
+    """One spoken exchange of the interview. Same gating as voice_init: interview section active and before the deadline."""
+    if session.current_state != STATE_FOR_SECTION["INTERVIEW"]:
+        db.rollback()
+        raise _http(403, "The AI Technical Interview section is not unlocked yet.")
+    if clock.now() >= applicable_deadline(session):
+        db.rollback()
+        raise _http(408, "Assessment round deadline reached. No further work permitted.")
+    if not voice_turn_limiter.allow(session.id):
+        db.rollback()
+        raise _http(429, "Too many voice requests. Please wait a moment and try again.")
+    rnd = get_rounds(db, session.id)["INTERVIEW"]
+    voice_session = elevenlabs_service.load_voice_session(rnd)
+    db.rollback()
+    if voice_session is None:
+        raise _http(409, "The voice interview has not been initialised. Reload and try again.")
+    try:
+        return elevenlabs_service.run_turn(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+    except elevenlabs_service.VoiceServiceError as exc:
+        raise _http(exc.status_code, exc.public_message)
 
 
 # ==============================================================================
@@ -852,7 +870,7 @@ def close_section(db: Session, session_pk: int, section: str, payload: Optional[
         _finalize_in_place(session, rounds, terminal, done_at)
     db.commit()
     if section == "INTERVIEW":
-        vapi_service.release_round_assistant(db, rounds[section])       # the interview is closed: delete its voice assistant
+        elevenlabs_service.release_voice_session(db, rounds[section])    # the interview is closed: drop its prompt
 
     out = build_state(db, session, done_at)
     out["evaluation_pending"] = pending

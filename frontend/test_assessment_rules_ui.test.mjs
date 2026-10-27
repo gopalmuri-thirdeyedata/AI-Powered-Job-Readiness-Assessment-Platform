@@ -46,7 +46,7 @@ describe('Rules shown to Recruitment candidates inside the shared workspace', ()
 
     test('the interview offers Retry and a written alternative only after a voice failure, and recruitment gets no assistant override', () => {
         assert.ok(workspace.includes('Retry Connection') && workspace.includes('Answer in writing instead'));
-        assert.ok(workspace.includes("writtenFallback && vapiCallStatus === 'error'"), 'written answers are reachable only after a voice failure');
+        assert.ok(workspace.includes("writtenFallback && voiceCallStatus === 'error'"), 'written answers are reachable only after a voice failure');
         assert.ok(workspace.includes('{!isRecruitment && (') && workspace.includes('Assistant ID Override'));
         assert.ok(/currentStage === 'interview'\) handleSubmitInterview\(\)/.test(workspace), 'time running out submits the interview');
     });

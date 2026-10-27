@@ -236,7 +236,7 @@ def test_gopal_login_as_student(setup_three_accounts):
     """gopalmuri1919@gmail.com logs in as STUDENT and /api/auth/me returns STUDENT."""
     c, res = login_client(GOPAL_EMAIL, GOPAL_PW)
     assert res.json()["role"] == "STUDENT"
-    assert res.json()["redirect"] == "/student/dashboard"
+    assert res.json()["redirect"] == "/assessment/setup"
 
     me_res = c.get("/api/auth/me")
     assert me_res.status_code == 200

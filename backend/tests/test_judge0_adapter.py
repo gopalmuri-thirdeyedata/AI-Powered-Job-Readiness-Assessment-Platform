@@ -1,5 +1,5 @@
 """
-Judge0 adapter reliability (services/piston_service.py) and how the shared engine treats its results.
+Judge0 adapter reliability (services/judge0_service.py) and how the shared engine treats its results.
 
 MOCKED: requests.post / requests.get are replaced by scripted fakes and the clock is controlled, so these tests prove the
 adapter's classification, bounded retry / polling, breaker and error hygiene. They prove nothing about the live service
@@ -11,7 +11,7 @@ import pytest
 import requests
 
 from services import assessment_engine as engine
-from services import piston_service as ps
+from services import judge0_service as ps
 
 
 class Resp:

@@ -709,6 +709,18 @@ class RoleReadySession(Base):
     round_attempts = relationship("RoleReadyRoundAttempt", back_populates="session", cascade="all, delete-orphan", order_by="RoleReadyRoundAttempt.round_order")
 
 
+class AssessmentFeedback(Base):
+    """The student's written feedback on a finished assessment (at least 20 words). One per assessment attempt."""
+    __tablename__ = "assessment_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("roleready_sessions.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
+    feedback_text = Column(Text, nullable=False)
+    word_count = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class RoleReadyRoundAttempt(Base):
     __tablename__ = "roleready_round_attempts"
 

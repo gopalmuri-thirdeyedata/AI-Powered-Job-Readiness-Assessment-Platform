@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from jose import JWTError, jwt
+from typing import Optional
 from sqlalchemy.orm import Session
 import database, models, schemas, utils
 from routers.auth import get_current_user
-from services import vapi_service
+from services import elevenlabs_service
 
 router = APIRouter(
     prefix="/api/interview",
@@ -15,8 +20,8 @@ def initialize_interview(
     db: Session = Depends(database.get_db)
 ):
     """
-    Initializes a dynamic Vapi assistant for the current candidate.
-    Returns: { "assistantId": "..." }
+    Defines the voice interview for the current candidate.
+    Returns the public voice config and a signed token that carries the interview definition back to /voice-turn.
     """
     # 1. Identify Candidate
     # If the user is a 'candidate' role, current_user.email might be shadow email
@@ -144,35 +149,67 @@ def initialize_interview(
         except Exception:
             pass
 
-    # 3. Create Ephemeral Assistant with 5 Questions
-    assistant_id = vapi_service.create_ephemeral_assistant(
+    # 3. Define the voice interview (5 questions); the signed token carries it to /voice-turn
+    voice_session = elevenlabs_service.build_voice_session(
         candidate_name=resolved_name,
         role=role,
         resume_summary=resume_summary,
         custom_instructions=custom_instructions,
-        questions=questions
+        questions=questions,
+        max_duration_seconds=int(duration) * 60 if str(duration).isdigit() else None
     )
-    
-    if assistant_id:
-        # Mark Assessment as Started
-        try:
-            if assessment and not assessment.started_at:
-                from sqlalchemy.sql import func
-                assessment.started_at = func.now()
-                db.commit()
-        except Exception as e:
-            print(f"Failed to mark interview as started: {e}")
-    
-    if not assistant_id:
-        raise HTTPException(status_code=500, detail="Failed to initialize AI Interviewer")
-        
+
+    # Mark Assessment as Started
+    try:
+        if assessment and not assessment.started_at:
+            from sqlalchemy.sql import func
+            assessment.started_at = func.now()
+            db.commit()
+    except Exception as e:
+        print(f"Failed to mark interview as started: {e}")
+
+    voice_token = jwt.encode(
+        {"sub": str(current_user.id), "purpose": "voice-interview", "voice": voice_session,
+         "exp": datetime.utcnow() + timedelta(seconds=voice_session["max_duration_seconds"] + 600)},
+        utils.SECRET_KEY, algorithm=utils.ALGORITHM)
+
     return {
-        "assistantId": assistant_id,
+        "voiceConfig": elevenlabs_service.public_voice_config(voice_session),
+        "voiceToken": voice_token,
         "questions": questions,
         "role": role,
         "candidateName": candidate.name,
         "duration": duration
     }
+
+
+@router.post("/voice-turn")
+def voice_turn(
+    voice_token: str = Form(...),
+    audio: Optional[UploadFile] = File(None),
+    history: str = Form("[]"),
+    opening: bool = Form(False),
+    current_user: models.User = Depends(get_current_user),
+):
+    """One spoken exchange: the candidate's recording in, the interviewer's text and speech out."""
+    try:
+        claims = jwt.decode(voice_token, utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="The interview session expired. Reload and try again.")
+    if claims.get("purpose") != "voice-interview" or claims.get("sub") != str(current_user.id) or not isinstance(claims.get("voice"), dict):
+        raise HTTPException(status_code=403, detail="This interview session does not belong to you.")
+    try:
+        parsed_history = json.loads(history or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation history.")
+    audio_bytes = audio.file.read(elevenlabs_service.MAX_AUDIO_BYTES + 1) if audio is not None else None
+    try:
+        return elevenlabs_service.run_turn(
+            claims["voice"], audio=audio_bytes,
+            content_type=(audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
+            history=parsed_history, opening=opening)
+    except elevenlabs_service.VoiceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_message)
 
 @router.post("/submit")
 def submit_interview(

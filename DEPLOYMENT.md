@@ -9,7 +9,7 @@ This document provides step-by-step instructions for deploying the **HiringAI En
   * CPU: 2 vCPUs (4 vCPUs recommended for concurrent proctoring inference & AI summarization)
   * RAM: 4 GB (8 GB recommended for YOLOv8 CPU inference + Gunicorn worker pool)
   * Disk: 40 GB NVMe / SSD (provisioned with growth capacity for resume storage and MySQL)
-  * Network: Outbound internet access for Groq, Gemini, Vapi, Judge0, and Let's Encrypt
+  * Network: Outbound internet access for Groq, Gemini, ElevenLabs, Judge0, and Let's Encrypt
 
 ---
 
@@ -84,16 +84,15 @@ This document provides step-by-step instructions for deploying the **HiringAI En
 | `GROQ_API_KEY_FALLBACK_1` | Optional | Fallback Groq API key 1 |
 | `GROQ_API_KEY_FALLBACK_2` | Optional | Fallback Groq API key 2 |
 | `GEMINI_API_KEY` | Optional | Google Gemini API key for fallback inference |
-| `VAPI_PRIVATE_KEY` | Yes | Vapi private API key for interview evaluation |
-| `VAPI_PUBLIC_KEY` | Yes | Vapi public key |
-| `PISTON_API_URL` | Yes | Code execution endpoint |
+| `ELEVENLABS_API_KEY` | Yes | ElevenLabs API key (speech-to-text and text-to-speech for the voice interview; never sent to the browser) |
+| `ELEVENLABS_VOICE_ID` | Yes | ElevenLabs voice the AI interviewer speaks with |
+| `JUDGE0_API_URL` | Yes | Code execution endpoint |
 | `REDIS_URL` | Optional | `redis://<host>:6379/0` |
 
 ### Frontend (`frontend/.env.production`)
 | Variable | Required | Description |
 |---|---|---|
 | `VITE_API_URL` | Yes | Backend API root (e.g. `https://app.yourdomain.com/api` or `https://api.yourdomain.com`) |
-| `VITE_VAPI_PUBLIC_KEY` | Yes | Vapi Public API Key |
 
 ---
 

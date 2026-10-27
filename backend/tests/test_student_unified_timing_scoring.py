@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import database
 import models
 from main import app
-from services import assessment_clock, assessment_engine, assessment_policy as policy, piston_service, roleready_service as rs
+from services import assessment_clock, assessment_engine, assessment_policy as policy, judge0_service, roleready_service as rs
 from tests.test_roleready_pipeline import db_session, setup_test_data  # noqa: F401  (fixtures)
 
 client = TestClient(app)
@@ -152,7 +152,7 @@ def test_page_refresh_does_not_reset_timers(db_session, setup_test_data, clk):
 
 
 def test_section_transitions_never_reset_the_overall_deadline(db_session, setup_test_data, clk, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _sandbox())
+    monkeypatch.setattr(judge0_service, "execute_code", _sandbox())
     s = new_session(db_session, setup_test_data)
     h = setup_test_data["auth_headers"]
     client.post(url(s, "start-aptitude"), headers=h)
@@ -212,7 +212,7 @@ def test_submission_inside_the_arrival_window_is_accepted_and_after_it_is_not(db
 
 
 def test_run_code_is_rejected_after_the_section_deadline(db_session, setup_test_data, clk, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _sandbox())
+    monkeypatch.setattr(judge0_service, "execute_code", _sandbox())
     s = new_session(db_session, setup_test_data)
     h = setup_test_data["auth_headers"]
     client.post(url(s, "start-aptitude"), headers=h)
@@ -226,7 +226,7 @@ def test_run_code_is_rejected_after_the_section_deadline(db_session, setup_test_
 
 
 def test_coding_section_expiry_scores_the_draft_through_the_sandbox(db_session, setup_test_data, clk, monkeypatch):
-    monkeypatch.setattr(piston_service, "execute_code", _sandbox("never-matches"))
+    monkeypatch.setattr(judge0_service, "execute_code", _sandbox("never-matches"))
     s = new_session(db_session, setup_test_data)
     h = setup_test_data["auth_headers"]
     client.post(url(s, "start-aptitude"), headers=h)
@@ -275,7 +275,7 @@ def test_timed_out_attempt_is_closed_for_good(db_session, setup_test_data, clk):
     clk.advance(61 * 60)
     client.get(f"/api/roleready/session/{s.session_uuid}", headers=h)
     for action, body in (("start-coding", None), ("start-interview", None), ("submit-coding", {"solutions": {}}),
-                         ("submit-interview", {"answers": []}), ("vapi-init", None)):
+                         ("submit-interview", {"answers": []}), ("voice-init", None)):
         r = client.post(url(s, action), headers=h, json=body) if body is not None else client.post(url(s, action), headers=h)
         assert r.status_code in (400, 403, 409), (action, r.status_code)
     assert client.put(url(s, "draft"), headers=h, json={"section": "aptitude", "payload": {}}).status_code in (403, 409)

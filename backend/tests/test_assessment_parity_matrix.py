@@ -11,7 +11,7 @@ endpoints, public capability endpoints) on ONE controlled clock, then compares:
   * what each workflow's report / roster / history actually shows versus the persisted row.
 
 Mocked here (and therefore NOT proof of a live integration): the code sandbox (a real local Python subprocess, so the hidden
-tests really execute), the AI interview evaluator and Vapi. See the release report for the live checks.
+tests really execute), the AI interview evaluator and the voice service. See the release report for the live checks.
 """
 from datetime import datetime, timedelta, timezone
 

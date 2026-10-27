@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from urllib.parse import urlparse
+import json
 import os
 import re
 import shutil
@@ -24,6 +25,8 @@ from routers.auth import require_hr_or_admin, get_current_tenant, cookie_session
 from services import local_auth
 from routers.student import get_current_student_profile
 from services import roleready_service
+from services import elevenlabs_service
+from services import assessment_feedback
 from services import assessment_clock as clock
 from services import assessment_policy as policy
 from services.student_resume_analyzer import extract_resume_text, analyze_student_resume, extract_candidate_name_from_resume, persist_student_resume_version
@@ -613,16 +616,35 @@ def start_interview(
     return roleready_service.start_interview_round(db, session)
 
 
-@router.post("/session/{session_uuid}/vapi-init")
-def init_vapi_interview(
+@router.post("/session/{session_uuid}/voice-init")
+def init_voice_interview(
     session: models.RoleReadySession = Depends(get_authorized_session),
     db: Session = Depends(database.get_db)
 ):
     """
     STRICT BACKEND GATING: Fails with HTTP 403 if coding is not completed.
-    Synthesizes custom questions grounded in Resume + JD and provisions dynamic Vapi assistant.
+    Synthesizes custom questions grounded in Resume + JD and defines the voice interview (the prompt stays server-side).
     """
-    return roleready_service.init_vapi_interview_session(db, session)
+    return roleready_service.init_voice_interview_session(db, session)
+
+
+@router.post("/session/{session_uuid}/voice-turn")
+def voice_interview_turn(
+    audio: Optional[UploadFile] = File(None),
+    history: str = Form("[]"),
+    opening: bool = Form(False),
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """One spoken exchange: the candidate's recording in, the interviewer's text and speech out."""
+    audio_bytes = audio.file.read(elevenlabs_service.MAX_AUDIO_BYTES + 1) if audio is not None else None
+    try:
+        parsed_history = json.loads(history or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation history.")
+    return roleready_service.voice_interview_turn(
+        db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
+        parsed_history, opening)
 
 
 @router.post("/session/{session_uuid}/submit-interview")
@@ -669,12 +691,71 @@ def terminate_session(
 
 # ─── FINAL STUDENT REPORT ─────────────────────────────────────────────────────
 
+def get_authorized_report_session(
+    session_uuid: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_invitation_token: Optional[str] = Header(None, alias="X-Invitation-Token"),
+    db: Session = Depends(database.get_db)
+) -> models.RoleReadySession:
+    """
+    The report route's session check. Identical to get_authorized_session, plus ONE read-only exception: a student may open the
+    report of their OWN finished shared-link attempt (attached to their profile by e-mail, see services/student_link_results.py).
+    Every other route keeps treating shared-link attempts as reachable only through their capability-based public API.
+    """
+    try:
+        session = roleready_service.get_session_by_uuid(db, session_uuid)
+    except HTTPException:
+        session = None            # unknown session: the original checks below answer (401 without credentials, else 404)
+    if session is not None and session.workflow_type == "RECRUITMENT_ASSESSMENT":
+        user = None
+        if authorization and authorization.startswith("Bearer "):
+            try:
+                payload = jwt.decode(authorization.split(" ", 1)[1].strip(), utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
+                user = db.query(models.User).filter(models.User.email == payload.get("sub")).first()
+            except JWTError:
+                user = None
+        elif request.cookies.get(local_auth.SESSION_COOKIE):
+            user = cookie_session_user(request, db)
+        profile = db.query(models.StudentProfile).filter(models.StudentProfile.user_id == user.id).first()             if user is not None and getattr(user, "role", None) == models.UserRole.STUDENT else None
+        if profile is not None and session.student_profile_id == profile.id and session.current_state in ("COMPLETED", "TIMED_OUT"):
+            return session
+    return get_authorized_session(session_uuid, request, authorization, x_invitation_token, db)
+
+
+
 @router.get("/session/{session_uuid}/report")
 def get_student_report(
-    session: models.RoleReadySession = Depends(get_authorized_session),
+    session: models.RoleReadySession = Depends(get_authorized_report_session),
     db: Session = Depends(database.get_db)
 ):
     return roleready_service.get_student_report(db, session)
+
+
+class AssessmentFeedbackSchema(BaseModel):
+    feedback: str
+
+
+@router.get("/session/{session_uuid}/feedback")
+def get_assessment_feedback_status(
+    session: models.RoleReadySession = Depends(get_authorized_report_session),
+    db: Session = Depends(database.get_db)
+):
+    """Whether the student already gave the feedback that unlocks the report download and the dashboard."""
+    return assessment_feedback.get_status(db, session)
+
+
+@router.post("/session/{session_uuid}/feedback")
+def submit_assessment_feedback(
+    payload: AssessmentFeedbackSchema,
+    session: models.RoleReadySession = Depends(get_authorized_report_session),
+    student_profile: models.StudentProfile = Depends(get_current_student_profile),
+    db: Session = Depends(database.get_db)
+):
+    """Saves the student's feedback (at least 20 words). Only the owner of a finished attempt can send it."""
+    if session.student_profile_id != student_profile.id:
+        raise HTTPException(status_code=403, detail="This assessment does not belong to you.")
+    return assessment_feedback.save_feedback(db, session, student_profile.id, payload.feedback)
 
 
 # ==============================================================================

@@ -129,10 +129,10 @@ describe('recruitment adapter: the explicit start, in-memory lease and server-dr
 
     test('every section call carries the capability + lease, proctoring events and the student payload shapes', async () => {
         await started();
-        globalThis.__axiosHandler = (call) => (call.url.includes('vapi-init') ? { assistantId: 'a', questions: [] } : state());
+        globalThis.__axiosHandler = (call) => (call.url.includes('voice-init') ? { assistantId: 'a', questions: [] } : state());
         await api.submitAptitude({ A1: 'B' }, 5, [{ type: 'Tab switch', strike: 1 }]);
         await api.runCode('C1', 'print(1)', 'java');
-        await api.initVapi();
+        await api.initVoice();
         await api.submitInterview([{ question_id: 'I1', response: 'r' }], 5, [], [{ role: 'user', text: 'r' }]);
         await api.saveDraft('coding', { solutions: {} }, [{ type: 'Blur' }]);
         for (const c of globalThis.__axiosCalls) {
@@ -167,7 +167,7 @@ describe('student adapter: the existing student endpoints, student authenticatio
         await api.runCode('1', 'code', 'python');
         await api.submitCoding({ 1: { code: 'c', language: 'java' } }, 7, []);
         await api.startInterview();
-        await api.initVapi();
+        await api.initVoice();
         await api.submitInterview([{ question_id: 1, response: 'r' }], 9, [], []);
         await api.saveDraft('aptitude', { answers: { 1: 'B' } });
         await api.terminate('reason', [], 'coding');
@@ -175,7 +175,7 @@ describe('student adapter: the existing student endpoints, student authenticatio
         assert.deepEqual(seen, [
             'GET /api/roleready/session/UUID-9', 'POST /api/roleready/session/UUID-9/start-aptitude', 'POST /api/roleready/session/UUID-9/submit-aptitude',
             'POST /api/roleready/session/UUID-9/start-coding', 'POST /api/roleready/session/UUID-9/run-code', 'POST /api/roleready/session/UUID-9/submit-coding',
-            'POST /api/roleready/session/UUID-9/start-interview', 'POST /api/roleready/session/UUID-9/vapi-init', 'POST /api/roleready/session/UUID-9/submit-interview',
+            'POST /api/roleready/session/UUID-9/start-interview', 'POST /api/roleready/session/UUID-9/voice-init', 'POST /api/roleready/session/UUID-9/submit-interview',
             'PUT /api/roleready/session/UUID-9/draft', 'POST /api/roleready/session/UUID-9/terminate',
         ]);
         // Students authenticate with the HttpOnly session cookie (+ CSRF header added by the auth client): no per-request bearer credential

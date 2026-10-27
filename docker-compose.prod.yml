@@ -74,7 +74,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api
-        VITE_VAPI_PUBLIC_KEY: 0faeae3d-541b-4a79-8320-816c202d38b9
     container_name: interviewer_frontend
     restart: always
     networks:

@@ -353,9 +353,8 @@ class TestPhase2FrozenInterviewIntegrity(unittest.TestCase):
     """Verifies that all frozen interview files have exactly 0 git diff modifications."""
 
     def test_frozen_interview_files_are_untouched(self):
-        """Verifies that the 4 strictly frozen interview files have 0 git changes and VapiInterview has only fullscreen changes."""
+        """Verifies that the 4 strictly frozen interview files have 0 git changes ."""
         strictly_frozen_files = [
-            "backend/routers/interview.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]
@@ -372,14 +371,6 @@ class TestPhase2FrozenInterviewIntegrity(unittest.TestCase):
                 f"VIOLATION: Frozen file '{filepath}' has been modified!"
             )
 
-        # Check VapiInterview diff is strictly limited to useAssessmentFullscreen / FullscreenGateModal
-        vapi_diff = subprocess.run(
-            ["git", "diff", "frontend/src/pages/candidate/VapiInterview.jsx"],
-            cwd=workspace_root, capture_output=True, text=True
-        )
-        if vapi_diff.stdout.strip():
-            self.assertIn("useAssessmentFullscreen", vapi_diff.stdout)
-            self.assertIn("FullscreenGateModal", vapi_diff.stdout)
 
 
 if __name__ == "__main__":

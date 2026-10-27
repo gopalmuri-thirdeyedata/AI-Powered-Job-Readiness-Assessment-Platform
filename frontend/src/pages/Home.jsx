@@ -51,7 +51,7 @@ const STATS = [
 ];
 
 const TECH = [
-    'Google Gemini', 'Vapi Voice AI', 'Piston Sandbox', 'Monaco Editor', 'YOLOv8 Proctoring',
+    'Google Gemini', 'ElevenLabs Voice AI', 'Judge0 Sandbox', 'Monaco Editor', 'YOLOv8 Proctoring',
     'Secure Sign-In', 'Multi-Tenant Isolation', 'STAR Rubrics', 'Hidden Test Suites', 'PDF Reports',
 ];
 
@@ -65,8 +65,8 @@ const ROUND_CARDS = [
     {
         n: '02', tone: 'emerald', icon: Code2, tag: 'Round 2 · Sandboxed Coding',
         title: 'Live Programming & Hidden Tests',
-        body: 'Practical algorithmic challenges in Monaco IDE executed in an isolated runtime (Piston). Validated against both public test cases and confidential hidden test suites. Unlocks after Aptitude.',
-        foot: 'Isolated Piston Runtime · Multi-Language',
+        body: 'Practical algorithmic challenges in Monaco IDE executed in an isolated runtime (Judge0). Validated against both public test cases and confidential hidden test suites. Unlocks after Aptitude.',
+        foot: 'Isolated Judge0 Runtime · Multi-Language',
     },
     {
         n: '03', tone: 'purple', icon: MessageSquare, tag: 'Round 3 · AI Technical Interview',
@@ -190,11 +190,11 @@ const Home = () => {
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
 
-    // Signed in: students go straight to their dashboard; admins go to theirs when they asked to sign in (?auth=login)
+    // Signed in: students land on the assessment page (their dashboard is one click away); admins go to theirs when they asked to sign in (?auth=login)
     useEffect(() => {
         if (!isLoaded || !user) return;
         if (role === 'STUDENT') {
-            navigate('/student/dashboard', { replace: true });
+            navigate('/assessment/setup', { replace: true });
         } else if (isAdminRole(role) && searchParams.get('auth')) {
             navigate('/admin/dashboard', { replace: true });
         }
@@ -211,7 +211,7 @@ const Home = () => {
     // One login for everyone: the server decides the destination from the stored role
     const openSignIn = () => {
         if (user && role === 'STUDENT') {
-            navigate('/student/dashboard');
+            navigate('/assessment/setup');
         } else if (user && isAdminRole(role)) {
             navigate('/admin/dashboard');
         } else {

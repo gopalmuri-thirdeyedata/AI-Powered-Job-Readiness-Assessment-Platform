@@ -177,7 +177,7 @@ const HeroPreview = () => {
 
                 <div className="pt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500" /><span>Proctoring Active · Fullscreen Enforced</span></div>
-                    <span className="font-mono text-[10px] hidden xs:inline sm:inline">Piston Sandbox 2.0</span>
+                    <span className="font-mono text-[10px] hidden xs:inline sm:inline">Judge0 Sandbox</span>
                 </div>
             </div>
         </TiltCard>

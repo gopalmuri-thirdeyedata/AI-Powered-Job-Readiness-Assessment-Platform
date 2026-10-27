@@ -9,7 +9,7 @@ import copy
 from datetime import datetime
 import schemas, models, utils, database
 from .auth import get_current_user
-from services import ai_generator, piston_service, aptitude_evaluation, coding_evaluation
+from services import ai_generator, judge0_service, aptitude_evaluation, coding_evaluation
 
 router = APIRouter(
     prefix="/api/assessments",
@@ -231,7 +231,7 @@ def assign_assessment(
     # --- PRE-GENERATE QUESTIONS (Optimization) ---
     # Generate ONCE per batch assignment to save time and ensure consistency
     try:
-        # Skip generation for Interview type (VAPI handles it dynamically) and Manual authoring
+        # Skip generation for Interview type (the voice interviewer handles it dynamically) and Manual authoring
         if round_type != "interview" and question_src != "manual" and not config.get("generated_questions"):
             generated_qs = ai_generator.generate_questions(round_type, config)
             if generated_qs:
@@ -434,7 +434,7 @@ def get_my_latest_assessment(
         if assessment:
             q_src = getattr(assessment, "question_source", "ai") or assessment.config.get("question_source", "ai")
             # Check if questions need to be generated (Lazy Generation)
-            # Optimization: Skip for 'interview' (VAPI dynamic) and 'manual' (admin authored)
+            # Optimization: Skip for 'interview' (voice interviewer, dynamic) and 'manual' (admin authored)
             if not assessment.config.get("generated_questions") and assessment.type != "interview" and q_src != "manual":
                 questions = ai_generator.generate_questions(assessment.type, assessment.config)
                 
@@ -516,13 +516,13 @@ def execute_code(
             request.code, request.language, request.question, request.testCases
         )
         
-    # 2. Execute on Piston
-    piston_res = piston_service.execute_code(request.language, runner_code)
+    # 2. Execute on Judge0
+    judge0_res = judge0_service.execute_code(request.language, runner_code)
 
     
     # 3. Process Results (Strict Stream Parsing)
-    if piston_res.get("status") == "success":
-        raw_output = piston_res.get("output", "").strip()
+    if judge0_res.get("status") == "success":
+        raw_output = judge0_res.get("output", "").strip()
 
         results = []
         
@@ -601,18 +601,18 @@ def execute_code(
         except:
              pass
             
-    # If we are here, Piston failed or Parsing failed
-    analysis = ai_generator.analyze_error(request.code, piston_res.get("output", ""))
+    # If we are here, Judge0 failed or Parsing failed
+    analysis = ai_generator.analyze_error(request.code, judge0_res.get("output", ""))
 
     error_type = "compilation_error"
-    if piston_res.get("status") == "service_error":
+    if judge0_res.get("status") == "service_error":
         error_type = "service_error"
-    elif piston_res.get("status") == "failed":
+    elif judge0_res.get("status") == "failed":
         error_type = "runtime_error"
     
     return {
         "syntax_valid": False,
-        "error_message": piston_res.get("output", "Execution Failed"),
+        "error_message": judge0_res.get("output", "Execution Failed"),
         "error_type": error_type,
         "results": [],
         "feedback": analysis

@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
+import { AssessmentLockProvider } from './context/AssessmentLockContext';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 // Layouts (Lightweight structure)
@@ -46,8 +47,7 @@ const CandidateStartPage = lazy(() => import('./pages/candidate/CandidateStartPa
 const InstructionsPage = lazy(() => import('./pages/candidate/InstructionsPage'));
 const CandidateCodingAssessment = lazy(() => import('./pages/candidate/CandidateCodingAssessment'));
 const CandidateAptitudeAssessment = lazy(() => import('./pages/candidate/CandidateAptitudeAssessment'));
-const VapiInterview = lazy(() => import('./pages/candidate/VapiInterview'));
-const VapiTest = lazy(() => import('./pages/VapiTest'));
+const VoiceInterview = lazy(() => import('./pages/candidate/VoiceInterview'));
 
 // Student Career Pages (Lazy Loaded)
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
@@ -77,6 +77,7 @@ const PageLoadingSpinner = () => (
 function App() {
     return (
         <ThemeProvider>
+        <AssessmentLockProvider>
         <Router>
             <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1220] text-slate-900 dark:text-slate-100 transition-colors">
                 <Suspense fallback={<PageLoadingSpinner />}>
@@ -130,8 +131,7 @@ function App() {
                             <Route path="instructions" element={<InstructionsPage />} />
                             <Route path="assessment/coding" element={<CandidateCodingAssessment />} />
                             <Route path="assessment/aptitude" element={<CandidateAptitudeAssessment />} />
-                            <Route path="assessment/interview" element={<VapiInterview />} />
-                            <Route path="test-vapi" element={<VapiTest />} />
+                            <Route path="assessment/interview" element={<VoiceInterview />} />
                         </Route>
 
                         {/* Student Routes - Active Assessment & Placement Hub */}
@@ -185,6 +185,7 @@ function App() {
                 </Suspense>
             </div>
         </Router>
+        </AssessmentLockProvider>
         </ThemeProvider>
     );
 }

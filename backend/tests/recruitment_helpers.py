@@ -186,7 +186,8 @@ def reset_public_limiters():
     public_assessment.meta_limiter.reset()
     flow.run_code_limiter.reset()
     flow.run_code_gate.reset()
-    flow.vapi_init_limiter.reset()
+    flow.voice_init_limiter.reset()
+    flow.voice_turn_limiter.reset()
 
 
 def install_local_sandbox(monkeypatch, fail=False):
@@ -195,7 +196,7 @@ def install_local_sandbox(monkeypatch, fail=False):
     import subprocess
     import sys
     import tempfile
-    from services import piston_service
+    from services import judge0_service
 
     calls = {"n": 0, "sources": [], "stdins": [], "languages": []}
 
@@ -220,7 +221,7 @@ def install_local_sandbox(monkeypatch, fail=False):
         return {"status": "success" if p.returncode == 0 else "failed", "output": p.stdout, "stdout": p.stdout,
                 "stderr": p.stderr, "compile_output": "", "timed_out": False, "execution_time_ms": 1.0, "raw": {}}
 
-    monkeypatch.setattr(piston_service, "execute_code", local_exec)
+    monkeypatch.setattr(judge0_service, "execute_code", local_exec)
     return calls
 
 

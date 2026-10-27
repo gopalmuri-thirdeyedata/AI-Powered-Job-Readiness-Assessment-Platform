@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import Vapi from '@vapi-ai/web';
-import { VAPI_CONNECT_TIMEOUT_MS, classifyVapiError, disposeVapi, interviewSubmitErrorMessage, isClosedAttemptStatus, toDisplayText } from '../../utils/vapiSession';
+import { VoiceInterviewSession } from '../../utils/voiceInterviewSession';
+import { VOICE_CONNECT_TIMEOUT_MS, classifyVoiceError, disposeVoice, interviewSubmitErrorMessage, isClosedAttemptStatus, toDisplayText } from '../../utils/voiceSession';
 import {
     Clock,
     CheckCircle2,
@@ -54,7 +54,6 @@ import { createStudentAssessmentApi } from '../../services/assessmentApi';
 import API_URL from '../../apiConfig';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 
-const VAPI_PUBLIC_KEY = import.meta.env.VITE_VAPI_PUBLIC_KEY;
 
 // The "evaluating" animation stays up for at least this long, even when the server answers instantly, so
 // finishing a round feels deliberate. The next round's clock only starts after it, never behind it.
@@ -264,7 +263,7 @@ const ProctorCameraFeed = ({
 
 /**
  * The assessment workspace shared by the Student Platform and the Admin Recruitment shared-link workflow.
- * Aptitude, Monaco coding (Python / Java), the Vapi voice interview, timers, drafts and proctoring are this one
+ * Aptitude, Monaco coding (Python / Java), the voice interview, timers, drafts and proctoring are this one
  * implementation; a workflow differs only through the `api` adapter (services/assessmentApi.js) it is given:
  *   mode               'student' | 'recruitment'
  *   skipInstructions   recruitment candidates already read and acknowledged the instructions: start at the device check
@@ -524,26 +523,25 @@ export const AssessmentWorkspace = ({
     const [isRecordingVoice, setIsRecordingVoice] = useState(false);
     const [isSubmittingInterview, setIsSubmittingInterview] = useState(false);
 
-    // ── Round 3: Voice-First Vapi State ──────────────────────────────
-    const [vapiAssistantId, setVapiAssistantId] = useState(null);
-    const [vapiAssistantConfig, setVapiAssistantConfig] = useState(null);
-    const [vapiCallStatus, setVapiCallStatus] = useState('idle'); // 'idle' | 'connecting' | 'active' | 'ended' | 'error'
-    const [vapiSpeakingState, setVapiSpeakingState] = useState('connecting'); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
-    const [vapiVolume, setVapiVolume] = useState(0);
-    const [vapiTranscript, setVapiTranscript] = useState([]);
-    const [vapiIsMuted, setVapiIsMuted] = useState(false);
+    // ── Round 3: Voice-First State ──────────────────────────────
+    const [voiceConfig, setVoiceConfig] = useState(null);
+    const [voiceCallStatus, setVoiceCallStatus] = useState('idle'); // 'idle' | 'connecting' | 'active' | 'ended' | 'error'
+    const [voiceSpeakingState, setVoiceSpeakingState] = useState('connecting'); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
+    const [voiceVolume, setVoiceVolume] = useState(0);
+    const [voiceTranscript, setVoiceTranscript] = useState([]);
+    const [voiceIsMuted, setVoiceIsMuted] = useState(false);
     const [currentSpeaker, setCurrentSpeaker] = useState(null); // 'ai' | 'user'
-    const [vapiConnectionError, setVapiConnectionErrorRaw] = useState(null);
+    const [voiceConnectionError, setVoiceConnectionErrorRaw] = useState(null);
     // Whatever the SDK or API hands over, only text is ever stored: an object rendered in JSX would white-screen the candidate.
-    const setVapiConnectionError = useCallback((value) => setVapiConnectionErrorRaw(
+    const setVoiceConnectionError = useCallback((value) => setVoiceConnectionErrorRaw(
         value == null ? null : toDisplayText(value, 'The voice connection failed. Choose Retry Connection.')), []);
     const [showEndInterviewModal, setShowEndInterviewModal] = useState(false);
     const [writtenFallback, setWrittenFallback] = useState(false);
-    const vapiRef = useRef(null);
-    const vapiConnectTimerRef = useRef(null);
+    const voiceRef = useRef(null);
+    const voiceConnectTimerRef = useRef(null);
     const interviewSubmitLockRef = useRef(false);     // synchronous guard: state updates are too late to stop a double submit
     const [interviewSubmitError, setInterviewSubmitError] = useState(null);
-    const vapiTranscriptScrollRef = useRef(null);
+    const voiceTranscriptScrollRef = useRef(null);
 
     // ── Microphone: chosen device, live level, and "we can hear you" ──────
     const mic = useMicrophone({ enabled: currentStage === 'device_check' || currentStage === 'interview' });
@@ -556,9 +554,9 @@ export const AssessmentWorkspace = ({
     // Route the live call to the microphone the candidate picked (the browser default is often the wrong one)
     const applyMicToCall = useCallback((id) => {
         const target = id || micDeviceRef.current;
-        if (!target || !vapiRef.current) return;
+        if (!target || !voiceRef.current) return;
         try {
-            const result = vapiRef.current.setInputDevicesAsync({ audioDeviceId: target });
+            const result = voiceRef.current.setInputDevicesAsync({ audioDeviceId: target });
             if (result && typeof result.catch === 'function') result.catch((e) => console.warn('Could not switch the call microphone:', e));
         } catch (e) {
             console.warn('Could not switch the call microphone:', e);
@@ -567,15 +565,15 @@ export const AssessmentWorkspace = ({
 
     // Warn when nothing has been heard for a while after the interviewer finished speaking
     useEffect(() => {
-        if (vapiCallStatus !== 'active') { setMicSilent(false); return undefined; }
+        if (voiceCallStatus !== 'active') { setMicSilent(false); return undefined; }
         const timer = setInterval(() => {
             setMicSilent(
-                vapiSpeakingState === 'listening' && !vapiIsMuted
+                voiceSpeakingState === 'listening' && !voiceIsMuted
                 && shouldWarnSilence({ now: Date.now(), lastSoundAt: mic.lastSoundAtRef.current, listeningSince: listeningSinceRef.current }),
             );
         }, 1000);
         return () => clearInterval(timer);
-    }, [vapiCallStatus, vapiSpeakingState, vapiIsMuted, mic.lastSoundAtRef]);
+    }, [voiceCallStatus, voiceSpeakingState, voiceIsMuted, mic.lastSoundAtRef]);
 
     // ── Camera, Mic & AI Model Initializer ──────────────────────────
     const initHardware = useCallback(async () => {
@@ -947,79 +945,79 @@ export const AssessmentWorkspace = ({
         loadInterview();
     };
 
-    // ── Auto-scroll Vapi transcript ──────────────────────────────────
+    // ── Auto-scroll Voice transcript ──────────────────────────────────
     useEffect(() => {
-        if (vapiTranscriptScrollRef.current) {
-            vapiTranscriptScrollRef.current.scrollTop = vapiTranscriptScrollRef.current.scrollHeight;
+        if (voiceTranscriptScrollRef.current) {
+            voiceTranscriptScrollRef.current.scrollTop = voiceTranscriptScrollRef.current.scrollHeight;
         }
-    }, [vapiTranscript]);
+    }, [voiceTranscript]);
 
-    // ── Vapi Lifecycle Cleanup ───────────────────────────────────────
+    // ── Voice Lifecycle Cleanup ───────────────────────────────────────
     useEffect(() => {
         return () => {
-            clearTimeout(vapiConnectTimerRef.current);
-            disposeVapi(vapiRef.current);
-            vapiRef.current = null;
+            clearTimeout(voiceConnectTimerRef.current);
+            disposeVoice(voiceRef.current);
+            voiceRef.current = null;
         };
     }, []);
 
-    const startVapiCall = useCallback((assistantTarget) => {
-        if (!VAPI_PUBLIC_KEY) {
-            console.warn("[RoleReady Vapi] Missing VAPI_PUBLIC_KEY in environment.");
-            setVapiCallStatus('error');
-            setVapiConnectionError("VAPI_PUBLIC_KEY is missing in environment variables.");
-            return;
-        }
-
+    const startVoiceCall = useCallback((voiceConfig) => {
         try {
-            clearTimeout(vapiConnectTimerRef.current);
-            disposeVapi(vapiRef.current);          // stop the previous call AND detach its listeners (no stale call-end later)
+            clearTimeout(voiceConnectTimerRef.current);
+            disposeVoice(voiceRef.current);          // stop the previous call AND detach its listeners (no stale call-end later)
 
-            const vapi = new Vapi(VAPI_PUBLIC_KEY);
-            vapiRef.current = vapi;
-            const current = () => vapiRef.current === vapi;      // events from a replaced instance are ignored
-            setVapiCallStatus('connecting');
-            setVapiSpeakingState('connecting');
-            setVapiConnectionError(null);
+            const voice = new VoiceInterviewSession({
+                turn: (args) => api.voiceTurn(args),
+                audioDeviceId: micDeviceRef.current || undefined,
+            });
+            voiceRef.current = voice;
+            const current = () => voiceRef.current === voice;      // events from a replaced instance are ignored
+            setVoiceCallStatus('connecting');
+            setVoiceSpeakingState('connecting');
+            setVoiceConnectionError(null);
 
             // A connection that never completes must not leave the candidate on a spinner with no way out.
-            vapiConnectTimerRef.current = setTimeout(() => {
+            voiceConnectTimerRef.current = setTimeout(() => {
                 if (!current()) return;
-                disposeVapi(vapi);
-                vapiRef.current = null;
-                setVapiCallStatus('error');
-                setVapiConnectionError('The voice connection timed out. Choose Retry Connection.');
-            }, VAPI_CONNECT_TIMEOUT_MS);
+                disposeVoice(voice);
+                voiceRef.current = null;
+                setVoiceCallStatus('error');
+                setVoiceConnectionError('The voice connection timed out. Choose Retry Connection.');
+            }, VOICE_CONNECT_TIMEOUT_MS);
 
-            vapi.on('call-start', () => {
+            voice.on('call-start', () => {
                 if (!current()) return;
-                clearTimeout(vapiConnectTimerRef.current);
-                applyMicToCall();
-                setVapiCallStatus('active');
-                setVapiSpeakingState('ai_speaking');
+                clearTimeout(voiceConnectTimerRef.current);
+                setVoiceCallStatus('active');
+                setVoiceSpeakingState('ai_speaking');
                 setCurrentSpeaker('ai');
             });
 
-            vapi.on('speech-start', () => {
+            voice.on('processing', () => {
+                if (!current()) return;
+                setVoiceSpeakingState('processing');
+            });
+
+            voice.on('speech-start', () => {
                 if (!current()) return;
                 listeningSinceRef.current = 0;
-                setVapiSpeakingState('ai_speaking');
+                setVoiceSpeakingState('ai_speaking');
                 setCurrentSpeaker('ai');
             });
 
-            vapi.on('speech-end', () => {
+            voice.on('speech-end', () => {
                 if (!current()) return;
                 listeningSinceRef.current = Date.now();
-                setVapiSpeakingState('listening');
+                setVoiceSpeakingState('listening');
                 setCurrentSpeaker(null);
             });
 
-            vapi.on('volume-level', (vol) => {
+            voice.on('volume-level', (vol) => {
                 if (!current()) return;
-                setVapiVolume(vol || 0);
+                setVoiceVolume(vol || 0);
             });
 
-            vapi.on('message', (msg) => {
+            voice.on('message', (msg) => {
                 if (!current()) return;
                 if (msg.type === 'transcript' && msg.transcriptType === 'final') {
                     const role = (msg.role === 'assistant' || msg.role === 'ai') ? 'ai' : 'user';
@@ -1029,7 +1027,7 @@ export const AssessmentWorkspace = ({
                         text: msg.transcript,
                         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                     };
-                    setVapiTranscript(prev => [...prev, newEntry]);
+                    setVoiceTranscript(prev => [...prev, newEntry]);
                     setCurrentSpeaker(role);
                     setTimeout(() => setCurrentSpeaker(null), 2500);
 
@@ -1051,82 +1049,66 @@ export const AssessmentWorkspace = ({
                 }
             });
 
-            vapi.on('call-end', () => {
+            voice.on('call-end', () => {
                 if (!current()) return;
-                clearTimeout(vapiConnectTimerRef.current);
-                setVapiCallStatus('ended');
-                setVapiSpeakingState('completed');
+                clearTimeout(voiceConnectTimerRef.current);
+                setVoiceCallStatus('ended');
+                setVoiceSpeakingState('completed');
                 setCurrentSpeaker(null);
             });
 
             const failCall = (err) => {
                 if (!current()) return;
-                clearTimeout(vapiConnectTimerRef.current);
-                console.error("[RoleReady Vapi Error]:", err);
-                setVapiCallStatus('error');
-                setVapiConnectionError(classifyVapiError(err).message);      // e.g. an explicit microphone-permission message
+                clearTimeout(voiceConnectTimerRef.current);
+                console.error("[RoleReady Voice Error]:", err);
+                setVoiceCallStatus('error');
+                setVoiceConnectionError(classifyVoiceError(err).message);      // e.g. an explicit microphone-permission message
                 setCurrentSpeaker(null);
             };
-            vapi.on('error', failCall);
-            // Daily reports a blocked / missing microphone through camera-error, not error: treat it as a failed connection too.
-            vapi.on('camera-error', failCall);
+            voice.on('error', failCall);
 
-            vapi.start(assistantTarget);
+            voice.start(voiceConfig);
         } catch (err) {
-            console.error("[RoleReady Vapi Init Error]:", err);
-            clearTimeout(vapiConnectTimerRef.current);
-            setVapiCallStatus('error');
-            setVapiConnectionError(classifyVapiError(err).message);
+            console.error("[RoleReady Voice Init Error]:", err);
+            clearTimeout(voiceConnectTimerRef.current);
+            setVoiceCallStatus('error');
+            setVoiceConnectionError(classifyVoiceError(err).message);
             setCurrentSpeaker(null);
         }
-    }, [applyMicToCall]);
+    }, [api]);
 
-    const toggleVapiMute = () => {
-        if (!vapiRef.current) return;
-        const nextState = !vapiIsMuted;
+    const toggleVoiceMute = () => {
+        if (!voiceRef.current) return;
+        const nextState = !voiceIsMuted;
         try {
-            vapiRef.current.setMuted(nextState);
-            setVapiIsMuted(nextState);
+            voiceRef.current.setMuted(nextState);
+            setVoiceIsMuted(nextState);
         } catch (e) {
-            console.warn("Failed to toggle Vapi mute:", e);
+            console.warn("Failed to toggle Voice mute:", e);
         }
     };
 
     // ── Round 3: Interview Operations ────────────────────────────────
     const loadInterview = async () => {
-        setVapiCallStatus('connecting');
-        setVapiConnectionError(null);
+        setVoiceCallStatus('connecting');
+        setVoiceConnectionError(null);
         try {
-            const res = await api.initVapi();
-            // The assistant-ID override is a Student Platform developer aid; recruitment candidates never get one.
-            const manualId = isRecruitment ? null : localStorage.getItem('vapi_manual_id');
-            const targetId = manualId || res.assistantId || import.meta.env.VITE_VAPI_ASSISTANT_ID;
-            const targetConfig = manualId ? null : (res.assistantConfig || null);
-            setVapiAssistantId(targetId);
-            setVapiAssistantConfig(targetConfig);
+            const res = await api.initVoice();
+            setVoiceConfig(res.voiceConfig || null);
             setInterviewQuestions(res.questions || []);
             setRoundStartTime(Date.now());
             syncTiming(res);
 
-            // Prefer dynamic assistantConfig object if available so WebRTC call connects directly
-            // even across different Vapi org keys without "assistantId does not exist" errors
-            const target = targetConfig || targetId;
-            if (target && VAPI_PUBLIC_KEY) {
-                startVapiCall(target);
-            } else if (!target) {
-                setVapiCallStatus('error');
-                setVapiConnectionError("No dynamic or configured Vapi Assistant ID found. Please paste an assistant ID below or retry.");
+            if (res.voiceConfig) {
+                startVoiceCall(res.voiceConfig);
+            } else {
+                setVoiceCallStatus('error');
+                setVoiceConnectionError("The voice interview could not be set up. Choose Retry Connection.");
             }
         } catch (err) {
-            console.error("Failed to load Vapi interview session:", err);
-            const targetId = (isRecruitment ? null : localStorage.getItem('vapi_manual_id')) || import.meta.env.VITE_VAPI_ASSISTANT_ID;
-            if (targetId) {
-                setVapiAssistantId(targetId);
-                startVapiCall(targetId);
-            } else {
-                setVapiCallStatus('error');
-                setVapiConnectionError(err.response?.data?.detail || "Could not provision Vapi session from backend.");
-            }
+            console.error("Failed to load the voice interview session:", err);
+            setVoiceCallStatus('error');
+            setVoiceConnectionError(err.response?.data?.detail || "Could not set up the voice interview. Choose Retry Connection.");
             try {
                 const fallback = await api.startInterview();
                 setInterviewQuestions(fallback.questions || []);
@@ -1236,18 +1218,18 @@ export const AssessmentWorkspace = ({
         const timeSpent = Math.max(1, Math.round((Date.now() - roundStartTime) / 1000));
         const submitStartedAt = Date.now();
 
-        clearTimeout(vapiConnectTimerRef.current);
-        disposeVapi(vapiRef.current);                     // the call ends here: stop it and detach its listeners
-        vapiRef.current = null;
+        clearTimeout(voiceConnectTimerRef.current);
+        disposeVoice(voiceRef.current);                     // the call ends here: stop it and detach its listeners
+        voiceRef.current = null;
 
         try {
             const formattedAnswers = segmentInterviewTranscript(
                 interviewQuestions,
-                vapiTranscript,
+                voiceTranscript,
                 interviewResponses
             );
 
-            await api.submitInterview(formattedAnswers, timeSpent, violations, vapiTranscript);
+            await api.submitInterview(formattedAnswers, timeSpent, violations, voiceTranscript);
             await holdAnimation(submitStartedAt);
             setSubmitDone(true);
             await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
@@ -1282,10 +1264,10 @@ export const AssessmentWorkspace = ({
     };
 
     const handleAutoSubmitDueToMalpractice = async (reason, allViolations = violations) => {
-        // Instantly shut off media tracks and Vapi call
-        clearTimeout(vapiConnectTimerRef.current);
-        disposeVapi(vapiRef.current);
-        vapiRef.current = null;
+        // Instantly shut off media tracks and Voice call
+        clearTimeout(voiceConnectTimerRef.current);
+        disposeVoice(voiceRef.current);
+        voiceRef.current = null;
         if (cameraStream) {
             try { cameraStream.getTracks().forEach(t => t.stop()); } catch (e) {}
         }
@@ -1353,13 +1335,13 @@ export const AssessmentWorkspace = ({
             if (currentStage === 'aptitude') payload = { answers: aptitudeAnswers };
             else if (currentStage === 'coding') payload = { solutions: codeSolutions };
             else payload = {
-                answers: segmentInterviewTranscript(interviewQuestions, vapiTranscript, interviewResponses),
-                transcript: vapiTranscript.map(({ role, text }) => ({ role, text })),
+                answers: segmentInterviewTranscript(interviewQuestions, voiceTranscript, interviewResponses),
+                transcript: voiceTranscript.map(({ role, text }) => ({ role, text })),
             };
             Promise.resolve(api.saveDraft(currentStage, payload, violations)).catch(() => {});   // best effort; never blocks the candidate
         }, DRAFT_DEBOUNCE_MS);
         return () => clearTimeout(timer);
-    }, [api, currentStage, aptitudeAnswers, codeSolutions, interviewResponses, vapiTranscript, violations, submittingAny, sessionData?.is_completed]);
+    }, [api, currentStage, aptitudeAnswers, codeSolutions, interviewResponses, voiceTranscript, violations, submittingAny, sessionData?.is_completed]);
 
     // ── Loading & Error Displays ─────────────────────────────────────
     if (isLoading) {
@@ -2654,7 +2636,7 @@ export const AssessmentWorkspace = ({
                                 <p className="text-xs text-slate-600">Complete and submit the Coding Round to unlock the final interview stage.</p>
                             </div>
                         ) : (
-                            /* EXACT VAPI ASSISTANT VIDEO INTERVIEW INTERFACE (IMAGE 2) */
+                            /* EXACT VOICE ASSISTANT VIDEO INTERVIEW INTERFACE (IMAGE 2) */
                             <div className="bg-[#0a0a0a] text-white rounded-2xl overflow-hidden border border-gray-800 shadow-2xl flex flex-col relative min-h-[640px]">
                                 {/* Top Bar */}
                                 <div className="bg-black/50 backdrop-blur-sm px-6 py-3.5 flex items-center justify-between border-b border-gray-800 shrink-0">
@@ -2691,7 +2673,7 @@ export const AssessmentWorkspace = ({
                                                         : 'bg-gradient-to-br from-gray-700 to-gray-800 shadow-2xl'
                                                 }`}
                                                 animate={{
-                                                    scale: currentSpeaker === 'ai' ? [1, 1.05 + Math.min(0.2, vapiVolume * 0.3), 1] : 1
+                                                    scale: currentSpeaker === 'ai' ? [1, 1.05 + Math.min(0.2, voiceVolume * 0.3), 1] : 1
                                                 }}
                                                 transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
                                             >
@@ -2770,14 +2752,14 @@ export const AssessmentWorkspace = ({
                                             </div>
 
                                             <div
-                                                ref={vapiTranscriptScrollRef}
+                                                ref={voiceTranscriptScrollRef}
                                                 className="flex-1 overflow-y-auto px-4 py-3 space-y-3 max-h-[320px] scrollbar-thin scrollbar-thumb-gray-700"
                                             >
-                                                {vapiTranscript.length === 0 ? (
+                                                {voiceTranscript.length === 0 ? (
                                                     <p className="text-xs text-gray-600 text-center mt-8">Transcript will appear here...</p>
                                                 ) : (
                                                     <AnimatePresence>
-                                                        {vapiTranscript.map((entry, idx) => (
+                                                        {voiceTranscript.map((entry, idx) => (
                                                             <motion.div
                                                                 key={entry.id || idx}
                                                                 initial={{ opacity: 0, y: 10 }}
@@ -2829,18 +2811,18 @@ export const AssessmentWorkspace = ({
                                 <div className="bg-black/50 backdrop-blur-sm border-t border-gray-800 py-4 flex items-center justify-center gap-4 shrink-0">
                                     <button
                                         type="button"
-                                        onClick={toggleVapiMute}
+                                        onClick={toggleVoiceMute}
                                         disabled={currentSpeaker === 'ai'}
                                         className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                                             currentSpeaker === 'ai'
                                                 ? 'bg-gray-700 opacity-50 cursor-not-allowed'
-                                                : vapiIsMuted
+                                                : voiceIsMuted
                                                     ? 'bg-red-600 hover:bg-red-700 text-white'
                                                     : 'bg-gray-700 hover:bg-gray-600 text-white'
                                         }`}
-                                        title={vapiIsMuted ? "Unmute Mic" : "Mute Mic"}
+                                        title={voiceIsMuted ? "Unmute Mic" : "Mute Mic"}
                                     >
-                                        {vapiIsMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                        {voiceIsMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                                     </button>
                                     <button
                                         type="button"
@@ -2863,7 +2845,7 @@ export const AssessmentWorkspace = ({
                                 </div>
 
                                 {/* Connecting Overlay */}
-                                {vapiCallStatus === 'connecting' && (
+                                {voiceCallStatus === 'connecting' && (
                                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40">
                                         <div className="text-center max-w-md p-6">
                                             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -2874,21 +2856,19 @@ export const AssessmentWorkspace = ({
                                 )}
 
                                 {/* Error / Assistant ID Override Overlay */}
-                                {vapiCallStatus === 'error' && (
+                                {voiceCallStatus === 'error' && (
                                     <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-40 p-4">
                                         <div className="text-center max-w-md bg-slate-900 border border-red-500/30 p-6 rounded-2xl shadow-2xl">
                                             <div className="w-14 h-14 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
                                                 <PhoneOff className="w-7 h-7 text-red-500" />
                                             </div>
                                             <p className="text-base font-bold text-red-400">Connection Failed</p>
-                                            <p className="text-xs text-gray-400 mt-1 mb-4">{vapiConnectionError || "Could not connect to Vapi Assistant."}</p>
+                                            <p className="text-xs text-gray-400 mt-1 mb-4">{voiceConnectionError || "Could not connect to the AI interviewer."}</p>
                                             
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const manualId = isRecruitment ? null : localStorage.getItem('vapi_manual_id');
-                                                    const target = manualId || vapiAssistantConfig || vapiAssistantId;
-                                                    if (target) startVapiCall(target);
+                                                    if (voiceConfig) startVoiceCall(voiceConfig);
                                                     else loadInterview();
                                                 }}
                                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
@@ -2902,32 +2882,12 @@ export const AssessmentWorkspace = ({
                                             >
                                                 Answer in writing instead
                                             </button>
-
-                                            {!isRecruitment && (
-                                            <div className="mt-4 pt-4 border-t border-gray-800 text-left">
-                                                <p className="text-xs text-gray-400 mb-1.5 font-medium">Assistant ID Override (Optional):</p>
-                                                <input
-                                                    type="text"
-                                                    placeholder="Paste VAPI Assistant ID"
-                                                    className="w-full bg-gray-950 border border-gray-800 text-white text-xs p-2.5 rounded-lg mb-1.5 focus:border-blue-500 outline-none"
-                                                    onChange={(e) => {
-                                                        const val = e.target.value.trim();
-                                                        if (val.length > 5) {
-                                                            localStorage.setItem('vapi_manual_id', val);
-                                                        } else {
-                                                            localStorage.removeItem('vapi_manual_id');
-                                                        }
-                                                    }}
-                                                />
-                                                <p className="text-[10px] text-gray-500">Saved ID will be used on Retry</p>
-                                            </div>
-                                            )}
                                         </div>
                                     </div>
                                 )}
 
                                 {/* Written fallback: only reachable after the voice connection failed; voice stays the default */}
-                                {writtenFallback && vapiCallStatus === 'error' && (
+                                {writtenFallback && voiceCallStatus === 'error' && (
                                     <div className="absolute inset-0 bg-[#0a0a0a] z-50 overflow-y-auto p-4 sm:p-8">
                                         <div className="max-w-3xl mx-auto space-y-4">
                                             <h3 className="text-base font-bold text-white">Written interview answers</h3>
@@ -2997,7 +2957,7 @@ export const AssessmentWorkspace = ({
                                 <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1.5 text-left border border-slate-100">
                                     <div className="flex justify-between">
                                         <span className="text-slate-500">Live Transcript Items:</span>
-                                        <span className="font-semibold text-slate-900">{vapiTranscript.length} messages</span>
+                                        <span className="font-semibold text-slate-900">{voiceTranscript.length} messages</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-slate-500">Integrity Violations:</span>

@@ -5,7 +5,7 @@ End-to-end test harness: the REAL FastAPI app on a scratch database, with exactl
   * code sandbox   -> this machine's Python and JDK (javac / java) instead of Judge0 (which is an external service);
                       candidate code is executed locally ONLY in this harness, never by the application itself;
   * Gemini         -> the app's built-in offline mock mode (GEMINI_MOCK_MODE) - deterministic, no network, no quota;
-  * Vapi REST API  -> an in-process stub (no billable assistants are created) unless E2E_LIVE_VAPI=1;
+  * ElevenLabs     -> an in-process stub (no billable speech calls) unless E2E_LIVE_VOICE=1;
   * clock          -> a test-controlled offset (POST /__e2e/advance) so timers can be exercised without waiting;
   * /__e2e/*       -> test-only routes to mint tokens, seed organizations and inspect persisted state.
 
@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 from datetime import timedelta
 
 BACKEND = os.environ.get("E2E_BACKEND_DIR") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
@@ -34,7 +35,7 @@ os.environ["ASSESSMENT_SWEEPER_ENABLED"] = os.environ.get("ASSESSMENT_SWEEPER_EN
 
 import uvicorn  # noqa: E402
 from fastapi import APIRouter, HTTPException  # noqa: E402
-from services import assessment_clock, piston_service, vapi_service  # noqa: E402
+from services import assessment_clock, elevenlabs_service, judge0_service  # noqa: E402
 
 # ------------------------------------------------------------------------------ local real-runtime sandbox
 EXEC_LOG = []
@@ -61,39 +62,33 @@ def local_exec(language_key, code, stdin=""):
         return {"status": "success" if run.returncode == 0 else "failed", "output": run.stdout if run.returncode == 0 else (run.stderr or run.stdout),
                 "stdout": run.stdout, "stderr": run.stderr, "compile_output": "", "timed_out": False, "execution_time_ms": 1.0, "raw": {}}
     except subprocess.TimeoutExpired:
-        return {"status": "failed", "output": piston_service.TIMEOUT_MESSAGE, "stdout": "", "stderr": "", "compile_output": "",
+        return {"status": "failed", "output": judge0_service.TIMEOUT_MESSAGE, "stdout": "", "stderr": "", "compile_output": "",
                 "timed_out": True, "execution_time_ms": None, "raw": {}}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-piston_service.execute_code = local_exec
+judge0_service.execute_code = local_exec
 
-# ------------------------------------------------------------------------------ Vapi REST stub (browser-side SDK is separate)
-VAPI_CALLS = []
-if os.environ.get("E2E_LIVE_VAPI", "").lower() not in ("1", "true", "yes"):
+# ------------------------------------------------------------------------------ ElevenLabs stub (speech-to-text / text-to-speech)
+VOICE_CALLS = []
+if os.environ.get("E2E_LIVE_VOICE", "").lower() not in ("1", "true", "yes"):
     class _Resp:
-        def __init__(self, status, body):
-            self.status_code, self._b, self.text = status, body, str(body)
+        def __init__(self, status, body=None, content=b""):
+            self.status_code, self._b, self.content, self.text = status, body, content, str(body)
 
         def json(self):
             return self._b
 
-    class _VapiStub:
-        n = 0
+    def _voice_post(url, params=None, headers=None, json=None, data=None, files=None, timeout=None):
+        VOICE_CALLS.append(("POST", url.rsplit("/", 1)[-1]))
+        if url.endswith("/speech-to-text"):
+            return _Resp(200, {"text": "I would start by profiling the slow path."})
+        return _Resp(200, content=b"ID3-e2e-fake-mp3")
 
-        def post(self, url, json=None, headers=None, timeout=None):
-            _VapiStub.n += 1
-            VAPI_CALLS.append(("POST", url))
-            return _Resp(201, {"id": f"00000000-0000-4000-8000-{_VapiStub.n:012d}"})
-
-        def delete(self, url, headers=None, timeout=None):
-            VAPI_CALLS.append(("DELETE", url.rsplit("/", 1)[-1]))
-            return _Resp(200, {})
-
-    vapi_service.requests = _VapiStub()
-    os.environ["VAPI_PRIVATE_KEY"] = os.environ.get("VAPI_PRIVATE_KEY") or "e2e-stub-key"
-    vapi_service.VAPI_PRIVATE_KEY = os.environ["VAPI_PRIVATE_KEY"]
+    elevenlabs_service.requests = types.SimpleNamespace(post=_voice_post, RequestException=Exception)   # this module's name only, not requests.post
+    os.environ["ELEVENLABS_API_KEY"] = os.environ.get("ELEVENLABS_API_KEY") or "e2e-stub-key"
+    os.environ["ELEVENLABS_VOICE_ID"] = os.environ.get("ELEVENLABS_VOICE_ID") or "e2e-stub-voice"
 
 # ------------------------------------------------------------------------------ controllable clock
 OFFSET = {"seconds": 0}
@@ -129,7 +124,7 @@ def advance(seconds: int):
 
 @router.get("/info")
 def info():
-    return {"offset_seconds": OFFSET["seconds"], "executions": list(EXEC_LOG), "vapi_calls": list(VAPI_CALLS)}
+    return {"offset_seconds": OFFSET["seconds"], "executions": list(EXEC_LOG), "voice_calls": list(VOICE_CALLS)}
 
 
 E2E_PASSWORD = "E2e-Test-Passw0rd!"   # throw-away accounts in a throw-away database; used for the REAL cookie login

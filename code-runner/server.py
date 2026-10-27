@@ -1,7 +1,7 @@
 """
 Minimal Judge0-compatible code runner for local demos (Java and Python only).
 
-It implements just enough of `POST /submissions?wait=true` for backend/services/piston_service.py. It is NOT a hardened
+It implements just enough of `POST /submissions?wait=true` for backend/services/judge0_service.py. It is NOT a hardened
 sandbox: it is reachable only on the compose-internal network and must not be exposed or used for untrusted traffic.
 Use a real Judge0 deployment for production.
 """

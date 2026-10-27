@@ -100,32 +100,21 @@ def test_no_openai_in_llm_call_paths():
     assert offenders == []
 
 
-def test_vapi_assistant_uses_google_model_and_keeps_voice_stack(monkeypatch):
-    """Vapi voice stays (Vapi voice + Deepgram transcriber); only the LLM provider moved off OpenAI."""
-    from services import vapi_service
-    monkeypatch.setattr(vapi_service, "VAPI_PRIVATE_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_MODEL_NAME", "gemini-test")
-    sent = {}
+def test_voice_interviewer_replies_come_from_gemini_and_speech_from_elevenlabs(monkeypatch):
+    """The interviewer's words are written by Gemini (plain spoken text); only the speech layer is ElevenLabs."""
+    from services import elevenlabs_service
+    seen = {}
 
-    class Resp:
-        status_code = 201
-        text = ""
+    def fake_text(prompt, system_prompt, temperature=0.1):
+        seen.update(prompt=prompt, system_prompt=system_prompt)
+        return "**Interviewer:** Question 2: how do you debug a slow query?"
 
-        def json(self):
-            return {"id": "asst_1"}
-
-    def fake_post(url, json=None, headers=None, timeout=None):      # the assistant request now carries a timeout
-        sent.update(url=url, json=json, timeout=timeout)
-        return Resp()
-
-    monkeypatch.setattr(vapi_service.requests, "post", fake_post)
-    assert vapi_service.create_ephemeral_assistant("Jo", "Backend Engineer", "summary", "") == "asst_1"
-    assert sent["timeout"] == vapi_service.REQUEST_TIMEOUT_SECONDS
-    payload = sent["json"]
-    assert payload["model"]["provider"] == "google" and payload["model"]["model"] == "gemini-test"
-    assert payload["voice"]["provider"] == "vapi"
-    assert payload["transcriber"]["provider"] == "deepgram"
-    assert "firstMessage" in payload and payload["model"]["messages"][0]["role"] == "system"
+    monkeypatch.setattr(gemini_client, "call_gemini_text", fake_text)
+    session = elevenlabs_service.build_voice_session("Jo", "Backend Engineer", "summary", "", questions=[{"category": "SQL", "question": "Explain indexes."}])
+    reply = elevenlabs_service.next_reply(session["system_prompt"], [{"role": "ai", "text": "Hi Jo"}], "I used indexes a lot.")
+    assert reply == "Question 2: how do you debug a slow query?"          # markdown and the speaker label are stripped before it is spoken
+    assert "Interviewer: Hi Jo" in seen["prompt"] and "Candidate: I used indexes a lot." in seen["prompt"]
+    assert "Question 1 [SQL]: Explain indexes." in seen["system_prompt"] and "NEVER say goodbye" in seen["system_prompt"]
 
 
 def test_gemini_2_5_model_passes_thinking_budget_zero(monkeypatch):

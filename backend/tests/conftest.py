@@ -33,53 +33,56 @@ if os.getenv("GEMINI_LIVE_TESTS", "").lower() not in ("true", "1", "yes"):
     os.environ["GEMINI_MOCK_MODE"] = "true"
 
 
-class _VapiHttpStub:
+class _ElevenLabsHttpStub:
     """
-    Stands in for `requests` inside services.vapi_service so no test ever creates (or deletes) a real, billable Vapi assistant
-    on the account behind VAPI_PRIVATE_KEY. Calls are recorded in `.calls`. Opt back in to the real API with VAPI_LIVE_TESTS=true.
+    Stands in for `requests.post` inside services.elevenlabs_service so no test ever calls (or bills) the real ElevenLabs account.
+    Calls are recorded in `.calls`; `.transcript` is what speech-to-text "hears". Opt back in with ELEVENLABS_LIVE_TESTS=true.
     """
 
     class _Response:
-        def __init__(self, status, body):
-            self.status_code, self._body, self.text = status, body, str(body)
+        def __init__(self, status, body=None, content=b""):
+            self.status_code, self._body, self.content, self.text = status, body, content, str(body)
 
         def json(self):
             return self._body
 
     def __init__(self):
         self.calls = []
-        self._n = 0
+        self.transcript = "I led a team that built a payments service in Python."
+        self.fail_with = None
 
-    def post(self, url, json=None, headers=None, timeout=None):
-        self._n += 1
-        self.calls.append({"method": "POST", "url": url, "json": json, "headers": headers, "timeout": timeout})
-        return self._Response(201, {"id": f"00000000-0000-4000-8000-{self._n:012d}"})
-
-    def delete(self, url, headers=None, timeout=None):
-        self.calls.append({"method": "DELETE", "url": url, "headers": headers, "timeout": timeout})
-        return self._Response(200, {})
+    def post(self, url, params=None, headers=None, json=None, data=None, files=None, timeout=None):
+        self.calls.append({"url": url, "params": params, "headers": headers, "json": json, "data": data, "files": files, "timeout": timeout})
+        if self.fail_with:
+            return self._Response(self.fail_with, {"detail": "upstream failure"})
+        if url.endswith("/speech-to-text"):
+            return self._Response(200, {"text": self.transcript})
+        return self._Response(200, content=b"ID3-fake-mp3-bytes")
 
 
 @pytest.fixture(autouse=True)
-def vapi_http(monkeypatch):
-    from services import vapi_service
-    if os.getenv("VAPI_LIVE_TESTS", "").lower() in ("true", "1", "yes"):
+def elevenlabs_http(monkeypatch):
+    from services import elevenlabs_service
+    if os.getenv("ELEVENLABS_LIVE_TESTS", "").lower() in ("true", "1", "yes"):
         yield None
         return
-    stub = _VapiHttpStub()
-    monkeypatch.setattr(vapi_service, "requests", stub)
-    monkeypatch.setattr(vapi_service, "_spawn", lambda fn, *args: fn(*args))     # cleanup runs inline so tests can assert on it
-    monkeypatch.setenv("VAPI_PRIVATE_KEY", "test-private-key-not-real")
+    import requests
+    from types import SimpleNamespace
+    stub = _ElevenLabsHttpStub()
+    # Replace the module's own `requests` name, never requests.post itself (that would break every other HTTP caller, e.g. Judge0)
+    monkeypatch.setattr(elevenlabs_service, "requests", SimpleNamespace(post=stub.post, RequestException=requests.RequestException))
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-api-key-not-real")
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "test-voice-id")
     yield stub
 
 
 @pytest.fixture(autouse=True)
 def _reset_sandbox_circuit():
     """The execution-service circuit breaker is process-wide state: every test starts with it closed."""
-    from services import piston_service
-    piston_service.reset_circuit()
+    from services import judge0_service
+    judge0_service.reset_circuit()
     yield
-    piston_service.reset_circuit()
+    judge0_service.reset_circuit()
 
 
 @pytest.fixture(autouse=True)

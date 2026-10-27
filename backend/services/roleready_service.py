@@ -36,8 +36,9 @@ from services.gemini_client import call_gemini
 from services.company_prompt import style_note, jd_context_note, attach_provenance, sanitize_company, pick_top_tech_companies, style_block
 from services import web_question_research
 from services.readiness_service import refresh_profile_readiness
-from services import piston_service
-from services import vapi_service
+from services import judge0_service
+from services import elevenlabs_service
+from services.rate_limiter import SlidingWindowLimiter
 from services import assessment_clock as clock
 from services import assessment_engine as engine
 from services import assessment_policy as policy
@@ -2477,11 +2478,11 @@ def _build_resume_brief(snapshot: Optional[Dict[str, Any]], raw_text: str, skill
     return brief[:1800] or "Not provided"
 
 
-def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[str, Any]:
+def init_voice_interview_session(db: Session, session: RoleReadySession) -> Dict[str, Any]:
     """
     STRICT BACKEND GATING: Requires INTERVIEW_UNLOCKED or INTERVIEW_IN_PROGRESS.
     Synthesizes custom questions grounded in BOTH the candidate's Resume and Job Description,
-    provisions a dynamic Vapi assistant, and returns assistantId and structured questions.
+    defines the server-side voice interview, and returns its public config and the structured questions.
     """
     finalize_expired_round(db, session)
     _assert_attempt_open(session)
@@ -2641,12 +2642,10 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
             })
         questions = standardized
 
-    # 4. Provision Ephemeral Vapi Assistant
-    assistant_id = None
-    assistant_config = None
+    # 4. Define the voice interview. The prompt stays on the server; the browser gets the opening line and the limits only.
+    voice_config = None
     try:
-        from services import vapi_service
-        assistant_id, assistant_config = vapi_service.create_or_build_assistant(
+        voice_session = elevenlabs_service.build_voice_session(
             candidate_name=candidate_name,
             role=f"{role} at {company}" if company else role,
             resume_summary=resume_summary,
@@ -2656,20 +2655,15 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
             # The voice call itself may not outlive the section: it ends at the server deadline.
             max_duration_seconds=max(1, _round_timing(int_round, session)["remaining_seconds"])
         )
+        elevenlabs_service.store_voice_session(db, int_round, voice_session)
+        voice_config = elevenlabs_service.public_voice_config(voice_session)
     except Exception as e:
-        print(f"[RoleReady] Ephemeral Vapi Assistant initialization failed: {e}")
-
-    if assistant_id:
-        try:
-            vapi_service.swap_round_assistant(db, int_round, assistant_id)     # one live assistant per session
-        except Exception as e:
-            db.rollback()
-            print(f"[RoleReady] Vapi assistant bookkeeping skipped: {type(e).__name__}")
+        db.rollback()
+        print(f"[RoleReady] Voice interview initialization failed: {type(e).__name__}")
 
     return {
         "session_uuid": session.session_uuid,
-        "assistantId": assistant_id,
-        "assistantConfig": assistant_config,
+        "voiceConfig": voice_config,
         "questions": questions,
         "role": role,
         "company": company,
@@ -2677,6 +2671,31 @@ def init_vapi_interview_session(db: Session, session: RoleReadySession) -> Dict[
         "duration": int_round.time_limit_minutes or policy.SECTION_MINUTES,
         **_round_timing(int_round, session)
     }
+
+
+voice_turn_limiter = SlidingWindowLimiter(limit=40, window_seconds=60)      # each turn calls two billable voice APIs and Gemini
+
+
+def voice_interview_turn(db: Session, session: RoleReadySession, audio: Optional[bytes], content_type: str,
+                         history: Any, opening: bool) -> Dict[str, Any]:
+    """One spoken exchange of the interview. Same gating as the interview section itself: unlocked, open, before the deadline."""
+    finalize_expired_round(db, session)
+    _assert_attempt_open(session)
+    if session.current_state != RoleReadySessionState.INTERVIEW_IN_PROGRESS:
+        raise HTTPException(status_code=403, detail="The interview is not in progress.")
+    if not voice_turn_limiter.allow(session.id):
+        raise HTTPException(status_code=429, detail="Too many voice requests. Please wait a moment and try again.")
+    int_round = db.query(RoleReadyRoundAttempt).filter(
+        RoleReadyRoundAttempt.session_id == session.id,
+        RoleReadyRoundAttempt.round_type == "INTERVIEW"
+    ).first()
+    voice_session = elevenlabs_service.load_voice_session(int_round)
+    if voice_session is None:
+        raise HTTPException(status_code=409, detail="The voice interview has not been initialised. Reload and try again.")
+    try:
+        return elevenlabs_service.run_turn(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+    except elevenlabs_service.VoiceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_message)
 
 
 def _interview_context(session: RoleReadySession) -> Dict[str, str]:
@@ -2795,7 +2814,7 @@ def submit_interview_round(
     session.finalized_at = _db_now()
     _commit_or_500(db)
     _refresh_student_readiness(db, session)
-    vapi_service.release_round_assistant(db, int_round)        # the interview is over: delete its voice assistant
+    elevenlabs_service.release_voice_session(db, int_round)    # the interview is over: drop its prompt
 
     return {
         "session_uuid": session.session_uuid,
@@ -2935,7 +2954,7 @@ def terminate_malpractice_session(
 ) -> Dict[str, Any]:
     """
     Fast-path termination: Immediately locks and disqualifies an assessment due to malpractice.
-    Bypasses all expensive AI (Gemini) and sandbox compiler (Piston) evaluations to return in < 50ms.
+    Bypasses all expensive AI (Gemini) and sandbox compiler (Judge0) evaluations to return in < 50ms.
     """
     # A closed attempt (timed out / abandoned) is never reopened or rewritten by a late termination request.
     _assert_attempt_open(session)

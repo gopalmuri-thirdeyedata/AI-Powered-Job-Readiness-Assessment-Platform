@@ -24,6 +24,7 @@ import {
     PlayCircle,
     XCircle,
     ArrowRight,
+    Lock,
 } from 'lucide-react';
 import { useUser } from '../../auth/useAuth';
 import studentApi from '../../services/studentApi';
@@ -33,6 +34,7 @@ import AssessmentRequiredGate from '../../components/student-ui/AssessmentRequir
 import { PageHero, Stagger, StaggerItem, EmptyState } from '../../components/student-ui/StudentMotion';
 import { Counter, EASE } from '../../components/home/primitives';
 import useStudentTaskStatus, { markStudentTaskCompleted, clearStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
+import { useAssessmentLock } from '../../context/AssessmentLockContext';
 
 /* ─── Animated gradient progress bar (fills when scrolled into view) ── */
 const GradBar = ({ value = 0, grad = 'from-emerald-600 to-teal-500', height = 'h-2', className = '', track = 'bg-slate-100 dark:bg-slate-800' }) => {
@@ -125,6 +127,7 @@ const pctOrDash = (v) => (typeof v === 'number' ? `${Math.round(v)}%` : '—');
 const StudentDashboard = () => {
     const { user } = useUser();
     const { hasCompletedTask, isLoading: isTaskStatusLoading, isConfirmedNew } = useStudentTaskStatus(user);
+    const { promptContactAdmin } = useAssessmentLock();
 
     const [searchParams, setSearchParams] = useSearchParams();
     const urlTab = searchParams.get('tab');
@@ -359,13 +362,14 @@ const StudentDashboard = () => {
                         subtitle="Monitor your real-time placement readiness, target role skill benchmarks, and active campus drive preparations in one unified hub."
                         actions={
                             <>
-                                <Link
-                                    to="/assessment/setup"
+                                <button
+                                    type="button"
+                                    onClick={promptContactAdmin}
                                     className="px-4 py-2.5 min-h-[44px] rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs font-semibold flex items-center gap-2 shadow-md shadow-emerald-600/20 hover:-translate-y-0.5 hover:shadow-lg transition-all cursor-pointer"
                                 >
-                                    <Sparkles className="w-4 h-4" />
+                                    <Lock className="w-4 h-4" />
                                     <span>Start New Assessment</span>
-                                </Link>
+                                </button>
                                 <Link
                                     to="/student/practice"
                                     className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-50 hover:bg-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs hover:-translate-y-0.5 hover:shadow-md active:scale-95 cursor-pointer"
@@ -578,9 +582,9 @@ const StudentDashboard = () => {
                                 Report <ArrowUpRight className="w-3 h-3" />
                             </Link>
                         ) : (
-                            <Link to="/assessment/setup" className="text-purple-600 dark:text-purple-400 hover:text-purple-700 font-semibold flex items-center gap-0.5">
-                                Start <ArrowUpRight className="w-3 h-3" />
-                            </Link>
+                            <button type="button" onClick={promptContactAdmin} className="text-purple-600 dark:text-purple-400 hover:text-purple-700 font-semibold flex items-center gap-0.5 cursor-pointer">
+                                Start <Lock className="w-3 h-3" />
+                            </button>
                         )}
                     </div>
                 </div>
@@ -716,13 +720,14 @@ const StudentDashboard = () => {
                                 ))}
                             </div>
 
-                            <Link
-                                to="/assessment/setup"
+                            <button
+                                type="button"
+                                onClick={promptContactAdmin}
                                 className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0"
                             >
-                                <Sparkles className="w-3.5 h-3.5" />
+                                <Lock className="w-3.5 h-3.5" />
                                 <span>Start Assessment</span>
-                            </Link>
+                            </button>
                         </div>
                     </div>
 
@@ -746,13 +751,14 @@ const StudentDashboard = () => {
                                         You haven't attempted any RoleReady job assessments yet. Complete your first 3-stage assessment to evaluate your aptitude, coding in Python or Java, and AI interview readiness.
                                     </p>
                                     <div className="mt-6 flex justify-center">
-                                        <Link
-                                            to="/assessment/setup"
+                                        <button
+                                            type="button"
+                                            onClick={promptContactAdmin}
                                             className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                                         >
-                                            <Sparkles className="w-4 h-4" />
+                                            <Lock className="w-4 h-4" />
                                             <span>Take Your First Assessment</span>
-                                        </Link>
+                                        </button>
                                     </div>
                                 </div>
                             );
@@ -964,7 +970,7 @@ const StudentDashboard = () => {
                                 icon={TrendingUp}
                                 title="Your trajectory starts here"
                                 body="No assessment trend records available yet. Complete your first assessment to track score progression over time."
-                                action={<Link to="/assessment/setup" className="px-5 py-2.5 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-all"><Sparkles className="w-4 h-4" /><span>Take an assessment</span></Link>}
+                                action={<button type="button" onClick={promptContactAdmin} className="px-5 py-2.5 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer"><Lock className="w-4 h-4" /><span>Take an assessment</span></button>}
                             />
                         ) : (
                             <div className="space-y-4">
@@ -1087,13 +1093,14 @@ const StudentDashboard = () => {
                                         Once you finish an assessment session (Aptitude, Coding, and Technical Interview), your comprehensive evaluation dossier will be published here.
                                     </p>
                                     <div className="mt-6 flex justify-center">
-                                        <Link
-                                            to="/assessment/setup"
+                                        <button
+                                            type="button"
+                                            onClick={promptContactAdmin}
                                             className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
                                         >
-                                            <Sparkles className="w-4 h-4" />
+                                            <Lock className="w-4 h-4" />
                                             <span>Start An Assessment</span>
-                                        </Link>
+                                        </button>
                                     </div>
                                 </div>
                             );

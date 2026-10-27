@@ -2,7 +2,7 @@
 //
 // Real: frontend, FastAPI backend, timing + scoring code, Chrome with fake camera/microphone, local Python + JDK as the code
 // sandbox stand-in. NOT real (and therefore not proven here): account creation (the harness seeds the student; sign-in itself is the real cookie login),
-// Gemini (offline mock mode), Vapi (REST stubbed; the SDK talks to an intercepted endpoint), Judge0.
+// Gemini (offline mock mode), ElevenLabs (stubbed in the backend harness), Judge0.
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startStack } from '../support/stack.mjs';
@@ -163,7 +163,7 @@ describe('the full student journey', () => {
       await U.setCode(ui, U.STUDENT_SOLUTIONS.tagsPython);
 
       // ---- interview (voice failure -> written fallback keeps the journey free of external calls)
-      await U.stubVapiRest(ui.page);
+      await U.stubVoiceApi(ui.page);
       await U.submitCodingToInterview(ui);
       await U.answerWrittenInterview(ui);
       await U.finishInterview(ui);

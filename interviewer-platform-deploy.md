@@ -12,7 +12,7 @@ Last updated: 2026-10-14. Sections 1-4 describe how to deploy and operate the st
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | **Edge Proxy** | **8212** | 80 | `interviewer_proxy` | `nginx:alpine` | Internal routing proxy (`/api/` -> backend, `/` -> frontend) |
 | **Backend** | - | 8000 | `interviewer_backend` | FastAPI (Python 3.11) | Gunicorn + Uvicorn workers, Gemini AI, resume parsing, YOLO proctoring |
-| **Frontend** | - | 80 | `interviewer_frontend` | React + Vite (Node 20 build, nginx serve) | Assessment SPA with Clerk auth and Vapi voice |
+| **Frontend** | - | 80 | `interviewer_frontend` | React + Vite (Node 20 build, nginx serve) | Assessment SPA with Clerk auth and ElevenLabs voice |
 | **Database** | - | 3306 | `interviewer_mysql` | `mysql:8.0` | MySQL (not published on the host) |
 | **Cache** | - | 6379 | `interviewer_redis` | `redis:7-alpine` | In-memory cache and sessions |
 | **Network** | - | - | `interviewer_net` | Subnet `10.97.0.0/24` | Isolated Docker network |
@@ -487,4 +487,4 @@ curl -I https://interviewer.learningpath.ai                    # 200 over HTTPS
 curl -s https://interviewer.learningpath.ai/health/live
 ```
 
-In the browser: sign in with Clerk, open an assessment, and test one Gemini-backed feature and one Vapi voice call. Watch `docker logs -f interviewer_backend` while testing.
+In the browser: sign in with Clerk, open an assessment, and test one Gemini-backed feature and one voice interview. Watch `docker logs -f interviewer_backend` while testing.

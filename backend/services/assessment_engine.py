@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from services import coding_evaluation
 from services import interview_evaluation
-from services import piston_service
+from services import judge0_service
 
 # ------------------------------------------------------------------------------
 # Limits and supported languages (single definition for both workflows)
@@ -42,7 +42,7 @@ SAMPLE_TESTS_SHOWN = 3
 BUSY_RETRIES = 3
 BUSY_RETRY_DELAY = 0.4
 
-SandboxBusy = piston_service.SandboxBusy
+SandboxBusy = judge0_service.SandboxBusy
 
 
 class SandboxUnavailable(Exception):
@@ -65,16 +65,16 @@ def _trim(text: Optional[str]) -> str:
 # ------------------------------------------------------------------------------
 def outputs_equal(actual: str, expected: str, mode: str = "text") -> bool:
     """
-    "text": the student platform's exact comparison after whitespace normalization (piston_service.outputs_match).
+    "text": the student platform's exact comparison after whitespace normalization (judge0_service.outputs_match).
     "json": text first, then JSON / numeric equivalence, so `[0, 1]` == `[0,1]` and `true` == `True` for blueprint problems
             whose expected values are JSON documents rather than stdin-style text.
     """
-    if piston_service.outputs_match(actual, expected):
+    if judge0_service.outputs_match(actual, expected):
         return True
     if mode != "json":
         return False
-    actual_text = piston_service.normalize_output(actual)
-    expected_text = piston_service.normalize_output(expected)
+    actual_text = judge0_service.normalize_output(actual)
+    expected_text = judge0_service.normalize_output(expected)
     try:
         expected_obj = json.loads(expected_text)
     except (ValueError, TypeError):
@@ -125,8 +125,8 @@ Execute = Callable[[str, str, str], Dict[str, Any]]
 
 
 def _default_execute(language: str, code: str, stdin: str = "") -> Dict[str, Any]:
-    # Looked up at call time so a replaced piston_service.execute_code (tests, alternative runner) is honoured.
-    return piston_service.execute_code(language, code, stdin=stdin)
+    # Looked up at call time so a replaced judge0_service.execute_code (tests, alternative runner) is honoured.
+    return judge0_service.execute_code(language, code, stdin=stdin)
 
 
 def _run_with_retry(execute: Execute, language: str, code: str, stdin: str) -> Dict[str, Any]:
@@ -252,8 +252,8 @@ def evaluate_coding(problems: List[Dict[str, Any]], hidden_keys: Dict[str, Any],
             stdout = _trim(res.get("stdout")).strip()
             if outputs_equal(stdout, job[1], job[2]):
                 passed_by_problem[idx] += 1
-            cls = piston_service.classify_execution(res)
-            if cls != piston_service.OK and worst.get(idx) in (None, piston_service.OK):
+            cls = judge0_service.classify_execution(res)
+            if cls != judge0_service.OK and worst.get(idx) in (None, judge0_service.OK):
                 worst[idx] = cls
                 message[idx] = (_trim(res.get("compile_output")) or _trim(res.get("stderr")) or _trim(res.get("output")))[:2048]
 
@@ -267,7 +267,7 @@ def evaluate_coding(problems: List[Dict[str, Any]], hidden_keys: Dict[str, Any],
             "problem_id": pid, "title": prob.get("title"), "language": lang,
             "passed_tests": passed, "total_tests": prob_total,
             "score": (passed / prob_total * 100) if prob_total > 0 else 0.0,
-            "classification": worst.get(idx, piston_service.OK if code_present else "NO_SUBMISSION"),
+            "classification": worst.get(idx, judge0_service.OK if code_present else "NO_SUBMISSION"),
             "message": message.get(idx, ""),
         })
     score = (passed_total / total_hidden * 100) if total_hidden > 0 else 0.0     # pooled hidden tests, full precision

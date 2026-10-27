@@ -16,7 +16,7 @@ from main import app
 from routers.auth import get_current_user
 from routers.resume import require_recruiter_user, get_keyword_score
 from routers.assessments import sanitize_assessment_for_candidate
-from services import skill_suggestion, ai_generator, aptitude_evaluation, coding_evaluation, piston_service
+from services import skill_suggestion, ai_generator, aptitude_evaluation, coding_evaluation, judge0_service
 from fastapi.testclient import TestClient
 
 
@@ -263,10 +263,10 @@ class TestPhase6FinalIntegrationAndSecurityRegression(unittest.TestCase):
             }
         ]
 
-        orig_execute = piston_service.execute_code
+        orig_execute = judge0_service.execute_code
         try:
             # Mock Judge0 runner output: passes test 1 and 2, fails test 3
-            piston_service.execute_code = lambda lang, code: {
+            judge0_service.execute_code = lambda lang, code: {
                 "status": "success",
                 "output": (
                     "---EXECUTION_RESULT_START---\n"
@@ -297,7 +297,7 @@ class TestPhase6FinalIntegrationAndSecurityRegression(unittest.TestCase):
             self.assertNotIn("hidden_total_test_cases", candidate_analysis)
 
         finally:
-            piston_service.execute_code = orig_execute
+            judge0_service.execute_code = orig_execute
 
     # =========================================================================
     # 4. CANDIDATE ISOLATION & AUTHORIZATION AUDIT
@@ -438,7 +438,6 @@ class TestPhase6FinalIntegrationAndSecurityRegression(unittest.TestCase):
     def test_14_strictly_frozen_files_have_zero_git_diff(self):
         """14. Strict check: Verifies all frozen interview and fullscreen files remain completely unchanged."""
         strictly_frozen = [
-            "backend/routers/interview.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js",
             "frontend/src/hooks/useAssessmentFullscreen.js",
