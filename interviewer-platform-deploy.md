@@ -239,9 +239,12 @@ Used when the data must be kept across the Clerk removal / recruitment-workflow 
 
 ## 2A. Code Runner (in-house Python and Java execution)
 
-Candidate code (the coding round, Python and Java only) runs in the `code_runner` service from `code-runner/`. It replaces Judge0:
-there is no per-run cost, and nothing leaves the host. The backend needs no code change because the runner answers the same
-`POST /submissions?wait=true` API the Judge0 adapter (`backend/services/judge0_service.py`) already uses.
+Candidate code (the coding round, Python and Java only) runs in the `code_runner` service from `code-runner/` FIRST: there is no per-run
+cost, and nothing leaves the host. **Judge0 is the fallback.** The runner answers the same `POST /submissions?wait=true` API the Judge0
+adapter (`backend/services/judge0_service.py`) already uses, and the adapter tries it first when `CODE_RUNNER_URL` is set. Only a *service*
+failure falls back to Judge0 (runner unreachable, busy, 5xx, invalid answer, internal error). A candidate's own compile error, runtime error,
+time limit or wrong answer is a real result and is returned as it is, never re-run. If both are down the attempt is flagged
+`EVALUATION_PENDING`, never scored. Each target has its own circuit breaker, so a dead runner does not block Judge0.
 
 **How it is isolated**
 - Its own container on the private `runner_net` network (`internal: true`): no internet and no route to the host. Only the backend is attached.
@@ -254,9 +257,11 @@ there is no per-run cost, and nothing leaves the host. The backend needs no code
 - **Not provided:** it is an ordinary hardened container shared by every run, with no per-run filesystem snapshot. Use it for invited
   candidates and keep it on the private network.
 
-**Settings** (set in `docker-compose.prod.yml`, nothing to add to `.env`): backend `JUDGE0_API_URL=http://code_runner:2358/submissions`,
-`CODE_EXECUTION_ENGINE=judge0`, `SANDBOX_MAX_CONCURRENCY=2` (4 workers x 2 = 8; keep it at or below the 6 slots). Do not set
-`JUDGE0_AUTH_TOKEN`: the network is private and the adapter only sends it when set.
+**Settings:** `docker-compose.prod.yml` sets the backend's `CODE_RUNNER_URL=http://code_runner:2358/submissions`, `CODE_EXECUTION_ENGINE=judge0`
+and `SANDBOX_MAX_CONCURRENCY=2` (4 workers x 2 = 8; keep it at or below the 6 slots). The fallback target is `JUDGE0_API_URL` in
+`backend/.env` (the public `ce.judge0.com` by default, or your own Judge0; add `JUDGE0_AUTH_TOKEN` there only if that Judge0 needs one). The
+runner never receives the Judge0 token. The backend does not wait for the runner to be healthy to start, so a broken runner cannot take the
+backend down.
 
 **Check it**
 ```bash
@@ -272,8 +277,8 @@ no network, no reading other runs, read-only filesystem, 20 parallel requests).
 overall time limit. A Java candidate must not write their own `import` lines: the generated wrapper already imports `java.util.*` and pastes
 the candidate code after its own classes.
 
-**Rollback** (no rebuild): set `JUDGE0_API_URL` back to the previous value (or `CODE_EXECUTION_ENGINE=gemini` for a demo), then
-`docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend`.
+**Rollback** (no rebuild): remove `CODE_RUNNER_URL` from the backend's environment so only Judge0 is used (or set
+`CODE_EXECUTION_ENGINE=gemini` for a demo), then `docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend`.
 
 ## 3. Known Issues Hit on First Deploy (and Fixes That Need No Rebuild)
 

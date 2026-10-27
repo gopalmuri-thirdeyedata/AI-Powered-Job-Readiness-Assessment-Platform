@@ -52,8 +52,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=https://interviewer.learningpath.ai
       - CORS_ORIGINS=https://interviewer.learningpath.ai,http://localhost:8212,http://127.0.0.1:8212
-      # In-house code runner on the private runner_net (no auth token: the network is private)
-      - JUDGE0_API_URL=http://code_runner:2358/submissions
+      # Code execution: the in-house runner first (private runner_net, no auth token); Judge0 (JUDGE0_API_URL from backend/.env) only
+      # when the runner cannot serve a request
+      - CODE_RUNNER_URL=http://code_runner:2358/submissions
       - CODE_EXECUTION_ENGINE=judge0
       - SANDBOX_MAX_CONCURRENCY=2
     volumes:
@@ -67,7 +68,7 @@ services:
       redis:
         condition: service_healthy
       code_runner:
-        condition: service_healthy
+        condition: service_started      # not service_healthy: a broken runner must not stop the backend (Judge0 is the fallback)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
       interval: 15s
