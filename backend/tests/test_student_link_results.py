@@ -34,6 +34,8 @@ def env(db):
 
 @pytest.fixture(autouse=True)
 def _setup(monkeypatch):
+    from routers import public_assessment
+    monkeypatch.setattr(public_assessment, "_is_student_account_email", lambda *a, **kw: False)
     h.reset_public_limiters()
     h.install_local_sandbox(monkeypatch)
     h.patch_interview_eval(monkeypatch)
