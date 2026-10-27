@@ -237,6 +237,44 @@ Used when the data must be kept across the Clerk removal / recruitment-workflow 
 
 ---
 
+## 2A. Code Runner (in-house Python and Java execution)
+
+Candidate code (the coding round, Python and Java only) runs in the `code_runner` service from `code-runner/`. It replaces Judge0:
+there is no per-run cost, and nothing leaves the host. The backend needs no code change because the runner answers the same
+`POST /submissions?wait=true` API the Judge0 adapter (`backend/services/judge0_service.py`) already uses.
+
+**How it is isolated**
+- Its own container on the private `runner_net` network (`internal: true`): no internet and no route to the host. Only the backend is attached.
+- Read-only root filesystem; `/tmp/runs` is a 256 MB tmpfs (`noexec,nosuid`). Memory 3 GB, 3 CPUs, 512 processes.
+- `cap_drop: ALL`, then only `SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE` (each one was tested: without any of them the runner either fails
+  every run or cannot stop a sleeping program). `no-new-privileges`, and `init: true` so the orphans of a fork bomb are reaped.
+- Each run is a throwaway numeric uid (10001-10006, so at most 6 runs at once) in its own `0700` directory, with RLIMIT cpu / memory / file size /
+  open files / processes, its own process group (killed on timeout) and output cut at 64 KB. When all six slots are busy for 5 s the runner
+  answers HTTP 429 with `Retry-After: 1`; the backend adapter retries.
+- **Not provided:** it is an ordinary hardened container shared by every run, with no per-run filesystem snapshot. Use it for invited
+  candidates and keep it on the private network.
+
+**Settings** (set in `docker-compose.prod.yml`, nothing to add to `.env`): backend `JUDGE0_API_URL=http://code_runner:2358/submissions`,
+`CODE_EXECUTION_ENGINE=judge0`, `SANDBOX_MAX_CONCURRENCY=2` (4 workers x 2 = 8; keep it at or below the 6 slots). Do not set
+`JUDGE0_AUTH_TOKEN`: the network is private and the adapter only sends it when set.
+
+**Check it**
+```bash
+docker compose -f docker-compose.prod.yml ps                  # interviewer_code_runner must be healthy
+docker logs --tail 50 interviewer_code_runner
+docker exec interviewer_backend python -c "import urllib.request; print(urllib.request.urlopen('http://code_runner:2358/health').read())"
+```
+Safe test run (on your own machine, never on server2): start the container with the same flags on an `--internal` network, then
+`docker exec -i <container> python3 - http://127.0.0.1:2358 < code-runner/tests/smoke.py` (25 checks: limits, memory, fork bomb, output flood,
+no network, no reading other runs, read-only filesystem, 20 parallel requests).
+
+**Known limits:** Python and Java only (standard library, no pip or Maven). All of a question's test cases run in one program with one
+overall time limit. A Java candidate must not write their own `import` lines: the generated wrapper already imports `java.util.*` and pastes
+the candidate code after its own classes.
+
+**Rollback** (no rebuild): set `JUDGE0_API_URL` back to the previous value (or `CODE_EXECUTION_ENGINE=gemini` for a demo), then
+`docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend`.
+
 ## 3. Known Issues Hit on First Deploy (and Fixes That Need No Rebuild)
 
 All of these can be applied without rebuilding images.
