@@ -3,7 +3,7 @@ import ContactAdminModal from '../components/student-ui/ContactAdminModal';
 
 // Assessments are assigned by the admin, so every student "start assessment" button opens the contact-admin popup.
 // Set to false to let students start their own assessments again.
-export const ASSESSMENT_START_LOCKED = true;
+export const ASSESSMENT_START_LOCKED = false; // TEMPORARY: unlocked to test the ElevenLabs voice interview. Set back to true after testing.
 
 const AssessmentLockContext = createContext({ promptContactAdmin: () => {} });
 
