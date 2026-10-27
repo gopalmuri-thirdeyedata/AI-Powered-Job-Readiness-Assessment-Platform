@@ -50,8 +50,8 @@ services:
       - DB_PASSWORD=InterviewerPass2026
       - DB_NAME=hiringai
       - REDIS_URL=redis://redis:6379/0
-      - FRONTEND_URL=https://interviewer.thirdeyedata.ai
-      - CORS_ORIGINS=https://interviewer.thirdeyedata.ai,http://localhost:8212,http://127.0.0.1:8212
+      - FRONTEND_URL=https://interviewer.learningpath.ai
+      - CORS_ORIGINS=https://interviewer.learningpath.ai,http://localhost:8212,http://127.0.0.1:8212
     volumes:
       - interviewer_media:/app/media
     networks:
