@@ -102,7 +102,7 @@ def test_valid_admin_and_student_login_use_server_side_role_and_redirect(db):
     ra, rs = login(a, admin.email), login(s, student.email)
     assert ra.status_code == rs.status_code == 200
     assert (ra.json()["role"], ra.json()["redirect"]) == ("ADMIN", "/admin/dashboard")
-    assert (rs.json()["role"], rs.json()["redirect"]) == ("STUDENT", "/student/dashboard")
+    assert (rs.json()["role"], rs.json()["redirect"]) == ("STUDENT", "/assessment/setup")
     assert "access" not in ra.json() and "token" not in ra.json()      # no bearer secret handed to page JavaScript
     assert a.get("/api/auth/me").json()["role"] == "ADMIN"
     assert s.get("/api/auth/me").json()["role"] == "STUDENT"
@@ -355,7 +355,7 @@ def test_admin_creates_student_and_student_can_login_straight_away(db):
     assert db.query(models.OrganizationMember).filter(models.OrganizationMember.user_id == row.id).count() == 0
     s = new_client()
     ok = login(s, created["email"])
-    assert ok.status_code == 200 and ok.json()["role"] == "STUDENT" and ok.json()["redirect"] == "/student/dashboard"
+    assert ok.status_code == 200 and ok.json()["role"] == "STUDENT" and ok.json()["redirect"] == "/assessment/setup"
 
 
 def test_admin_creates_another_admin_who_can_use_admin_apis(db):

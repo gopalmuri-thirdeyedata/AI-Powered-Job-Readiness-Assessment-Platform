@@ -7,7 +7,7 @@ procedure for the platform administrator; day-to-day password changes use the ap
   set PREPWIN_NEW_PASSWORD=...  &  python scripts/set_admin_password.py --from-env      # non-interactive
 
 The password is validated against the platform policy, hashed (bcrypt), never printed and never logged. Every existing session of
-the account is revoked. The account must already exist and have the ADMIN role; this script never creates users or changes roles.
+the account is revoked. The account must already exist and have the ADMIN or SUPER_ADMIN role; this script never creates users or changes roles.
 """
 import argparse
 import getpass
@@ -47,8 +47,8 @@ def main(argv=None) -> int:
     print("Database:", database.engine.url.render_as_string(hide_password=True))
     with database.SessionLocal() as db:
         user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
-        if user is None or user.role != models.UserRole.ADMIN:
-            print(f"No ADMIN account with e-mail {email} exists; nothing changed.")
+        if user is None or not models.is_admin_role(user.role):
+            print(f"No ADMIN or SUPER_ADMIN account with e-mail {email} exists; nothing changed.")
             return 1
         user.hashed_password = utils.get_password_hash(password)
         user.is_active = True

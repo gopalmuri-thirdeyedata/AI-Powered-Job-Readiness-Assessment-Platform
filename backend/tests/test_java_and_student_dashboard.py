@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 import models
-from services import roleready_service, piston_service
+from services import roleready_service, judge0_service
 from tests.test_roleready_pipeline import db_session, setup_test_data
 
 client = TestClient(app)
@@ -22,9 +22,9 @@ def test_java_starter_and_language_support():
     with pytest.raises(Exception):
         roleready_service._require_supported_language("ruby")
 
-    # 3. Verify Piston/Judge0 language ID mapping
-    assert piston_service.LANGUAGE_MAP["java"]["language_id"] == 62
-    assert piston_service.LANGUAGE_MAP["python"]["language_id"] == 71
+    # 3. Verify Judge0 language ID mapping
+    assert judge0_service.LANGUAGE_MAP["java"]["language_id"] == 62
+    assert judge0_service.LANGUAGE_MAP["python"]["language_id"] == 71
 
 
 def test_student_assessments_endpoint_and_isolation(db_session, setup_test_data):

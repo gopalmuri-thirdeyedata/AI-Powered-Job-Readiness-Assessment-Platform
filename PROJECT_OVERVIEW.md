@@ -14,8 +14,8 @@ The platform provides an end-to-end autonomous evaluation workflow:
 1. **Applicant Tracking & Resume Screening (ATS):** Multi-attribute structured job description creation, real-time AI keyword extraction, and progressive streaming resume evaluations.
 2. **RoleReady Multi-Stage Proctored Assessment Pipeline:** Strict sequential 3-tier testing:
    - **Tier 1:** Domain & Quantitative Aptitude (timed MCQ / short-answer).
-   - **Tier 2:** Algorithmic Coding (Monaco editor + sandboxed Piston/Judge0 execution with public and hidden test cases).
-   - **Tier 3:** AI Voice & Conversational Technical Interview (Vapi speech-to-speech WebRTC + Gemini STAR rubric evaluations).
+   - **Tier 2:** Algorithmic Coding (Monaco editor + sandboxed Judge0 execution with public and hidden test cases).
+   - **Tier 3:** AI Voice & Conversational Technical Interview (ElevenLabs speech + Gemini interviewer and STAR rubric evaluations).
 3. **Computer Vision Anti-Malpractice Proctoring:** Real-time CPU-optimized YOLOv8/YOLO11 object detection (flagging mobile phones, multiple people, absence, unauthorized displays/books) coupled with fullscreen enforcement and 10-second violation recovery grace periods.
 4. **Student Career Readiness Hub:** 9-dimension resume diagnostics, dynamic weekly learning roadmaps with daily task tracking, DSA & aptitude practice question banks, AI project architecture code reviews, 4-stage campus placement simulations, and an interactive AI Career Copilot drawer.
 5. **College / University Placement Cell Management:** Cohort readiness tracking, department-level distribution metrics, and campus recruitment drive coordination.
@@ -47,8 +47,8 @@ The codebase defines 5 primary operational portals and user roles in [backend/mo
 - **Cache & Message Broker:** Redis 7 (`redis:7-alpine`).
 - **Authentication:** Clerk Identity Management (`@clerk/clerk-react`, `backend/services/clerk_service.py`), Python-Jose JWT (`python-jose[cryptography]==3.3.0`), Passlib with Bcrypt (`passlib[bcrypt]==1.7.4`).
 - **AI & LLM Services:** Google Gemini API (`google-generativeai>=0.8.0`, `backend/services/gemini_client.py`) utilizing `gemini-2.5-flash`, with an offline deterministic fixture engine (`gemini_mock_fixtures.py`) for keyless development.
-- **Voice AI:** Vapi WebRTC conversational speech agent (`backend/services/vapi_service.py`, `backend/routers/interview.py`).
-- **Code Execution:** Piston sandbox API (`backend/services/piston_service.py`) and Judge0 CE endpoints.
+- **Voice AI:** ElevenLabs speech-to-text / text-to-speech with a Gemini interviewer (`backend/services/elevenlabs_service.py`, `backend/routers/interview.py`).
+- **Code Execution:** Judge0 CE sandbox API (`backend/services/judge0_service.py`).
 - **Vision Proctoring:** Ultralytics YOLOv8 / YOLO11 (`ultralytics==8.3.163`, `opencv-python-headless==4.10.0.84`, `Pillow`, `numpy`). Weights: `backend/models/yolov8n.pt` and `yolo11n.pt`.
 - **Document Extraction:** `pypdf==4.3.1`, Python DOCX parsing, custom regex tokenizers.
 
@@ -57,7 +57,7 @@ The codebase defines 5 primary operational portals and user roles in [backend/mo
 - **Styling & Motion:** TailwindCSS 3.3.5, Framer Motion 10.16, GSAP 3.14, Lucide Icons (`lucide-react`).
 - **Code Editor:** Monaco Editor (`@monaco-editor/react==4.6.0`).
 - **Data Visualization:** Recharts 2.9, Three.js (`three==0.182.0`, `@react-three/fiber`, `@react-three/drei`).
-- **Client Speech & Voice:** Vapi Web SDK (`@vapi-ai/web==2.5.2`).
+- **Client Speech & Voice:** Browser voice session (`frontend/src/utils/voiceInterviewSession.js`): records the candidate, sends each answer to the backend, plays the interviewer's voice.
 - **Document Export:** jsPDF (`jspdf==4.0.0`, `jspdf-autotable`), XLSX (`xlsx==0.18.5`).
 - **State & Routing:** React Router DOM v6 (`react-router-dom==6.18.0`), ThemeContext (Dark/Light mode).
 
@@ -172,7 +172,8 @@ All routers are registered in [backend/main.py](file:///e:/HiringAi/backend/main
 - `POST /api/roleready/session/{session_uuid}/run-code`: Sandboxed trial run against public sample cases.
 - `POST /api/roleready/session/{session_uuid}/submit-coding`: Authoritative evaluation against hidden test cases; unlocks interview round.
 - `POST /api/roleready/session/{session_uuid}/start-interview`: Starts technical interview round.
-- `POST /api/roleready/session/{session_uuid}/vapi-init`: Generates dynamic Vapi assistant configuration grounded in candidate JD & resume.
+- `POST /api/roleready/session/{session_uuid}/voice-init`: Defines the voice interview (prompt kept server-side) grounded in candidate JD & resume.
+- `POST /api/roleready/session/{session_uuid}/voice-turn`: One spoken exchange (recording in, interviewer text and speech out).
 - `POST /api/roleready/session/{session_uuid}/submit-interview`: Submits transcript and evaluates technical depth, STAR structure, and relevance.
 - `POST /api/roleready/session/{session_uuid}/terminate`: Aborts session upon proctoring violation limit (e.g. 3/3 malpractice alerts).
 - `GET /api/roleready/session/{session_uuid}/report`: Returns consolidated Job Readiness Report.
@@ -229,8 +230,8 @@ All routers are registered in [backend/main.py](file:///e:/HiringAi/backend/main
 - `GET /api/dashboard/analytics/`: Detailed candidate scores, round comparisons, and funnel statistics.
 
 ### 5.10 `routers/interview.py` (Voice AI Webhooks)
-- `GET /api/interview/init`: Generates dynamic Vapi configuration for scheduled recruiter interviews.
-- `POST /api/interview/submit`: Webhook receiving Vapi call end transcripts and computing candidate scores.
+- `GET /api/interview/init`: Defines the voice interview for scheduled recruiter interviews (returns a signed interview token); `POST /api/interview/voice-turn` runs each spoken exchange.
+- `POST /api/interview/submit`: Receives the finished interview transcript and computes candidate scores.
 
 ### 5.11 `routers/proctor.py` (Computer Vision Proctoring)
 - `GET /api/proctor/status`: Returns status and capabilities of the YOLO detection engine.
@@ -252,8 +253,8 @@ The 26 services in [backend/services/](file:///e:/HiringAi/backend/services) han
 4. **`student_performance_service.py`**: Aggregates, normalizes, and analyzes student performance across assessments, simulations, practice questions, and mock interviews.
 5. **`student_resume_analyzer.py`**: Extracts text from PDF/DOCX and evaluates student resumes across 9 dimensions without fabricating credentials.
 6. **`proctor_service.py`**: Loads CPU-optimized YOLO models (`yolov8n.pt` / `yolo11n.pt`) and performs real-time detection on webcam frames for malpractice objects.
-7. **`piston_service.py`**: Interfaces with the Piston and Judge0 containerized execution engines to safely execute code in Python, Java, C++, and JavaScript with timeout limits.
-8. **`vapi_service.py`**: Integrates with Vapi voice API, generating customized assistant system prompts and WebRTC call configurations.
+7. **`judge0_service.py`**: Interfaces with the Judge0 containerized execution engines to safely execute code in Python, Java, C++, and JavaScript with timeout limits.
+8. **`elevenlabs_service.py`**: Voice interview engine: builds the interviewer prompt, transcribes the candidate (ElevenLabs), asks Gemini for the reply and speaks it (ElevenLabs).
 9. **`ai_generator.py`**: Generates aptitude questions, coding challenges, and interview rubrics tailored to job descriptions.
 10. **`aptitude_evaluation.py`**: Grades candidate aptitude submissions against server answer keys.
 11. **`coding_evaluation.py`**: Evaluates coding submissions against public and hidden test cases, checking execution times and error outputs.
@@ -291,14 +292,13 @@ The 26 services in [backend/services/](file:///e:/HiringAi/backend/services) han
   - `Analytics.jsx`: Recruiting analytics, score distributions, and candidate comparison drawer.
   - `GlobalSettings.jsx`: Organization configuration, scoring weights, and cutoffs.
   - `PlatformAdminDashboard.jsx`: Platform-wide tenant management, organization creation, and member role assignment.
-  - `VapiTest.jsx`: Audio/microphone diagnostic test utility.
 - **Candidate Portal (`CandidateLayout`):**
   - `CandidateLogin.jsx`: Login page for candidates using test credentials.
   - `CandidateStartPage.jsx`: Candidate welcome and system hardware check (camera, mic, fullscreen).
   - `InstructionsPage.jsx`: Rules and anti-cheating guidelines before starting tests.
   - `CandidateAptitudeAssessment.jsx`: Timed aptitude test interface.
   - `CandidateCodingAssessment.jsx`: Coding test interface with Monaco editor, syntax highlighting, and test runner.
-  - `VapiInterview.jsx`: Voice interview interface with real-time speech interaction and transcript display.
+  - `VoiceInterview.jsx`: Voice interview interface with real-time speech interaction and transcript display.
 - **RoleReady Assessment (`pages/roleready/`):**
   - `RoleReadySetup.jsx`: Setup page for student self-assessment with resume upload and JD entry.
   - `RoleReadyAssessment.jsx`: Unified 3-stage assessment interface enforcing sequential progression with webcam proctoring and fullscreen protection.
@@ -407,7 +407,7 @@ Run via `npm test` (`node --test *.test.mjs`):
 - **`reverse_proxy`**: Nginx edge proxy listening on host port `8212` (or `80`/`443`), directing traffic to frontend and `/api` to backend.
 
 ### 10.2 Environment Configuration (`backend/.env.example`)
-Configures MySQL connection parameters, `JWT_SECRET_KEY` (minimum 32 characters in production), Clerk keys, Google Gemini credentials (`GEMINI_API_KEY`, `GEMINI_MODEL_NAME=gemini-2.5-flash`), `GEMINI_MOCK_MODE` toggle, Vapi keys, Piston/Judge0 execution URLs.
+Configures MySQL connection parameters, `JWT_SECRET_KEY` (minimum 32 characters in production), Clerk keys, Google Gemini credentials (`GEMINI_API_KEY`, `GEMINI_MODEL_NAME=gemini-2.5-flash`), `GEMINI_MOCK_MODE` toggle, ElevenLabs keys, Judge0 execution URLs.
 
 ---
 

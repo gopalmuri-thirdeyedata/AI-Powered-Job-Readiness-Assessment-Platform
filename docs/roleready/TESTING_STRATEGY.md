@@ -4,7 +4,7 @@
 1. **Unit Tests (Backend):**
    - State machine transition rules.
    - Aptitude scoring algorithm & answer key protection.
-   - Piston code submission parsing & test evaluation.
+   - Judge0 code submission parsing & test evaluation.
    - Prompt generation & LLM fallback handling.
 2. **Integration Tests (Backend API):**
    - End-to-end Workflow A (Student session init → Aptitude → Coding → Interview → Final Report).

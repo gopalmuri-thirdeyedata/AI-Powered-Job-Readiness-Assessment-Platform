@@ -30,7 +30,7 @@ router = APIRouter(
 # (routers/users.py). The Clerk token-exchange endpoint was removed: it minted a session for any e-mail without verification.
 # ------------------------------------------------------------------------------
 LOGIN_ROLES = (models.UserRole.SUPER_ADMIN.value, models.UserRole.ADMIN.value, models.UserRole.STUDENT.value)
-HOME_FOR_ROLE = {"SUPER_ADMIN": "/admin/dashboard", "ADMIN": "/admin/dashboard", "STUDENT": "/student/dashboard"}
+HOME_FOR_ROLE = {"SUPER_ADMIN": "/admin/dashboard", "ADMIN": "/admin/dashboard", "STUDENT": "/assessment/setup"}
 INVALID_CREDENTIALS = "Invalid email or password."
 
 # Verified against when the e-mail is unknown, so "no such account" costs the same time as "wrong password".

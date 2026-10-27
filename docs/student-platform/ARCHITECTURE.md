@@ -40,7 +40,7 @@
 |   - ReadinessService (Indicative Multi-factor Scoring)                            |
 |   - SkillGapService & SkillTaxonomy                                               |
 |   - RoadmapGenerator & TaskManager                                                |
-|   - PracticeService & CodeExecutionProxy (Judge0 / Piston)                        |
+|   - PracticeService & CodeExecutionProxy (Judge0)                        |
 |   - StudentMockInterviewService (STAR dialogue & Speech Evaluation)               |
 |   - ProjectAnalyzerService                                                        |
 |   - PlacementSimulationOrchestrator                                               |
@@ -54,8 +54,8 @@
 |                             |               |                                     |
 |  MySQL 8 Relational Store   |               |  - Clerk Identity API               |
 |  - organizations            |               |  - Google Gemini API / Groq Cloud   |
-|  - organization_members     |               |  - Judge0 / Piston Execution Engine |
-|  - users                    |               |  - Vapi Speech Engine (Recruiter)   |
+|  - organization_members     |               |  - Judge0 Execution Engine |
+|  - users                    |               |  - ElevenLabs Voice Engine           |
 |  - student_profiles         |               +-------------------------------------+
 |  - student_resumes          |
 |  - student_roadmaps         |
@@ -75,7 +75,7 @@
 
 ### 2.1 Student vs. Recruiter Isolation
 1. **Database Tables**: Student learning records (`student_roadmaps`, `student_practice_attempts`, `student_mock_interviews`) are strictly decoupled from formal recruiter candidate evaluation tables (`candidates`, `candidate_results`, `interviews`). Practice tests never alter candidate recruitment scores.
-2. **Frozen Files Protection**: The recruiter interview engine (`backend/routers/interview.py`, `vapi_service.py`, `interview_evaluation.py`) remains unmodified. Student mock interviews operate through independent student services and routes.
+2. **Frozen Files Protection**: The recruiter interview evaluation (`interview_evaluation.py`) remains unmodified. `routers/interview.py` and the voice engine (`elevenlabs_service.py`) were changed once, to replace Vapi with ElevenLabs. Student mock interviews operate through independent student services and routes.
 3. **Authentication Boundary**: Students authenticate via the dedicated `/api/student/auth` route, obtaining scoped tokens with `role="STUDENT"` that cannot access recruiter or admin APIs.
 
 ### 2.2 College / Tenant Isolation

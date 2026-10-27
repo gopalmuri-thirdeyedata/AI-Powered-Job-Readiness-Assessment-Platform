@@ -230,14 +230,14 @@ describe('Candidate API client and runner behaviour', () => {
         await candidateApi.runCode(s, 'C1', 'code', 'java');
         await candidateApi.submitCoding(s, { C1: { language: 'python', code: 'x' } });
         await candidateApi.startInterview(s);
-        await candidateApi.vapiInit(s);
+        await candidateApi.voiceInit(s);
         await candidateApi.submitInterview(s, [{ question_id: 'I1', response: 'ans' }], [{ role: 'user', text: 'ans' }]);
         await candidateApi.saveDraft(s, 'aptitude', { answers: {} }, []);
         await candidateApi.finalize(s);
         const seen = globalThis.__axiosCalls.map((c) => `${c.method.toUpperCase()} ${c.url.replace('http://api.test/api/public/assessment', '')}`);
         assert.deepEqual(seen, [
             'POST /SH/register', 'POST /session/U/submit-aptitude', 'POST /session/U/start-coding', 'POST /session/U/run-code',
-            'POST /session/U/submit-coding', 'POST /session/U/start-interview', 'POST /session/U/vapi-init', 'POST /session/U/submit-interview',
+            'POST /session/U/submit-coding', 'POST /session/U/start-interview', 'POST /session/U/voice-init', 'POST /session/U/submit-interview',
             'PUT /session/U/draft', 'POST /session/U/finalize',
         ]);
         assert.deepEqual(globalThis.__axiosCalls[3].body, { problem_id: 'C1', language: 'java', code: 'code' }, 'the shared editor supports Java as well as Python');
@@ -272,16 +272,16 @@ describe('Candidate API client and runner behaviour', () => {
         assert.ok(adapterSrc.includes('setLease(session.lease)') && adapterSrc.includes('// volatile lease: in-memory ONLY'));
     });
 
-    test('15. all three sections are the Student Platform workspace: Monaco, Python + Java, Vapi voice interview, proctoring', () => {
+    test('15. all three sections are the Student Platform workspace: Monaco, Python + Java, voice interview, proctoring', () => {
         assert.ok(pageSrc.includes("import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment'"), 'the page reuses the student workspace');
         assert.ok(pageSrc.includes('mode="recruitment"') && pageSrc.includes('skipInstructions') && pageSrc.includes('proctoringPolicy="flag"'));
-        assert.ok(!pageSrc.includes('<textarea') && !pageSrc.includes('@monaco-editor') && !pageSrc.includes('@vapi-ai'), 'no second editor / voice implementation in the recruitment page');
-        for (const needle of ["from '@monaco-editor/react'", "from '@vapi-ai/web'", "handleLanguageChange('java')", "handleLanguageChange('python')", 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVapi()', 'api.runCode(']) {
+        assert.ok(!pageSrc.includes('<textarea') && !pageSrc.includes('@monaco-editor') && !pageSrc.includes('voiceInterviewSession'), 'no second editor / voice implementation in the recruitment page');
+        for (const needle of ["from '@monaco-editor/react'", "from '../../utils/voiceInterviewSession'", "handleLanguageChange('java')", "handleLanguageChange('python')", 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
             assert.ok(workspaceSrc.includes(needle), `shared workspace has: ${needle}`);
         }
         assert.ok(!/hidden_test|hiddenTest|hidden test/i.test(adapterSrc + pageSrc), 'recruitment code never references hidden tests');
-        assert.ok(adapterSrc.includes('initVapi: async') && adapterSrc.includes('candidateApi.vapiInit(need())'));
-        assert.ok(workspaceSrc.includes("const manualId = isRecruitment ? null"), 'no assistant-ID override for candidates');
+        assert.ok(adapterSrc.includes('initVoice: async') && adapterSrc.includes('candidateApi.voiceInit(need())'));
+        assert.ok(!/manual_id|manualId/.test(workspaceSrc), 'no interviewer-ID override for candidates');
     });
 
     test('15b. the aptitude Integrity Monitor follows the proctoring policy: recruitment never shows strikes or "terminated" wording', () => {

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { buildVoiceTurnForm } from '../utils/voiceInterviewSession';
 import API_URL from '../apiConfig';
 
 // Students authenticate with the HttpOnly session cookie (+ CSRF header) added by the auth client.
@@ -103,9 +104,27 @@ export const rolereadyApi = {
         return response.data;
     },
 
-    async initVapiSession(sessionUuid) {
-        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/vapi-init`, {}, {
+    async initVoiceSession(sessionUuid) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/voice-init`, {}, {
             headers: getAuthHeaders()
+        });
+        return response.data;
+    },
+
+    async getFeedbackStatus(sessionUuid) {
+        const response = await axios.get(`${API_URL}/api/roleready/session/${sessionUuid}/feedback`, { headers: getAuthHeaders() });
+        return response.data;
+    },
+
+    async submitFeedback(sessionUuid, feedback) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/feedback`, { feedback }, { headers: getAuthHeaders() });
+        return response.data;
+    },
+
+    async voiceTurn(sessionUuid, turn) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/voice-turn`, buildVoiceTurnForm(turn), {
+            headers: getAuthHeaders(true),
+            timeout: 60000
         });
         return response.data;
     },

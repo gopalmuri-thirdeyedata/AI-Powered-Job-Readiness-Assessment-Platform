@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
     Award,
     CheckCircle2,
@@ -22,8 +22,12 @@ import {
     ShieldAlert,
     Target,
     CalendarDays,
+    Lock,
 } from 'lucide-react';
 import rolereadyApi from '../../services/rolereadyApi';
+import { useAssessmentLock } from '../../context/AssessmentLockContext';
+import FeedbackGateModal from '../../components/student-ui/FeedbackGateModal';
+import { downloadReportPdf } from '../../utils/reportPdf';
 import RoleReadyNavbar from '../../components/RoleReadyNavbar';
 import { markStudentTaskCompleted } from '../../hooks/useStudentTaskStatus';
 import { motion } from 'framer-motion';
@@ -65,7 +69,45 @@ const ScoreFigure = ({ value }) => (typeof value === 'number'
 
 const RoleReadyReport = () => {
     const { sessionUuid } = useParams();
+    const { promptContactAdmin } = useAssessmentLock();
+    const navigate = useNavigate();
     const [reportData, setReportData] = useState(null);
+
+    // Feedback gate: downloading the report or opening the dashboard needs a written feedback (20+ words) first.
+    const [feedbackDone, setFeedbackDone] = useState(false);
+    const [pendingAction, setPendingAction] = useState(null);      // 'download' | 'dashboard' while the popup is open
+    useEffect(() => {
+        let cancelled = false;
+        rolereadyApi.getFeedbackStatus(sessionUuid)
+            .then((status) => { if (!cancelled && status?.submitted) setFeedbackDone(true); })
+            .catch(() => { /* unknown: the popup is shown and the server decides */ });
+        return () => { cancelled = true; };
+    }, [sessionUuid]);
+
+    // The report is saved as a PDF file (no print dialog). If the PDF cannot be built, the browser's print / save-as-PDF dialog is the
+    // fallback, so the student always gets their report.
+    const downloadReport = useCallback(async () => {
+        try {
+            await downloadReportPdf(reportData);
+        } catch (err) {
+            console.error('Report PDF failed, falling back to print:', err);
+            window.print();
+        }
+    }, [reportData]);
+
+    const requireFeedback = async (action) => {
+        if (!feedbackDone) { setPendingAction(action); return; }
+        if (action === 'download') await downloadReport();
+        else navigate('/student/dashboard');
+    };
+    // Submitting the feedback downloads the report automatically, then the student is taken to the dashboard.
+    const submitFeedback = async (text) => {
+        await rolereadyApi.submitFeedback(sessionUuid, text);
+        setFeedbackDone(true);
+        setPendingAction(null);
+        await downloadReport();
+        setTimeout(() => navigate('/student/dashboard'), 600);       // let the browser start the file download first
+    };
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [expandedQuestion, setExpandedQuestion] = useState(0);
@@ -229,7 +271,13 @@ const RoleReadyReport = () => {
     return (
         <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-emerald-100 selection:text-emerald-900 flex flex-col overflow-x-hidden">
             <PrintStyles />
-            <RoleReadyNavbar title="Assessment Report" />
+            <RoleReadyNavbar title="Assessment Report" showDashboard={false} />
+            <FeedbackGateModal
+                open={!!pendingAction}
+                onClose={() => setPendingAction(null)}
+                onSubmit={submitFeedback}
+                actionLabel={pendingAction === 'download' ? 'download your report' : 'open your dashboard'}
+            />
             <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
                 {/* Header Actions */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--rr-border)]">
@@ -254,18 +302,22 @@ const RoleReadyReport = () => {
 
                     <div className="flex items-center gap-3 flex-wrap">
                         <button
-                            onClick={() => window.print()}
+                            id="report-export-pdf-btn"
+                            type="button"
+                            onClick={() => requireFeedback('download')}
                             className="rr-btn-secondary"
                         >
                             <Printer className="w-4 h-4" />
                             <span>Export PDF</span>
                         </button>
-                        <Link
-                            to="/assessment/setup"
+                        <button
+                            type="button"
+                            onClick={promptContactAdmin}
                             className="rr-btn-primary"
                         >
+                            <Lock className="w-4 h-4" />
                             New Assessment
-                        </Link>
+                        </button>
                     </div>
                 </div>
 
@@ -760,22 +812,24 @@ const RoleReadyReport = () => {
                         <p className="text-xs text-[var(--rr-muted)] mt-0.5">Upload a different JD or refine your resume to take a new PrepWin assessment.</p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                        <Link
-                            to="/student/dashboard"
+                        <button
+                            type="button"
                             id="report-view-dashboard-btn"
-                            className="px-4 py-2 rounded-xl border border-[var(--rr-border)] bg-[var(--rr-card)] hover:bg-[var(--rr-input)] text-xs font-semibold text-[var(--rr-text)] flex items-center gap-2 transition-colors shadow-2xs"
+                            onClick={() => requireFeedback('dashboard')}
+                            className="px-4 py-2 rounded-xl border border-[var(--rr-border)] bg-[var(--rr-card)] hover:bg-[var(--rr-input)] text-xs font-semibold text-[var(--rr-text)] flex items-center gap-2 transition-colors shadow-2xs cursor-pointer"
                         >
                             <LayoutDashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>View Performance Dashboard</span>
-                        </Link>
-                        <Link
-                            to="/assessment/setup"
+                        </button>
+                        <button
+                            type="button"
+                            onClick={promptContactAdmin}
                             className="rr-btn-primary shrink-0 relative overflow-hidden group"
                         >
                             <span className="pw-noprint pointer-events-none absolute inset-y-0 -left-full w-1/2 bg-gradient-to-r from-transparent via-white/40 to-transparent -skew-x-12 group-hover:left-[150%] transition-[left] duration-700 motion-reduce:hidden" aria-hidden="true" />
                             <span className="relative">New Self-Assessment</span>
-                            <ArrowRight className="w-4 h-4 relative" />
-                        </Link>
+                            <Lock className="w-4 h-4 relative" />
+                        </button>
                     </div>
                 </div>
                 </Rv>

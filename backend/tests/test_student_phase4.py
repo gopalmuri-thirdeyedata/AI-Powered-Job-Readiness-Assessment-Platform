@@ -138,7 +138,7 @@ def test_submit_aptitude_practice_success_and_failure(setup_phase4_data):
     assert res_correct.json()["tests_passed"] == 1
 
 
-@patch("services.piston_service.execute_code")
+@patch("services.judge0_service.execute_code")
 def test_submit_coding_practice_evaluation(mock_execute_code, setup_phase4_data):
     """Validates server-side coding practice evaluation with Judge0 mock."""
     mock_execute_code.return_value = {

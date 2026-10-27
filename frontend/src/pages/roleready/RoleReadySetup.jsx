@@ -30,6 +30,7 @@ import RoleReadyNavbar from '../../components/RoleReadyNavbar';
 import WalkthroughTour from '../../components/WalkthroughTour';
 import AssessmentLoadingOverlay from '../../components/AssessmentLoadingOverlay';
 import useStudentTaskStatus from '../../hooks/useStudentTaskStatus';
+import { ASSESSMENT_START_LOCKED, useAssessmentLock } from '../../context/AssessmentLockContext';
 
 const popularRoles = [
     "Full Stack Engineer",
@@ -210,6 +211,7 @@ const RoleReadySetup = () => {
     const navigate = useNavigate();
     const { user, isLoaded: isUserLoaded } = useUser();
     const { hasCompletedTask } = useStudentTaskStatus(user);
+    const { promptContactAdmin } = useAssessmentLock();
 
     const [targetRole, setTargetRole] = useState("Full Stack Engineer");
     const [targetCompany, setTargetCompany] = useState("");
@@ -283,6 +285,11 @@ const RoleReadySetup = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        // Also covers Enter pressed inside a field, which submits the form without clicking the button
+        if (ASSESSMENT_START_LOCKED) {
+            promptContactAdmin();
+            return;
+        }
         setError(null);
 
         const errors = {};
@@ -748,7 +755,9 @@ const RoleReadySetup = () => {
                                         <>
                                             <span aria-hidden="true" className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/25 to-transparent" />
                                             <span className="relative">Start Assessment</span>
-                                            <ArrowRight className="w-4 h-4 relative transition-transform group-hover:translate-x-1" />
+                                            {ASSESSMENT_START_LOCKED
+                                                ? <Lock className="w-4 h-4 relative" />
+                                                : <ArrowRight className="w-4 h-4 relative transition-transform group-hover:translate-x-1" />}
                                         </>
                                     )}
                                 </button>

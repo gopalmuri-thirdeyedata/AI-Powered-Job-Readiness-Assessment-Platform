@@ -2,7 +2,7 @@ import json
 import copy
 from typing import List, Dict, Any, Optional, Tuple
 from services import ai_generator
-from services import piston_service
+from services import judge0_service
 
 DEFAULT_STARTER_CODE = {
     "python": "def solve(input_data):\n    # return the result\n    pass",
@@ -322,7 +322,7 @@ def execute_and_evaluate_coding_submission(
                     })
             else:
                 # Execute on Judge0
-                judge_res = piston_service.execute_code(cand_lang, runner_code)
+                judge_res = judge0_service.execute_code(cand_lang, runner_code)
 
                 if judge_res.get("status") == "success":
                     execution_status = "executed"

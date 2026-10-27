@@ -10,7 +10,7 @@ import pytest
 
 from services import assessment_engine as engine
 from services import assessment_policy as policy
-from services import gemini_mock_fixtures, jd_blueprint_service, piston_service
+from services import gemini_mock_fixtures, jd_blueprint_service, judge0_service
 
 
 # ============================================================================== policy

@@ -120,9 +120,9 @@ export const SOLUTIONS = {
 export const openCoding = async (ui) => { await ui.page.waitForSelector('text=Round 2', { timeout: 30000 }).catch(() => {}); await ui.page.waitForTimeout(1500); };
 
 // ------------------------------------------------------------------------------ composite flows
-/** Make every Vapi REST call fail the way the SDK sees a dead room (no billable call is ever created in tests). */
-export const stubVapiRest = (page) => page.route('**/api.vapi.ai/**', (route) => route.fulfill({
-  status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'call_e2e', webCallUrl: 'https://e2e-fake.daily.co/room' }),
+/** Make every voice turn fail like an unreachable voice service, so a test reaches the connection-failed / written-answer path. */
+export const stubVoiceApi = (page) => page.route('**/voice-turn', (route) => route.fulfill({
+  status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'The voice service is unavailable right now. Please try again.' }),
 }));
 
 /** From the student's first screen to a started attempt (sign in -> instructions -> device check -> explicit start). `org` is a stack.newOrg() result. */

@@ -11,7 +11,7 @@ const hookCode = fs.readFileSync(path.join(__dirname, 'src', 'hooks', 'useAssess
 const modalCode = fs.readFileSync(path.join(__dirname, 'src', 'components', 'FullscreenGateModal.jsx'), 'utf-8');
 const aptitudeCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'CandidateAptitudeAssessment.jsx'), 'utf-8');
 const codingCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'CandidateCodingAssessment.jsx'), 'utf-8');
-const interviewCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'VapiInterview.jsx'), 'utf-8');
+const interviewCode = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'candidate', 'VoiceInterview.jsx'), 'utf-8');
 const legacyHookCode = fs.readFileSync(path.join(__dirname, 'src', 'hooks', 'useFullscreen.js'), 'utf-8');
 
 describe('Phase 4 Frontend Test Suite: useAssessmentFullscreen & FullscreenGateModal', () => {
@@ -111,7 +111,7 @@ describe('Phase 4 Frontend Test Suite: useAssessmentFullscreen & FullscreenGateM
         assert.ok(interviewCode.includes("handleAnyViolation('Fullscreen exit exceeded 10-second recovery limit')"));
     });
 
-    test('16. Interview round preserves Vapi session without recreation or restart', () => {
+    test('16. Interview round preserves the voice session without recreation or restart', () => {
         assert.ok(interviewCode.includes('onEnterSuccess: () => {'));
         assert.ok(interviewCode.includes('transcriptDataRef.current'));
         // Verify no restart on fullscreen transition

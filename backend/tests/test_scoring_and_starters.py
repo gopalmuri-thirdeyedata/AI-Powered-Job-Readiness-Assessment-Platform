@@ -11,7 +11,7 @@ from collections import Counter
 
 import pytest
 
-from services import piston_service, practice_service, roleready_service
+from services import judge0_service, practice_service, roleready_service
 from tests.test_roleready_pipeline import db_session, setup_test_data  # noqa: F401  (fixtures)
 from fastapi.testclient import TestClient
 from main import app
@@ -43,11 +43,11 @@ ROLES = ["Frontend Developer", "Data Analyst", "DevOps Engineer", "ML Engineer",
     ("wrong", "right", False),
 ])
 def test_outputs_match_policy(actual, expected, ok):
-    assert piston_service.outputs_match(actual, expected) is ok
+    assert judge0_service.outputs_match(actual, expected) is ok
 
 
 def _patch_sandbox(monkeypatch, fn):
-    monkeypatch.setattr(piston_service, "execute_code", lambda lang, code, stdin="": {
+    monkeypatch.setattr(judge0_service, "execute_code", lambda lang, code, stdin="": {
         "status": "success", "output": "", "stdout": fn(stdin), "stderr": "", "compile_output": "",
         "timed_out": False, "execution_time_ms": 1.0, "raw": {}})
 
@@ -282,7 +282,7 @@ def _run_starter(code, stdin):
 def test_assessment_starters_are_skeletons_that_solve_nothing():
     for title, (starter, tests) in _all_fallback_problems().items():
         assert "def " in starter, f"{title}: starter lost its function signature"
-        passed = [stdin for stdin, expected in tests if piston_service.outputs_match(_run_starter(starter, stdin), expected)]
+        passed = [stdin for stdin, expected in tests if judge0_service.outputs_match(_run_starter(starter, stdin), expected)]
         assert passed == [], f"{title}: starter already passes {len(passed)} test(s)"
 
 
@@ -294,7 +294,7 @@ def test_practice_starters_are_skeletons_that_solve_nothing():
         starter = q["starter_code"]["python"]
         assert "def solution" in starter
         passed = [tc["input"] for tc in q["test_cases"]
-                  if piston_service.outputs_match(_run_starter(starter, tc["input"]), tc["expected_output"])]
+                  if judge0_service.outputs_match(_run_starter(starter, tc["input"]), tc["expected_output"])]
         assert passed == [], f"{q['title']}: starter already passes {len(passed)} test(s)"
 
 

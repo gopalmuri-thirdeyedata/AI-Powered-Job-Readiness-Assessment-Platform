@@ -106,16 +106,15 @@ describe('Microphone wiring in the assessment', () => {
         assert.ok(page.includes("useMicrophone({ enabled: currentStage === 'device_check' || currentStage === 'interview' })"));
     });
 
-    test('12. the chosen microphone is applied to the live Vapi call and to later changes', () => {
+    test('12. the chosen microphone is applied to the live voice call and to later changes', () => {
         assert.ok(page.includes('setInputDevicesAsync({ audioDeviceId: target })'));
-        const callStart = page.slice(page.indexOf("vapi.on('call-start'"), page.indexOf("vapi.on('speech-start'"));
-        assert.ok(callStart.includes('applyMicToCall()'));
+        assert.ok(page.includes('audioDeviceId: micDeviceRef.current'), 'a new call starts on the chosen microphone');
         assert.ok(page.includes('onDeviceChange={applyMicToCall}'));
     });
 
     test('13. silence tracking starts when the interviewer stops speaking and resets when they start', () => {
-        const end = page.slice(page.indexOf("vapi.on('speech-end'"), page.indexOf("vapi.on('volume-level'"));
-        const start = page.slice(page.indexOf("vapi.on('speech-start'"), page.indexOf("vapi.on('speech-end'"));
+        const end = page.slice(page.indexOf("voice.on('speech-end'"), page.indexOf("voice.on('volume-level'"));
+        const start = page.slice(page.indexOf("voice.on('speech-start'"), page.indexOf("voice.on('speech-end'"));
         assert.ok(end.includes('listeningSinceRef.current = Date.now()'));
         assert.ok(start.includes('listeningSinceRef.current = 0'));
         assert.ok(page.includes('id="interview-mic-silent"') && page.includes('Choose microphone'));
@@ -132,8 +131,8 @@ describe('Microphone wiring in the assessment', () => {
         assert.ok(page.includes('<MicrophonePicker mic={mic} dark compact idPrefix="interview-mic"'));
     });
 
-    test('16. the microphone state is declared after the Vapi state it reads (no use-before-define at render)', () => {
-        const order = ['const [vapiCallStatus', 'const [vapiSpeakingState', 'const [vapiIsMuted', 'const vapiRef', 'const mic = useMicrophone']
+    test('16. the microphone state is declared after the voice state it reads (no use-before-define at render)', () => {
+        const order = ['const [voiceCallStatus', 'const [voiceSpeakingState', 'const [voiceIsMuted', 'const voiceRef', 'const mic = useMicrophone']
             .map((marker) => page.indexOf(marker));
         assert.ok(order.every((i) => i > 0), 'all declarations exist');
         assert.deepEqual(order, [...order].sort((a, b) => a - b));

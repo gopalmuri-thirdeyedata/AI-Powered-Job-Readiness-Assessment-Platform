@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Vapi from '@vapi-ai/web';
+import { VoiceInterviewSession, buildVoiceTurnForm } from '../../utils/voiceInterviewSession';
 import {
     Mic,
     MicOff,
@@ -34,8 +34,23 @@ import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
 import FullscreenGateModal from '../../components/FullscreenGateModal';
 import API_URL from '../../apiConfig';
 
-// Vapi Public Key — loaded from frontend environment
-const VAPI_PUBLIC_KEY = import.meta.env.VITE_VAPI_PUBLIC_KEY;
+// One spoken exchange with the interviewer (the signed interview token is returned by /api/interview/init)
+const sendVoiceTurn = async (voiceToken, turn) => {
+    const token = localStorage.getItem('candidateToken');
+    const form = buildVoiceTurnForm(turn);
+    form.append('voice_token', voiceToken);
+    const res = await fetch(`${API_URL}/api/interview/voice-turn`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+    });
+    if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail; } catch { /* not JSON */ }
+        throw Object.assign(new Error(typeof detail === 'string' && detail ? detail : `Voice request failed (${res.status})`), { response: { status: res.status } });
+    }
+    return res.json();
+};
 
 const DEFAULT_QUESTIONS = [
     { id: 1, question: "Can you introduce yourself and walk me through the architecture of a recent technical project you built?", category: "Experience & Architecture" },
@@ -45,14 +60,14 @@ const DEFAULT_QUESTIONS = [
     { id: 5, question: "What are your core strategies for application security, automated testing, and reliable continuous deployment in production?", category: "Security & Best Practices" }
 ];
 
-const VapiInterview = () => {
+const VoiceInterview = () => {
     const navigate = useNavigate();
 
     // ── Call & UI Status States ──
     const [status, setStatus] = useState("idle"); // 'idle' | 'connecting' | 'active' | 'ended' | 'error'
     const [callState, setCallState] = useState("connecting"); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
     const [isMuted, setIsMuted] = useState(false);
-    const [volume, setVolume] = useState(0); // 0 to 1 from Vapi
+    const [volume, setVolume] = useState(0); // 0 to 1 from Voice
     const [micLevel, setMicLevel] = useState(0); // Local mic test volume
     const [timeRemaining, setTimeRemaining] = useState(null);
     const [isSubmitted, setIsSubmitted] = useState(false);
@@ -83,7 +98,8 @@ const VapiInterview = () => {
     const [hardwareError, setHardwareError] = useState(null);
 
     // ── Refs ──
-    const vapiRef = useRef(null);
+    const voiceRef = useRef(null);
+    const voiceTokenRef = useRef(null);
     const videoRef = useRef(null);
     const previewVideoRef = useRef(null);
     const streamRef = useRef(null);
@@ -354,16 +370,13 @@ const VapiInterview = () => {
         }
     }, []);
 
-    // ── Vapi Voice Integration ──
+    // ── Voice Voice Integration ──
     useEffect(() => {
         try {
-            if (!VAPI_PUBLIC_KEY) {
-                console.warn("VAPI_PUBLIC_KEY not detected in environment variables.");
-            }
-            const vapi = new Vapi(VAPI_PUBLIC_KEY || "dummy-key");
-            vapiRef.current = vapi;
+            const voice = new VoiceInterviewSession({ turn: (args) => sendVoiceTurn(voiceTokenRef.current, args) });
+            voiceRef.current = voice;
 
-            vapi.on('call-start', () => {
+            voice.on('call-start', () => {
                 setStatus("active");
                 setCallState("ai_speaking");
                 startTimeRef.current = Date.now();
@@ -378,7 +391,7 @@ const VapiInterview = () => {
                 startTimer(duration);
             });
 
-            vapi.on('call-end', async () => {
+            voice.on('call-end', async () => {
                 setStatus("ended");
                 setCallState("completed");
                 stopTimer();
@@ -388,11 +401,11 @@ const VapiInterview = () => {
                 }
             });
 
-            vapi.on('volume-level', (level) => {
+            voice.on('volume-level', (level) => {
                 setVolume(level);
             });
 
-            vapi.on('message', (message) => {
+            voice.on('message', (message) => {
                 if (message.type === 'transcript') {
                     const speaker = (message.role === 'assistant' || message.role === 'ai') ? 'ai' : 'user';
 
@@ -438,31 +451,35 @@ const VapiInterview = () => {
                 }
             });
 
-            vapi.on('speech-start', () => {
+            voice.on('processing', () => {
+                setCallState("processing");
+            });
+
+            voice.on('speech-start', () => {
                 setCurrentSpeaker('ai');
                 setCallState("ai_speaking");
             });
 
-            vapi.on('speech-end', () => {
+            voice.on('speech-end', () => {
                 setCurrentSpeaker(null);
                 setCallState("listening");
             });
 
-            vapi.on('error', (err) => {
-                console.error("Vapi Runtime Error:", err);
+            voice.on('error', (err) => {
+                console.error("Voice Runtime Error:", err);
                 if (status === 'connecting') {
                     setStatus("error");
-                    setConnectionError(err.message || "Failed to establish voice session with Vapi.");
+                    setConnectionError(err.message || "Failed to establish the voice session.");
                 }
             });
 
             return () => {
-                vapi.stop();
+                voice.stop();
                 stopTimer();
             };
         } catch (err) {
-            console.error("Vapi initialization error:", err);
-            setConnectionError("Failed to initialize Vapi WebRTC client.");
+            console.error("Voice initialization error:", err);
+            setConnectionError("Failed to initialize the voice client.");
         }
     }, [questions.length]);
 
@@ -522,8 +539,8 @@ const VapiInterview = () => {
         setCallState("connecting");
         setConnectionError(null);
 
-        // Fetch dynamic Assistant ID & Role-specific Questions from backend
-        let assistantId = null;
+        // Fetch the voice interview definition & role-specific questions from the backend
+        let voiceConfig = null;
         try {
             const token = localStorage.getItem('candidateToken');
             const res = await fetch(`${API_URL}/api/interview/init`, {
@@ -532,7 +549,10 @@ const VapiInterview = () => {
 
             if (res.ok) {
                 const data = await res.json();
-                if (data.assistantId) assistantId = data.assistantId;
+                if (data.voiceConfig && data.voiceToken) {
+                    voiceConfig = data.voiceConfig;
+                    voiceTokenRef.current = data.voiceToken;
+                }
                 if (data.questions && Array.isArray(data.questions) && data.questions.length > 0) {
                     setQuestions(data.questions);
                 }
@@ -540,19 +560,12 @@ const VapiInterview = () => {
                 if (data.candidateName) setCandidateName(data.candidateName);
             }
         } catch (e) {
-            console.warn("Failed to fetch dynamic assistant from backend:", e);
+            console.warn("Failed to fetch the voice interview from backend:", e);
         }
 
-        // Fallback to cached or manual assistant ID
-        if (!assistantId) {
-            const currentAssessment = JSON.parse(localStorage.getItem('currentAssessment') || '{}');
-            const candidateInfo = JSON.parse(localStorage.getItem('candidateInfo') || '{}');
-            assistantId = currentAssessment.assistantId || candidateInfo.assistantId || localStorage.getItem('vapi_manual_id');
-        }
-
-        if (!assistantId) {
+        if (!voiceConfig) {
             setStatus("error");
-            setConnectionError("Could not retrieve AI interviewer session ID. Please retry or contact support.");
+            setConnectionError("Could not retrieve the AI interviewer session. Please retry or contact support.");
             return;
         }
 
@@ -565,22 +578,22 @@ const VapiInterview = () => {
         }, 20000);
 
         try {
-            if (vapiRef.current) {
-                await vapiRef.current.start(assistantId);
+            if (voiceRef.current) {
+                await voiceRef.current.start(voiceConfig);
             }
         } catch (err) {
-            console.error("Vapi start call failed:", err);
+            console.error("Voice start call failed:", err);
             setStatus("error");
-            setConnectionError(err.message || "Failed to initiate WebRTC voice call with Vapi.");
+            setConnectionError(err.message || "Failed to start the voice call.");
         }
     };
 
     // ── Mute / Audio Controls ──
     const toggleMute = () => {
-        if (vapiRef.current) {
+        if (voiceRef.current) {
             try {
                 const nextMute = !isMuted;
-                vapiRef.current.setMuted(nextMute);
+                voiceRef.current.setMuted(nextMute);
                 setIsMuted(nextMute);
             } catch (err) {
                 console.error("Mute toggle failed:", err);
@@ -595,9 +608,9 @@ const VapiInterview = () => {
         setIsSubmitting(true);
         setShowEndConfirm(false);
 
-        if (vapiRef.current) {
+        if (voiceRef.current) {
             try {
-                vapiRef.current.stop();
+                voiceRef.current.stop();
             } catch (e) {}
         }
 
@@ -1556,4 +1569,4 @@ const VapiInterview = () => {
     );
 };
 
-export default VapiInterview;
+export default VoiceInterview;

@@ -1,9 +1,9 @@
 """
-Test Suite: RoleReady Vapi Voice Interview Initialization
+Test Suite: RoleReady Voice Interview Initialization and Turns
 Verifies:
-1. Unauthenticated calls to /api/roleready/session/{session_uuid}/vapi-init return 401.
+1. Unauthenticated calls to /api/roleready/session/{session_uuid}/voice-init return 401.
 2. Calls with nonexistent session_uuid return 404.
-3. Authenticated session with INTERVIEW_UNLOCKED returns assistantId, 5 role-specific questions, role, and candidateName.
+3. Authenticated session with INTERVIEW_UNLOCKED returns the voice config (no prompt, no provider id), role-specific questions, role, and candidateName.
 """
 import uuid
 import pytest
@@ -21,13 +21,13 @@ def db_session():
     yield db
     db.close()
 
-def test_vapi_init_unauthenticated():
+def test_voice_init_unauthenticated():
     fake_uuid = str(uuid.uuid4())
-    res = client.post(f"/api/roleready/session/{fake_uuid}/vapi-init")
+    res = client.post(f"/api/roleready/session/{fake_uuid}/voice-init")
     assert res.status_code == 401
 
-def test_vapi_init_not_found(db_session):
-    test_email = f"vapi.test.{uuid.uuid4().hex[:6]}@roleready.test"
+def test_voice_init_not_found(db_session):
+    test_email = f"voice.test.{uuid.uuid4().hex[:6]}@roleready.test"
     # 1. An administrator-provisioned student (the profile carries the e-mail-derived placeholder name)
     org = lh.ensure_org(db_session)
     user = lh.ensure_user(db_session, test_email, models.UserRole.STUDENT, org=org, student_profile=True,
@@ -36,15 +36,15 @@ def test_vapi_init_not_found(db_session):
 
     nonexistent_uuid = str(uuid.uuid4())
     res = client.post(
-        f"/api/roleready/session/{nonexistent_uuid}/vapi-init",
+        f"/api/roleready/session/{nonexistent_uuid}/voice-init",
         headers={"Authorization": f"Bearer {token}"}
     )
     assert res.status_code == 404
 
-def test_vapi_init_success_with_session(db_session):
+def test_voice_init_success_with_session(db_session):
     # The profile name is only replaced by the resume name when the email-derived placeholder contains digits,
     # so the handle must always contain one (a random hex suffix was digit-free ~0.3% of runs -> flaky).
-    test_email = f"vapi.success.{uuid.uuid4().int % 10**6:06d}@roleready.test"
+    test_email = f"voice.success.{uuid.uuid4().int % 10**6:06d}@roleready.test"
     org = lh.ensure_org(db_session)
     user = lh.ensure_user(db_session, test_email, models.UserRole.STUDENT, org=org, student_profile=True,
                           full_name=test_email.split("@")[0].replace(".", " ").title())
@@ -68,9 +68,9 @@ def test_vapi_init_success_with_session(db_session):
     session.current_state = models.RoleReadySessionState.INTERVIEW_UNLOCKED
     db_session.commit()
 
-    # Call vapi-init
+    # Call voice-init
     res = client.post(
-        f"/api/roleready/session/{session.session_uuid}/vapi-init",
+        f"/api/roleready/session/{session.session_uuid}/voice-init",
         headers={"Authorization": f"Bearer {token}"}
     )
     assert res.status_code == 200
@@ -81,7 +81,24 @@ def test_vapi_init_success_with_session(db_session):
     assert data["candidateName"] == "Gopal Muri"
     assert "@" not in data["candidateName"]
     assert "duration" in data
+    assert data["voiceConfig"]["firstMessage"].startswith("Hello Gopal Muri")
+    assert data["voiceConfig"]["maxDurationSeconds"] >= 1
+    assert "assistantId" not in data and "system_prompt" not in res.text      # the interview prompt stays on the server
+
+    # The first spoken line, then a recorded answer
+    opening = client.post(f"/api/roleready/session/{session.session_uuid}/voice-turn", data={"opening": "true"},
+                          headers={"Authorization": f"Bearer {token}"})
+    assert opening.status_code == 200 and opening.json()["audio_base64"]
+    turn = client.post(f"/api/roleready/session/{session.session_uuid}/voice-turn",
+                       data={"history": "[]", "opening": "false"}, files={"audio": ("answer.webm", b"RIFFfake", "audio/webm")},
+                       headers={"Authorization": f"Bearer {token}"})
+    assert turn.status_code == 200 and turn.json()["user_text"] and turn.json()["reply_text"] and turn.json()["audio_base64"]
 
     # Verify student profile full_name was updated to the extracted resume name
     db_session.refresh(profile)
     assert profile.full_name == "Gopal Muri"
+
+
+def test_voice_turn_requires_authentication_and_an_initialised_interview(db_session):
+    res = client.post(f"/api/roleready/session/{uuid.uuid4()}/voice-turn", data={"opening": "true"})
+    assert res.status_code == 401

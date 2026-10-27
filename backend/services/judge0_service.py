@@ -3,8 +3,9 @@ import threading
 import time
 import requests
 
-# NOTE: filename is historical. This is the Judge0 CE adapter (no Piston calls are made).
-# The endpoint is configurable via JUDGE0_API_URL; hosting topology is a deferred decision.
+# Code execution goes through a Judge0-compatible API. Two targets speak it:
+#   1. the in-house runner (code-runner/), used FIRST when CODE_RUNNER_URL is set (no auth token, private network);
+#   2. Judge0 at JUDGE0_API_URL, used when the runner is not configured or could not serve the request (service failure only).
 DEFAULT_API_URL = "https://ce.judge0.com/submissions"
 
 # Language Mapping (Frontend/Internal -> Judge0 language_id)
@@ -76,29 +77,32 @@ RESULT_DEADLINE_SECONDS = float(os.getenv("JUDGE0_RESULT_DEADLINE_SECONDS", "60"
 _time = time.monotonic                  # indirection for tests
 _sleep = time.sleep
 _circuit_lock = threading.Lock()
-_circuit = {"failures": 0, "open_until": 0.0}
+_circuits = {"judge0": {"failures": 0, "open_until": 0.0}, "runner": {"failures": 0, "open_until": 0.0}}
+_circuit = _circuits["judge0"]          # kept for callers that read the Judge0 breaker directly
 
 
 def reset_circuit():
     with _circuit_lock:
-        _circuit["failures"] = 0
-        _circuit["open_until"] = 0.0
+        for state in _circuits.values():
+            state["failures"] = 0
+            state["open_until"] = 0.0
 
 
-def _circuit_is_open() -> bool:
+def _circuit_is_open(name: str = "judge0") -> bool:
     with _circuit_lock:
-        return _time() < _circuit["open_until"]
+        return _time() < _circuits[name]["open_until"]
 
 
-def _record_outcome(infrastructure_failure: bool):
+def _record_outcome(infrastructure_failure: bool, name: str = "judge0"):
     with _circuit_lock:
+        state = _circuits[name]
         if not infrastructure_failure:
-            _circuit["failures"] = 0
+            state["failures"] = 0
             return
-        _circuit["failures"] += 1
-        if _circuit["failures"] >= CIRCUIT_FAILURE_THRESHOLD:
-            _circuit["open_until"] = _time() + CIRCUIT_COOLDOWN_SECONDS
-            _circuit["failures"] = 0
+        state["failures"] += 1
+        if state["failures"] >= CIRCUIT_FAILURE_THRESHOLD:
+            state["open_until"] = _time() + CIRCUIT_COOLDOWN_SECONDS
+            state["failures"] = 0
 
 
 class _Malformed(Exception):
@@ -122,9 +126,9 @@ def _service_error(reason: str, *, retryable: bool = False, rate_limited: bool =
     }
 
 
-def _request_headers() -> dict:
+def _request_headers(authenticated: bool = True) -> dict:
     headers = {"Content-Type": "application/json"}
-    token = os.getenv("JUDGE0_AUTH_TOKEN")
+    token = os.getenv("JUDGE0_AUTH_TOKEN") if authenticated else None      # the in-house runner is on a private network: no token
     if token:                                 # self-hosted Judge0 with AUTHN_HEADER / AUTHN_TOKEN configured
         headers["X-Auth-Token"] = token
     return headers
@@ -203,8 +207,22 @@ def _retry_after(response) -> float:
 
 
 def _execute_via_judge0(language_key: str, code: str, stdin: str = ""):
+    """Executes code on Judge0 (JUDGE0_API_URL)."""
+    return _execute_remote(language_key, code, stdin, os.getenv("JUDGE0_API_URL", DEFAULT_API_URL), "judge0", True)
+
+
+def _runner_url() -> str:
+    return (os.getenv("CODE_RUNNER_URL") or "").strip()
+
+
+def _execute_via_runner(language_key: str, code: str, stdin: str = ""):
+    """Executes code on the in-house runner (CODE_RUNNER_URL); same API and result shape as Judge0."""
+    return _execute_remote(language_key, code, stdin, _runner_url(), "runner", False)
+
+
+def _execute_remote(language_key: str, code: str, stdin: str, api_url: str, circuit: str, authenticated: bool):
     """
-    Executes code using the configured Judge0 CE API (JUDGE0_API_URL).
+    Executes code using a Judge0-compatible API at `api_url`.
 
     Returns a dict with status in {"success", "failed", "error", "service_error"} and an `output`
     string, plus `stdout`, `stderr`, `compile_output`, `timed_out` and `execution_time_ms`.
@@ -225,11 +243,11 @@ def _execute_via_judge0(language_key: str, code: str, stdin: str = ""):
             "timed_out": False, "execution_time_ms": None, "raw": {}
         }
 
-    if _circuit_is_open():
+    if _circuit_is_open(circuit):
         return _service_error("temporarily unavailable, try again shortly")
 
-    api_url = os.getenv("JUDGE0_API_URL", DEFAULT_API_URL).rstrip("/")
-    headers = _request_headers()
+    api_url = api_url.rstrip("/")
+    headers = _request_headers(authenticated)
     wait = os.getenv("JUDGE0_WAIT", "true").lower() not in ("false", "0", "no")
 
     payload = {
@@ -241,7 +259,7 @@ def _execute_via_judge0(language_key: str, code: str, stdin: str = ""):
         "memory_limit": MEMORY_LIMIT_KB
     }
 
-    print(f"[Judge0] Executing language_id={config['language_id']} on {api_url}")
+    print(f"[{'Runner' if circuit == 'runner' else 'Judge0'}] Executing language_id={config['language_id']} on {api_url}")
 
     attempts = 0
     while True:
@@ -293,7 +311,23 @@ def _execute_via_judge0(language_key: str, code: str, stdin: str = ""):
             result = _service_error("unexpected error")
             break
 
-    _record_outcome(result.get("status") == "service_error")
+    _record_outcome(result.get("status") == "service_error", circuit)
+    return result
+
+
+def _execute_remote_with_fallback(language_key: str, code: str, stdin: str = ""):
+    """
+    The in-house runner first (when CODE_RUNNER_URL is set), Judge0 when the runner could not serve the request.
+    Only a SERVICE failure (unreachable, busy, 5xx, invalid answer, internal error) falls back: a compile error, a runtime error,
+    a time limit or a wrong answer is the candidate's real result and is returned as it is. Running code is side-effect free, so
+    repeating it on Judge0 is safe.
+    """
+    if not _runner_url():
+        return _execute_via_judge0(language_key, code, stdin)
+    result = _execute_via_runner(language_key, code, stdin)
+    if isinstance(result, dict) and result.get("status") == "service_error":
+        print("[Execution] In-house runner unavailable; falling back to Judge0")
+        return _execute_via_judge0(language_key, code, stdin)
     return result
 
 
@@ -408,7 +442,7 @@ def execute_code(language_key: str, code: str, stdin: str = ""):
     engine = get_execution_engine()
     if engine == "gemini":
         return _execute_via_gemini(language_key, code, stdin)
-    result = _execute_via_judge0(language_key, code, stdin)
+    result = _execute_remote_with_fallback(language_key, code, stdin)
     if engine == "auto" and isinstance(result, dict) and result.get("status") == "service_error":
         print("[Execution] Judge0 unavailable; falling back to the Gemini simulator")
         fallback = _execute_via_gemini(language_key, code, stdin)

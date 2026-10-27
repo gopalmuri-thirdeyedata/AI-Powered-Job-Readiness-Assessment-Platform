@@ -27,16 +27,17 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(fileContent.includes('Student Dashboard'), 'GlobalNavbar must render "Student Dashboard"');
     });
 
-    test('4. Home.jsx routes authenticated students to their dashboard and admins to the admin dashboard (by server-verified role)', () => {
+    test('4. Home.jsx routes authenticated students to the assessment page and admins to the admin dashboard (by server-verified role)', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'pages', 'Home.jsx'), 'utf-8');
-        assert.ok(fileContent.includes("navigate('/student/dashboard'"), 'Home.jsx must navigate students to /student/dashboard');
+        assert.ok(fileContent.includes("navigate('/assessment/setup'"), 'Home.jsx must navigate students to /assessment/setup');
+        assert.ok(!fileContent.includes("navigate('/student/dashboard'"), 'students no longer land straight on the dashboard');
         assert.ok(fileContent.includes("role === 'STUDENT'") && fileContent.includes('isAdminRole(role)'), 'the role comes from the verified session');
         assert.ok(fileContent.includes("navigate('/admin/dashboard'"), 'Home.jsx must navigate admins to /admin/dashboard');
     });
 
-    test('5. LoginModal.jsx sends students to /student/dashboard unless the server says otherwise', () => {
+    test('5. LoginModal.jsx sends students to /assessment/setup unless the server says otherwise', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'components', 'LoginModal.jsx'), 'utf-8');
-        assert.ok(fileContent.includes("'/student/dashboard'"), 'LoginModal.jsx must fall back to /student/dashboard');
+        assert.ok(fileContent.includes("'/assessment/setup'"), 'LoginModal.jsx must fall back to /assessment/setup');
         assert.ok(fileContent.includes('data.redirect'), 'the destination is the one the server returned');
     });
 
@@ -61,9 +62,10 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         assert.ok(fileContent.includes('/student/dashboard'), 'RoleReadyReport must link to /student/dashboard');
     });
 
-    test('10. StudentLayout.jsx retains functional Take Assessment header button', () => {
+    test('10. StudentLayout.jsx keeps the Take Assessment header button, locked behind the contact-admin popup', () => {
         const fileContent = fs.readFileSync(path.join(__dirname, 'src', 'layouts', 'StudentLayout.jsx'), 'utf-8');
-        assert.ok(fileContent.includes('to="/assessment/setup"'), 'StudentLayout must link to /assessment/setup in header');
+        assert.ok(fileContent.includes('onClick={promptContactAdmin}'), 'StudentLayout Take Assessment button must open the contact-admin popup');
+        assert.ok(!fileContent.includes('to="/assessment/setup"'), 'StudentLayout must not link straight to /assessment/setup');
         assert.ok(fileContent.includes('Take Assessment'), 'StudentLayout must render "Take Assessment" button');
         assert.ok(fileContent.includes('id="student-topbar-assessment-btn"'), 'StudentLayout must retain assessment button ID');
     });

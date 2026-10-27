@@ -2,7 +2,7 @@
 Student AI Mock Interview Service (Phase 4 / Phase 5).
 Manages conversational technical & behavioral mock interview sessions,
 STAR-method answer evaluation, and communication feedback.
-Keeps frozen recruiter interview services (vapi_service, interview_evaluation) strictly intact.
+Keeps frozen recruiter interview services (elevenlabs_service, interview_evaluation) strictly intact.
 """
 
 from typing import List, Dict, Any, Optional

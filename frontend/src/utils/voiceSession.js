@@ -1,14 +1,14 @@
-// Small, framework-free helpers for the voice-interview (Vapi) lifecycle in the shared assessment workspace.
-// Kept separate from the component so the behaviour can be unit tested without a browser, a microphone or Vapi.
+// Small, framework-free helpers for the voice-interview lifecycle in the shared assessment workspace.
+// Kept separate from the component so the behaviour can be unit tested without a browser, a microphone or the voice service.
 
 /** The voice connection must reach "call-start" within this time or the candidate is offered a retry (never a silent hang). */
 const envTimeout = (() => {
-    try { return Number(import.meta.env.VITE_VAPI_CONNECT_TIMEOUT_MS); } catch { return NaN; }   // test builds shorten the watchdog
+    try { return Number(import.meta.env.VITE_VOICE_CONNECT_TIMEOUT_MS); } catch { return NaN; }   // test builds shorten the watchdog
 })();
-export const VAPI_CONNECT_TIMEOUT_MS = envTimeout > 0 ? envTimeout : 30000;
+export const VOICE_CONNECT_TIMEOUT_MS = envTimeout > 0 ? envTimeout : 30000;
 
 /**
- * ALWAYS a string. Vapi / Daily / the API deliver errors as strings OR as nested objects ({ type, msg, details }, { detail: {...} });
+ * ALWAYS a string. The browser, the voice session and the API deliver errors as strings OR as nested objects ({ type, msg, details }, { detail: {...} });
  * putting one of those objects into JSX throws "Objects are not valid as a React child" and white-screens the candidate in the
  * middle of an assessment. Walk the usual message fields (bounded depth) and fall back to the supplied text.
  */
@@ -39,10 +39,10 @@ const text = (value) => {
 };
 
 /**
- * Classify a Vapi / Daily / getUserMedia error into something the candidate can act on.
+ * Classify a voice-session / getUserMedia error into something the candidate can act on.
  * @returns {{ kind: 'permission'|'no_device'|'device_busy'|'insecure'|'network'|'unknown', message: string }}
  */
-export const classifyVapiError = (err) => {
+export const classifyVoiceError = (err) => {
     const raw = `${err?.name || ''} ${err?.message || ''} ${text(err?.error)} ${text(err?.errorMsg)} ${text(err)}`.toLowerCase();
     if (/notallowederror|permission|denied|mic-blocked|blockedby|blocked by|not allowed/.test(raw)) {
         return {
@@ -66,13 +66,13 @@ export const classifyVapiError = (err) => {
 };
 
 /**
- * Stop a Vapi instance and detach every listener so a stale instance can never update state (or end a newer call) later.
+ * Stop a voice session and detach every listener so a stale instance can never update state (or end a newer call) later.
  * Safe to call with null, twice, or on an instance that already ended.
  */
-export const disposeVapi = (vapi) => {
-    if (!vapi) return;
-    try { vapi.stop(); } catch { /* already stopped */ }
-    try { if (typeof vapi.removeAllListeners === 'function') vapi.removeAllListeners(); } catch { /* ignore */ }
+export const disposeVoice = (voice) => {
+    if (!voice) return;
+    try { voice.stop(); } catch { /* already stopped */ }
+    try { if (typeof voice.removeAllListeners === 'function') voice.removeAllListeners(); } catch { /* ignore */ }
 };
 
 /**

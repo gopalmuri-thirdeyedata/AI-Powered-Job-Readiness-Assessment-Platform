@@ -9,8 +9,7 @@ cd e2e && npm install          # playwright-core only (it drives your installed 
 npm test                       # recruitment + student suites (about 7 minutes)
 npm run test:recruitment
 npm run test:student
-E2E_LIVE_VAPI_CALL=1 node --test specs/live-vapi.e2e.test.mjs     # opt-in, billable, real Vapi call (~40 s)
-E2E_VAPI_BROWSER_LIVE=1 node --test --test-name-pattern="blocked microphone" specs/recruitment.e2e.test.mjs
+E2E_LIVE_VOICE=1 npm run test:recruitment     # opt-in: real ElevenLabs speech instead of the backend stub (billable)
 ```
 
 Requirements: Node 22+, a Python environment with the backend dependencies (`backend/venv` is picked up automatically, or set
@@ -23,7 +22,7 @@ Requirements: Node 22+, a Python environment with the backend dependencies (`bac
 |---|---|
 | Frontend, backend, timing, scoring, authorization, persistence | **Judge0**: code runs on this machine's Python and JDK (`harness/serve.py`). Only the harness does this; the application never executes candidate code itself |
 | Chrome, fake camera / microphone devices, fullscreen | **Gemini**: the application's offline mock mode (deterministic) |
-| Python and Java compilation / execution | **Vapi REST**: stubbed in the backend; in the browser the SDK talks to an intercepted endpoint (except the opt-in live specs) |
+| Python and Java compilation / execution | **ElevenLabs**: stubbed in the backend harness (opt in with `E2E_LIVE_VOICE=1`); a real spoken conversation needs a person and a microphone |
 | The real email + password login (`/api/auth/login/`, HttpOnly cookie session validated by `/api/auth/me`) | Accounts are seeded by the harness in the throw-away database (PrepWin has no public sign-up) |
 | | **YOLO** is real in the frame-analysis authorization tests, replaced by a deterministic response where a test needs a known detection |
 

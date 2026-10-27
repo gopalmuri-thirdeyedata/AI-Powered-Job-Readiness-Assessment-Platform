@@ -39,11 +39,11 @@ Eliminating recruitment bottlenecks and cognitive bias, HiringAI provides an end
 
 ### 💻 4. Sandboxed Coding Assessments
 * **Monaco Code Editor:** Integrated developer editor supporting Python, Java, JavaScript, C++, and C with syntax highlighting and auto-completion.
-* **Isolated Sandbox Execution:** Code is compiled and executed in real-time using Piston / Judge0 execution sandboxes.
+* **Isolated Sandbox Execution:** Code is compiled and executed in real-time using Judge0 execution sandboxes.
 * **Public & Hidden Test Cases:** Supports sample test cases for candidate debugging alongside hidden test cases evaluated exclusively on the server to prevent hardcoded solutions.
 
 ### 🎙️ 5. Autonomous Voice Technical Interviews
-* **Real-Time Voice AI:** Integrated with **Vapi AI** for conversational voice-based technical interviews.
+* **Real-Time Voice AI:** Voice-based technical interviews: **ElevenLabs** speech-to-text and text-to-speech, with Gemini writing the interviewer's replies.
 * **Adaptive Questioning:** The AI interviewer listens to candidate answers, asks technical follow-ups, and adapts difficulty based on candidate depth.
 * **Full Transcript & Analytics:** Automatically parses interview transcripts, computes rubric scores, and provides recruiter briefing summaries.
 
@@ -69,8 +69,7 @@ Eliminating recruitment bottlenecks and cognitive bias, HiringAI provides an end
 
 - **LLM provider:** all AI calls go through `backend/services/gemini_client.py` (Google Gemini only; no OpenAI or Groq).
   Set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL_NAME`). `GEMINI_MOCK_MODE=true` serves offline fixtures for development and tests; keep it `false` in production.
-- **Interview round:** the text STAR interview is the default and works with no voice credentials. Vapi + Deepgram voice interviews
-  (recruiter candidate portal) are optional; the Vapi assistant uses the `google` LLM provider with `GEMINI_MODEL_NAME`, which requires a Google AI Studio credential to be added in the Vapi dashboard.
+- **Interview round:** the text STAR interview is the default and works with no voice credentials. The voice interview needs `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`; the interviewer's replies use Gemini (`GEMINI_MODEL_NAME`).
 - **Interview score fallback (agreed behaviour):** if Gemini is unavailable and the student submitted answers, the interview score defaults to **75**.
   Such rounds are marked `evaluation_source: "fallback_default"` in the round's `evaluation_payload` (AI-scored rounds use `"ai"`, empty interviews score 0 with `"no_answers"`),
   so fallback scores can always be told apart from AI evaluations. No other scoring formula is applied.
@@ -86,8 +85,8 @@ Eliminating recruitment bottlenecks and cognitive bias, HiringAI provides an end
 | **Backend** | FastAPI, Python 3.11, SQLAlchemy ORM, Pydantic v2, Gunicorn + Uvicorn |
 | **Database & Cache** | MySQL 8.0 (Connection Pooling, Pre-ping), Redis 7.0 |
 | **Authentication** | Clerk (B2B Admin & Recruiter), Python-Jose / Passlib (Candidate JWT) |
-| **AI & Inference** | Groq (Llama 3.1), Google Gemini, Ultralytics YOLOv8 / YOLO11 (CPU), Vapi AI (Voice) |
-| **Code Execution** | Piston API / Judge0 Isolated Execution Sandbox |
+| **AI & Inference** | Groq (Llama 3.1), Google Gemini, Ultralytics YOLOv8 / YOLO11 (CPU), ElevenLabs (Voice) |
+| **Code Execution** | Judge0 Isolated Execution Sandbox |
 | **Deployment & Ops** | Docker, Docker Compose, Nginx (Reverse Proxy, SSL, WebSockets, Gzip) |
 
 ---
@@ -142,7 +141,7 @@ HiringAI/
 * **Node.js** (v20+ LTS recommended)
 * **Python** (3.10+ or 3.11+)
 * **MySQL** (8.0+)
-* Required API Keys (Groq, Vapi, Clerk)
+* Required API Keys (Groq, ElevenLabs, Clerk)
 
 ### 1. Backend Setup
 ```bash

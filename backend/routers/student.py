@@ -23,6 +23,7 @@ from services.student_resume_tools import (
 from services.readiness_service import calculate_placement_readiness, refresh_profile_readiness
 from services.skill_gap_service import TARGET_ROLES_CATALOG, analyze_skill_gap
 from services.roadmap_service import generate_or_update_roadmap, get_roadmap_details
+from services import student_link_results
 from services.practice_service import get_topics_overview, get_sanitized_questions, evaluate_practice_submission
 from services.student_interview_service import (
     start_mock_interview,
@@ -115,6 +116,8 @@ def get_current_student_profile(
         db.commit()
         db.refresh(profile)
 
+    # Their finished admin-link assessment (matched by e-mail) shows up on the dashboard, history and skill gap
+    student_link_results.attach_finished_link_assessments(db, profile, current_user.email)
     return profile
 
 

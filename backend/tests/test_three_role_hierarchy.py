@@ -101,7 +101,7 @@ def test_three_canonical_roles_and_honest_aliases():
     assert models.is_super_admin_role("SUPER_ADMIN") and not models.is_super_admin_role("ADMIN")
 
 
-@pytest.mark.parametrize("role,redirect", [("SUPER_ADMIN", "/admin/dashboard"), ("ADMIN", "/admin/dashboard"), ("STUDENT", "/student/dashboard")])
+@pytest.mark.parametrize("role,redirect", [("SUPER_ADMIN", "/admin/dashboard"), ("ADMIN", "/admin/dashboard"), ("STUDENT", "/assessment/setup")])
 def test_each_role_logs_in_with_its_own_stored_role(db, role, redirect):
     c, _csrf, user, _org, body = session_for(db, role)
     assert body["role"] == role and body["redirect"] == redirect and body["user"]["role"] == role

@@ -43,7 +43,7 @@ const kill = (child) => {
 
 /**
  * @param {object} [opts]
- * @param {boolean} [opts.liveVapi]  use the real Vapi REST API for assistant creation (billable; off by default)
+ * @param {boolean} [opts.liveVoice]  use the real ElevenLabs API for speech (billable; off by default)
  */
 export async function startStack(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prepwin-e2e-'));
@@ -58,7 +58,7 @@ export async function startStack(opts = {}) {
     cwd: path.join(REPO, 'backend'),
     env: {
       ...process.env, PORT: String(apiPort), E2E_DIR: dir, DATABASE_URL: `sqlite:///${path.join(dir, 'e2e.db').replace(/\\/g, '/')}`,
-      CORS_ORIGINS: `${web},http://127.0.0.1:${webPort}`, FRONTEND_URL: web, E2E_LIVE_VAPI: opts.liveVapi ? '1' : '',
+      CORS_ORIGINS: `${web},http://127.0.0.1:${webPort}`, FRONTEND_URL: web, E2E_LIVE_VOICE: opts.liveVoice ? '1' : '',
       PYTHONIOENCODING: 'utf-8',
     },
     stdio: ['ignore', fs.openSync(logs.api, 'w'), fs.openSync(logs.api, 'a')],
@@ -67,7 +67,7 @@ export async function startStack(opts = {}) {
 
   const vite = spawn(process.execPath, [path.join(REPO, 'frontend', 'node_modules', 'vite', 'bin', 'vite.js'), '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'], {
     cwd: path.join(REPO, 'frontend'),
-    env: { ...process.env, VITE_API_URL: api, VITE_VAPI_CONNECT_TIMEOUT_MS: String(opts.connectTimeoutMs || 8000) },
+    env: { ...process.env, VITE_API_URL: api, VITE_VOICE_CONNECT_TIMEOUT_MS: String(opts.connectTimeoutMs || 8000) },
     stdio: ['ignore', fs.openSync(logs.web, 'w'), fs.openSync(logs.web, 'a')],
   });
   children.push(vite);

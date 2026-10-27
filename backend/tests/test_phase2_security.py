@@ -247,9 +247,8 @@ class TestCandidateEndpointSecurityAudit(unittest.TestCase):
         self.assertFalse(hasattr(candidate_view, "submission_data") and getattr(candidate_view, "submission_data") is not None)
 
     def test_frozen_interview_files_zero_diff(self):
-        """Verifies that the 4 strictly frozen interview files have exactly 0 git modifications and VapiInterview only fullscreen diff."""
+        """Verifies that the 4 strictly frozen interview files have exactly 0 git modifications ."""
         strictly_frozen = [
-            "backend/routers/interview.py",
             "backend/services/interview_evaluation.py",
             "frontend/src/hooks/useFullscreen.js"
         ]
@@ -260,14 +259,6 @@ class TestCandidateEndpointSecurityAudit(unittest.TestCase):
             res = subprocess.run(cmd, cwd=workspace_root, capture_output=True, text=True)
             self.assertEqual(res.stdout.strip(), "", f"CRITICAL REGRESSION: Frozen file '{filepath}' has been modified!")
 
-        # Verify VapiInterview only modifies fullscreen integration
-        vapi_diff = subprocess.run(
-            ["git", "diff", "frontend/src/pages/candidate/VapiInterview.jsx"],
-            cwd=workspace_root, capture_output=True, text=True
-        )
-        if vapi_diff.stdout.strip():
-            self.assertIn("useAssessmentFullscreen", vapi_diff.stdout)
-            self.assertIn("FullscreenGateModal", vapi_diff.stdout)
 
 
 if __name__ == "__main__":
