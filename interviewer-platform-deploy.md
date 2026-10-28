@@ -2,7 +2,9 @@
 
 Deployment runbook for **AI-Powered Job Readiness Assessment Platform** (branch `PrepWin`) on `server2` (`139.99.62.133`), served at **`https://interviewer.learningpath.ai`** with host entrypoint port **`8212`**.
 
-Last updated: 2026-10-27 (deployed commit `c9d0817c`, fresh database). Sections 1-4 describe how to deploy and operate the stack. Section 5 lists the changes the team should make to cut build time and image size.
+Last updated: 2026-10-28 (server2 runs commit `b1a72383` plus the build-speed changes in 5.8; the database dates from the 2026-10-27 fresh start and was migrated in place on 2026-10-28). Sections 1-4 describe how to deploy and operate the stack. Section 5 covers build time and image size, and 5.8 records what was done and measured.
+
+**2026-10-28 summary:** builds now go through `bash scripts/build-images.sh` (2.5, 5.8). The backend's dependencies live in a tagged base image, so a code-only deploy takes seconds even when the build cache was pruned. The build changes were deployed to server2 on 2026-10-28 and verified (end of 5.8). A plan for a 20-student concurrent trial (rate limits, thread settings, sandbox waiting, rehearsal) is in `plan.md`.
 
 **2026-10-27 summary:** Clerk was removed. Login is now email + password with an HttpOnly session cookie and a three-role model (SUPER_ADMIN / ADMIN / STUDENT). Day-to-day redeploys are in 2.5, a wipe-and-restart on an empty MySQL is in 2.6, and an in-place schema upgrade (not run on server2, read from the code) is in 2.7. New failure modes found during that deploy are 3.1 (deadlock on an empty DB), 3.7 (stale proxy config), 3.8 (slow MySQL first start) and 3.9 (admin password script rejects SUPER_ADMIN).
 
@@ -128,8 +130,8 @@ tar -xzvf ~/interviewer_platform.tar.gz -C ~/interviewer-platform
 rm -f ~/interviewer_platform.tar.gz
 grep -n "thirdeyedata" docker-compose.prod.yml      # must print nothing (the domain is interviewer.learningpath.ai)
 
-docker compose -f docker-compose.prod.yml build backend frontend
-docker compose -f docker-compose.prod.yml up -d --no-deps backend frontend
+bash scripts/build-images.sh backend frontend        # add code_runner when code-runner/ changed; see 5.8
+docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend frontend
 
 # ALWAYS recreate the proxy after an extract (see 3.7), or /api calls 404 against a stale nginx.conf
 docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps reverse_proxy
@@ -511,6 +513,8 @@ Measured on server2: `interviewer-platform-backend` is **10.5 GB**. The comparab
 
 Work through the items in order. 5.1 and 5.2 give the biggest savings.
 
+**Update 2026-10-28: most of this section is now done. See 5.8 for what changed and the measured results.** The older note below is kept for history.
+
 **Status as of commit `c9d0817c` (read from the repo, not re-measured on the server):** the CPU-only torch install (5.1) and `--timeout 180` in the CMD (5.4) are in `backend/Dockerfile`, and `.dockerignore` files exist (5.5: `backend/.dockerignore`, and a root one for the unified image). Not re-checked: the npm removals (5.3), dropping `google-generativeai` (5.4), the root `Dockerfile` (5.6). Record the new image sizes here after the next rebuild.
 
 ### 5.1 Backend: install CPU-only PyTorch (biggest win)
@@ -643,9 +647,54 @@ The repo-root `Dockerfile` (unified nginx + Python image) is not used by `docker
 ### 5.7 Rebuild without paying for a full rebuild
 
 - **Config-only changes** (compose `command`, healthcheck, env vars, ports): `docker compose -f docker-compose.prod.yml up -d --no-build <service>`.
-- **Backend source changes only**: `docker compose -f docker-compose.prod.yml build backend`. The `pip install` layer is cached as long as `requirements.txt` has not changed.
+- **Backend source changes only**: `bash scripts/build-images.sh backend`. The dependencies live in a tagged base image (5.8), so this takes seconds even if the build cache was pruned.
 - **Frontend**: any source change re-runs `npm run build`. The `npm ci` layer is cached while `package*.json` is unchanged.
 - Never build on server2 with `--no-cache` unless a dependency is genuinely corrupted.
+
+### 5.8 Build speed work (2026-10-28): tagged base image, trimmed dependencies
+
+**How a build works now.** `backend/Dockerfile` has two stages. `deps` (system packages, CPU-only PyTorch, `requirements.txt`, the proctoring model) changes only with `requirements.txt`. `runtime` copies the source on top. `scripts/build-images.sh` hashes `requirements.txt` plus the `deps` part of the Dockerfile, builds `interviewer-backend-base:<hash>` once if that tag does not exist, and passes it to compose as `BACKEND_BASE_IMAGE`. Tagged images survive `docker builder prune`, so a pruned build cache can no longer turn a code deploy into a multi-minute build. A plain `docker compose build backend` still works: `BASE_IMAGE` defaults to the inline `deps` stage, it is just slower when the cache is cold.
+
+```bash
+bash scripts/build-images.sh                  # all services
+bash scripts/build-images.sh backend          # only what changed
+docker images 'interviewer-backend-base*'     # old base tags are kept; `docker rmi` the ones you no longer need
+```
+
+Run it with `bash`: the exec bit is lost in a tarball. If it fails with `\r: command not found`, the file got CRLF line endings on Windows: `sed -i 's/\r$//' scripts/*.sh` (the repo's `.gitattributes` keeps them LF in git).
+
+**Optional: build off the server.** `bash scripts/ship-images.sh server2 frontend` builds on your machine (linux/amd64) and loads the image on the server with `docker save | ssh | docker load`; then `docker compose -f docker-compose.prod.yml up -d --no-build`. It sends whole images, so ship only what changed (the backend image is about 2.3 GB). Not yet run against server2; check `uname -m` there first.
+
+**What was removed or changed, and why it is safe:**
+
+- `tenacity` (zero imports) and `google-generativeai` (opt-in via `GEMINI_USE_SDK=1`, which is not set; the client falls back to `httpx`).
+- OpenCV was installed twice. `ultralytics` requires the full `opencv-python`, which silently overrode the pinned headless build, so production ran **cv2 5.0.0** while `requirements.txt` said 4.10.0.84. The image now keeps only `opencv-python-headless==5.0.0.93`: the same cv2 version, one copy, and `libgl1` is no longer needed. The `requirements.txt` pin was corrected to match what actually ran.
+- `yolov8n.pt` is baked into the image (same file `ultralytics` used to download from GitHub in every worker at every start). If the build-time download fails, the service falls back to downloading on first use, as before.
+- Frontend: `@types/react`, `@types/react-dom`, ESLint and its three plugins removed (no TypeScript, no ESLint config file, so `npm run lint` could not run). The lockfile went from 487 to 302 packages; no remaining package changed version. `--legacy-peer-deps` is still required: plain `npm ci` fails on this lockfile.
+- `chmod -R a+rX dist` now runs in the builder stage instead of a second copy of every file in the final image (the old `logo_main.png` 403 stays fixed; verified).
+- Not done on purpose: replacing `ultralytics`/PyTorch with ONNX would change proctoring detections.
+
+**Measured on a developer laptop (Docker Desktop, 12 CPUs, fast network; server2 will differ).** Before = commit `b1a72383`; after = the same commit with the changes above.
+
+| Scenario | Before | After |
+| :--- | ---: | ---: |
+| Backend, fully cold | 228 s | 241 s |
+| Backend, build cache wiped but base image present | 228 s | **2 s** |
+| Backend, code-only change | 3 s | 2 s |
+| Backend, `requirements.txt` changed | 100 s | 84 s |
+| Frontend, fully cold | 57 s | 47 s |
+| Frontend, code-only change | 23 s | 25 s |
+| Frontend, `package.json` changed | 43 s | 31 s |
+| Backend image size | 2.93 GB | 2.31 GB |
+| Python packages / site-packages | 91 / 1829 MB | 75 / 1566 MB |
+
+A fully cold backend build is not faster: the dependency trims are offset by the extra OpenCV reinstall and the model download. The gain is that the cold case no longer happens on deploys. The 7-minute build seen on server2 on 2026-10-28 was almost certainly a cold cache (every slow layer ran and the base images were downloaded again; not confirmed on the server). `apt` alone took 144 s there against 11 s on the laptop, which suggests the shared host was also slowing it down.
+
+**Checked for "no change for users and admins":** proctor detections on two sample images are byte-identical between the old and new image; the backend test suite gives the same result in both (1422 passed, and the same 73 tests fail in both, none new); every frontend file is byte-identical to a fresh rebuild of the old inputs; and a full local compose stack on the new images served the app, `logo_main.png`, auth responses, code runs in Python and Java, and proctoring, with no model download at startup.
+
+**Deployed to server2 on 2026-10-28.** The first build there was cold: the base image `interviewer-backend-base:0bae8a61e92f` took 244 s (`apt` 31 s, PyTorch 56 s, `requirements.txt` 82 s, export 56 s) and the backend and frontend images another 100 s, about 6 minutes in total (the earlier all-cold build there took about 7 minutes). The tag is the same hash as on the developer laptop, so it does not depend on the machine or on line endings. The previous images were kept as `interviewer-platform-backend:rollback-pre-build-changes` and `interviewer-platform-frontend:rollback-pre-build-changes`: to roll back, re-tag them as `:latest` and run `docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend frontend`. Remove them with `docker rmi` once the release has proven itself.
+
+Checked on the server afterwards: all containers healthy; 0 tracebacks, deadlocks or model downloads in the backend log; `/api/proctor/status` returns `ready`; cv2 is 5.0.0; `logo_main.png` returns 200 over HTTPS; Python and Java runs return `Accepted`; the app shell, `/health/live`, and the 401 responses of `/api/auth/me` and a wrong-password login are unchanged; `/.env` returns the HTML page. Not yet checked on the server: a full student session in a browser. From now on a code-only backend deploy reuses the base image; only a change to `requirements.txt` (or the dependency part of `backend/Dockerfile`) rebuilds it, which should take about 4-6 minutes.
 
 ### Expected order of work
 

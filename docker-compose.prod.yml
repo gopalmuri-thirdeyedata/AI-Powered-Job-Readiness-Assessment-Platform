@@ -38,6 +38,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        # scripts/build-images.sh sets BACKEND_BASE_IMAGE to a prebuilt, tagged dependency image; unset = build the `deps` stage inline
+        BASE_IMAGE: ${BACKEND_BASE_IMAGE:-deps}
+    image: interviewer-platform-backend
     container_name: interviewer_backend
     restart: always
     env_file:
@@ -79,6 +83,7 @@ services:
   code_runner:
     build:
       context: ./code-runner
+    image: interviewer-platform-code_runner
     container_name: interviewer_code_runner
     restart: always
     init: true            # reaps the orphaned children a fork bomb leaves behind (PID 1 is a Python server that does not)
@@ -107,6 +112,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api
+    image: interviewer-platform-frontend
     container_name: interviewer_frontend
     restart: always
     networks:

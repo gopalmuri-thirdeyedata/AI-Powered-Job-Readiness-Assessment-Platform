@@ -27,13 +27,13 @@ requests==2.32.3
 httpx==0.27.2
 
 # Document Parsing & AI Engine
+# Gemini is called over plain httpx (services/gemini_client.py). The official SDK is opt-in (GEMINI_USE_SDK=1), is not installed, and
+# the client falls back to httpx when it is missing. Add `google-generativeai` back here only if that switch is ever turned on.
 pypdf==4.3.1
-google-generativeai>=0.8.0
-tenacity==9.0.0
 
 # Computer Vision & YOLO Proctoring
 ultralytics==8.3.163
-opencv-python-headless==4.10.0.84
+opencv-python-headless==5.0.0.93
 pillow>=10.0.0
 numpy>=1.24.0
 
