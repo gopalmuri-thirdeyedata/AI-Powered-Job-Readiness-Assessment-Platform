@@ -24,6 +24,8 @@ accounts are created only by an authenticated administrator (Admin Dashboard -> 
 | Create Admin | yes | **no** | no |
 | Create Super Admin | yes | **no** | no |
 | Manage (edit / activate / deactivate / replace password) | every account in the organization | Students only | no |
+| Delete a Student account (permanent) | yes | yes (own organization) | no |
+| Delete an Admin / Super Admin account | **no** | **no** | no |
 | Change any account's role (including their own) | **no API exists** | no | no |
 | Super Admin / platform APIs (`/api/platform/*`) | yes | no (403) | no (403) |
 
@@ -46,6 +48,22 @@ accounts are created only by an authenticated administrator (Admin Dashboard -> 
 * Role cannot be changed by any API; nobody can deactivate themselves or the last active administrator; platform-administrator identities
   (`admin@thirdeyedata.ai`, `platform.*`, `pa.*`, ...) cannot be created or managed by organization admins.
 * Passwords are never returned (create, list, detail) and the UI never shows one again after creation.
+
+### Deleting a student (`DELETE /api/admin/users/{id}?confirm_email=<the student's e-mail>`)
+
+Permanent, students only, own organization only (another organization's id is a plain 404; an Admin / Super Admin target is a 403 for every caller). The
+e-mail confirmation must match the stored address. One transaction (`services/student_deletion.py`); any failure rolls everything back.
+
+* **Deleted:** the login (user, sessions, memberships, retained credentials), the student profile and everything keyed by it (resumes, roadmap, tasks, practice
+  attempts, mock interviews, projects, placement simulations, copilot chat, drive applications, self-assessment attempts + rounds + feedback), assessment
+  invitations, shared-link registrations (name / phone / e-mail) with their attempts (including archived retaken ones), reviews and reports, notifications, legacy
+  assessments owned by the account, and the uploaded resume / JD files (after the commit, only inside `backend/media`, and never a file another row still uses).
+* **Retained (audit):** `activity_logs` rows are kept; the e-mail in them becomes `deleted-user:<id>` and the student is detached as actor. One new
+  `student_account_deleted` row records who deleted it, when, the row counts and the SHA-256 of the e-mail (no address).
+* **Not touched, and reported in the response and the audit row:** e-mail-keyed recruiter records never linked to the account (`candidates`, accountless
+  registrations, assessments with only a `candidate_email`) - nothing proves they belong to this account.
+* SQLite does not enforce foreign keys here, so the cleanup is explicit and ordered; a table that references users / student profiles without a policy
+  makes the delete fail closed (409) and `tests/test_student_deletion.py` fails.
 
 Password policy: 10-72 bytes, upper + lower case + digit, no leading/trailing space, not a common password, not containing the email name.
 

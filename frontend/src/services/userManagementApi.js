@@ -31,6 +31,10 @@ export const userManagementApi = {
     // Grants / revokes ONE student's access to the normal assessment. The server enforces the role hierarchy and the organization.
     setAssessmentAccess: async (id, granted) =>
         (await axios.put(`${BASE}/${id}/assessment-access`, { granted: Boolean(granted) }, { headers: headers() })).data,
+    // PERMANENTLY deletes one student account and its personal data. The e-mail is sent back as the explicit confirmation the server
+    // checks against the stored address (so a stale id can never delete somebody else). Students only; the server enforces everything.
+    deleteStudent: async (id, email) =>
+        (await axios.delete(`${BASE}/${id}`, { headers: headers(), params: { confirm_email: email }, timeout: 60000 })).data,
     resetPassword: async (id, newPassword) =>
         (await axios.post(`${BASE}/${id}/reset-password`, { new_password: newPassword }, { headers: headers() })).data,
     // E-mails the student's login e-mail and assigned password. No body: the server takes the recipient and the password from its own

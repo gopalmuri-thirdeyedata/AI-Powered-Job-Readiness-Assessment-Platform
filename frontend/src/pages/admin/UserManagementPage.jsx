@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Loader2, Lock, Unlock, Mail, Pencil, Power, Search, ShieldCheck, GraduationCap, UserPlus, Users, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Loader2, Lock, Unlock, Mail, Pencil, Power, Search, ShieldCheck, GraduationCap, Trash2, UserPlus, Users, X } from 'lucide-react';
 import WorkspacePage from '../../components/admin/WorkspacePage';
 import ConfirmationModal from '../../components/ConfirmationModal';
-import { Badge, EmptyState, ErrorBanner, LoadingRow, PanelIntro, Toast, cardCls, dangerGhostBtn, formatDate, ghostBtn, hintCls, inputCls, labelCls, primaryBtn, tableWrapCls, tbodyCls, tdCls, theadCls, thCls, trCls } from '../../components/admin/adminUi';
+import { Badge, EmptyState, ErrorBanner, LoadingRow, PanelIntro, Toast, cardCls, dangerBtn, dangerGhostBtn, dangerOutlineBtn, formatDate, ghostBtn, hintCls, inputCls, labelCls, primaryBtn, tableWrapCls, tbodyCls, tdCls, theadCls, thCls, trCls } from '../../components/admin/adminUi';
 import { apiError, passwordProblems, shareFailureCode, userManagementApi } from '../../services/userManagementApi';
 import { useAuth } from '../../auth/useAuth';
 import { ROLE_LABELS, creatableRoles, manageableRoles, isAdminRole } from '../../auth/roles';
@@ -162,6 +162,71 @@ const ResetPasswordDialog = ({ user, onClose, onDone }) => {
                 <div className="flex justify-end gap-2 pt-2">
                     <button type="button" className={ghostBtn} onClick={onClose} disabled={busy}>Cancel</button>
                     <button type="submit" className={primaryBtn} disabled={busy}>{busy ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : <><KeyRound size={14} /> Replace password</>}</button>
+                </div>
+            </form>
+        </Dialog>
+    );
+};
+
+/* ─────────────────────────── Delete account ─────────────────────────── */
+/**
+ * Permanent deletion of one student. Nothing is sent until the admin ticks the acknowledgement AND presses the red button; the
+ * button is disabled while the request runs and a ref blocks a second submit, so a double click cannot fire two requests.
+ */
+const DeleteAccountDialog = ({ user, onClose, onDeleted, onFailed }) => {
+    const [understood, setUnderstood] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const inFlight = useRef(false);
+    const name = user.full_name || user.email;
+
+    const close = () => { if (!inFlight.current) onClose(); };
+
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!understood || inFlight.current) return;
+        inFlight.current = true;
+        setBusy(true);
+        setError('');
+        try {
+            const res = await userManagementApi.deleteStudent(user.id, user.email);
+            onDeleted(res);
+        } catch (err) {
+            setError(apiError(err, 'The account could not be deleted. Nothing was changed.'));
+            if (err?.response?.status === 404) onFailed();           // already deleted elsewhere: refresh the list behind the dialog
+        } finally {
+            inFlight.current = false;
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Dialog title="Delete student account?" onClose={close}>
+            <form onSubmit={submit} className="space-y-4" noValidate>
+                <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400" aria-hidden="true"><Trash2 size={20} /></span>
+                    <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        You are about to permanently delete the account of <span className="font-bold text-slate-900 dark:text-white break-words">{name}</span>
+                        {user.full_name && <> (<span className="font-semibold text-slate-900 dark:text-white break-all">{user.email}</span>)</>}.
+                    </p>
+                </div>
+                <ul className="list-disc pl-5 space-y-1.5 text-[13px] leading-5 text-slate-600 dark:text-slate-400">
+                    <li>They are signed out and can no longer log in.</li>
+                    <li>Their profile, resumes, practice and interview history, assessment attempts, results, reports and uploaded files may be permanently removed.</li>
+                    <li>Administrative audit records are kept, without their name or e-mail address.</li>
+                    <li>This cannot be undone. To only block access, use Deactivate instead.</li>
+                </ul>
+                <label className="flex items-start gap-2.5 rounded-lg border border-red-200 dark:border-red-900/70 bg-red-50/70 dark:bg-red-950/30 px-3 py-2.5 text-[13px] leading-5 font-medium text-red-800 dark:text-red-200 cursor-pointer">
+                    <input type="checkbox" id="delete-account-understood" checked={understood} disabled={busy} onChange={(e) => setUnderstood(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-red-300 dark:border-red-800 accent-red-600 cursor-pointer" />
+                    <span>I understand that deleting this account permanently removes it and its data.</span>
+                </label>
+                <FormError>{error}</FormError>
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+                    <button type="button" className={ghostBtn} onClick={close} disabled={busy}>Cancel</button>
+                    <button type="submit" id="delete-account-confirm" className={dangerBtn} disabled={!understood || busy} aria-busy={busy}>
+                        {busy ? <><Loader2 size={14} className="animate-spin" /> Deleting...</> : <><Trash2 size={14} /> Delete permanently</>}
+                    </button>
                 </div>
             </form>
         </Dialog>
@@ -371,8 +436,8 @@ const AssessmentAccess = ({ u, canManage, accessBusyId, setAccessConfirm }) => (
     )
 );
 
-/** View / Share / Replace password / Deactivate for one user (the same four actions in the table and in the cards). */
-const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentials, setConfirm, compact = false }) => (
+/** View / Share / Replace password / Deactivate (+ Delete for students) for one user (the same actions in the table and in the cards). */
+const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentials, setConfirm, setDeleteTarget, compact = false }) => (
     <div className={`flex items-center gap-1.5 ${compact ? 'flex-nowrap justify-end [&_button]:min-h-[32px] [&_button]:px-2.5 [&_button]:py-1 [&_button]:text-[13px]' : 'flex-wrap'}`}>
         <button
             type="button"
@@ -420,6 +485,17 @@ const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentia
                 <Power size={14} />
             </button>
         )}
+        {canManage && !isSelf && u.role === 'STUDENT' && (
+            <button
+                type="button"
+                className={dangerOutlineBtn}
+                onClick={() => setDeleteTarget(u)}
+                aria-label={`Delete ${u.email}`}
+                title="Delete account permanently"
+            >
+                <Trash2 size={14} />
+            </button>
+        )}
     </div>
 );
 
@@ -442,6 +518,7 @@ const UserManagementPage = () => {
     const [toast, setToast] = useState(null);
     const [dialog, setDialog] = useState(null); // { type: 'create' | 'details' | 'reset', ... }
     const [confirm, setConfirm] = useState(null); // user to (de)activate
+    const [deleteTarget, setDeleteTarget] = useState(null); // student whose account is being permanently deleted
     const [accessConfirm, setAccessConfirm] = useState(null); // student whose assessment access is being granted / revoked
     const [accessBusyId, setAccessBusyId] = useState(null);
     const accessRef = useRef(false);
@@ -496,6 +573,15 @@ const UserManagementPage = () => {
         } catch (err) {
             say(apiError(err, 'Could not change the account status.'), 'error');
         }
+    };
+
+    // Delete: runs inside DeleteAccountDialog (explicit acknowledgement, one request at a time); here we only refresh what is on screen.
+    const accountDeleted = (res) => {
+        const target = deleteTarget;
+        setDeleteTarget(null);
+        setSelectedIds((prev) => prev.filter((id) => id !== target?.id));
+        say(res.message);
+        if (page > 1 && data.items.length === 1) setPage((p) => p - 1); else load();
     };
 
     // Assessment Access: flips ONE student's switch after confirmation. The server re-checks the role hierarchy and the organization.
@@ -733,7 +819,7 @@ const UserManagementPage = () => {
                                         {u.role === 'STUDENT' && <AssessmentAccess u={u} canManage={canManage} accessBusyId={accessBusyId} setAccessConfirm={setAccessConfirm} />}
                                         <p className="text-xs text-slate-500 dark:text-slate-400">Last sign-in: {formatDate(u.last_login_at)}</p>
                                         <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                                            <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} />
+                                            <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} setDeleteTarget={setDeleteTarget} />
                                         </div>
                                     </li>
                                 );
@@ -821,7 +907,7 @@ const UserManagementPage = () => {
                                                     {formatDate(u.last_login_at)}
                                                 </td>
                                                 <td className={`${tdCls} !px-3 sticky right-0 z-[1] bg-white dark:bg-[var(--pw-surface)] group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.15)]`}>
-                                                    <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} compact />
+                                                    <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} setDeleteTarget={setDeleteTarget} compact />
                                                 </td>
                                             </tr>
                                         );
@@ -846,6 +932,9 @@ const UserManagementPage = () => {
 
             {dialog?.type === 'create' && (
                 <CreateUserDialog allowedRoles={creatableRoles(me?.role)} onClose={() => setDialog(null)} onCreated={(res) => { setDialog(null); say(res.user?.role === 'STUDENT' ? `${res.message} Click Share to e-mail the login details to the student.` : res.message); setPage(1); load(); }} />
+            )}
+            {deleteTarget && (
+                <DeleteAccountDialog user={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={accountDeleted} onFailed={load} />
             )}
             {dialog?.type === 'reset' && (
                 <ResetPasswordDialog user={dialog.user} onClose={() => setDialog(null)}

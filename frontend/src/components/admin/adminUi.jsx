@@ -86,6 +86,8 @@ export const ghostBtn = `${btnBase.replace('font-semibold', 'font-medium')} bord
 export const dangerBtn = `${btnBase} bg-red-600 hover:bg-red-700 text-white shadow-sm focus-visible:ring-red-500/60`;
 /** Outlined destructive action (Deactivate, Reset registration): neutral until hovered so it never competes with the primary action. */
 export const dangerGhostBtn = `${btnBase.replace('font-semibold', 'font-medium')} border border-slate-300/80 dark:border-slate-700 bg-white dark:bg-slate-800/70 shadow-[0_1px_2px_rgba(15,23,42,0.05)] dark:shadow-none text-slate-700 dark:text-slate-200 hover:bg-red-50 hover:border-red-200 hover:text-red-700 dark:hover:bg-red-950/40 dark:hover:border-red-900 dark:hover:text-red-300 focus-visible:ring-red-500/50`;
+/** Permanent delete in a row: red at rest (unlike Deactivate, which is neutral until hovered) because it cannot be undone. */
+export const dangerOutlineBtn = `${btnBase.replace('font-semibold', 'font-medium')} border border-red-200 dark:border-red-900/70 bg-white dark:bg-slate-800/70 shadow-[0_1px_2px_rgba(15,23,42,0.05)] dark:shadow-none text-red-600 dark:text-red-400 hover:bg-red-50 hover:border-red-300 hover:text-red-700 dark:hover:bg-red-950/40 dark:hover:border-red-800 dark:hover:text-red-300 focus-visible:ring-red-500/50`;
 /** Compact (32px) variants for table rows and card toolbars; icon-only buttons must pass an aria-label. */
 export const ghostBtnSm = ghostBtn.replace('min-h-[40px] px-4 py-2', 'min-h-[32px] px-3 py-1 text-[13px]');
 export const dangerGhostBtnSm = dangerGhostBtn.replace('min-h-[40px] px-4 py-2', 'min-h-[32px] px-3 py-1 text-[13px]');

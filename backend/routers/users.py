@@ -11,6 +11,8 @@ caller's resolved organization. The role hierarchy is enforced HERE, on the serv
     STUDENT       -                              - (rejected before the handler runs)
 
 No endpoint changes the role of an existing account, so nobody can promote themselves or anyone else.
+DELETE /{id} permanently deletes a STUDENT of the caller's organization (never an Admin or Super Admin, whoever calls it); see
+services/student_deletion.py for exactly what is removed and what is retained.
 
 Passwords are hashed with bcrypt, never returned by any response, never logged, and never re-displayed after creation.
 """
@@ -32,7 +34,7 @@ import database
 import models
 import utils
 from routers.auth import TenantContext, require_organization_admin_context
-from services import assessment_access, credential_delivery, local_auth
+from services import assessment_access, credential_delivery, local_auth, student_deletion
 from services.rate_limiter import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
@@ -377,6 +379,36 @@ def deactivate_user(user_id: int, ctx: TenantContext = Depends(require_organizat
     _audit(db, ctx, "user_deactivated", target, f"sessions_revoked={revoked}")
     db.commit()
     return {"message": f"{target.email} was deactivated and signed out.", "user": _serialize(db, target)}
+
+
+@router.delete("/{user_id}")
+def delete_student_account(
+    user_id: int,
+    confirm_email: str = Query(..., max_length=150, description="The student's e-mail address, typed back as an explicit confirmation"),
+    ctx: TenantContext = Depends(require_organization_admin_context),
+    db: Session = Depends(database.get_db),
+):
+    """
+    PERMANENTLY deletes one Student account of the caller's organization together with its personal data (see
+    services/student_deletion.py for exactly what is removed and what is retained). Student accounts only: Admin and Super Admin
+    accounts are refused for every caller. The caller's e-mail confirmation must match the stored address, so a stale or mistyped id
+    (SQLite can re-use the id of a deleted row) can never delete somebody else. An unknown / already deleted / other-organization id is a 404.
+    """
+    target = _load_target(db, ctx, user_id)                                   # 404 outside the caller's organization
+    if target.role != STUDENT:
+        raise _fail(403, "Only Student accounts can be deleted. Administrator accounts cannot be deleted here.")
+    if target.id == ctx.user.id:
+        raise _fail(400, "You cannot delete your own account.")
+    if local_auth.normalize_email(confirm_email) != local_auth.normalize_email(target.email):
+        raise _fail(400, "The confirmation e-mail does not match this account. Nothing was deleted.")
+    email = target.email
+    try:
+        result = student_deletion.delete_student(db, user=target, actor_id=ctx.user.id, org_id=ctx.tenant_id)
+    except student_deletion.StudentDeletionError as exc:
+        raise _fail(exc.status, {"code": exc.code, "message": exc.message})
+    except Exception:
+        raise _fail(500, {"code": "DELETE_FAILED", "message": "The account could not be deleted and nothing was changed. Please try again."})
+    return {"message": f"The account of {email} and its personal data were permanently deleted.", **result}
 
 
 @router.post("/{user_id}/activate")
