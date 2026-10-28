@@ -27,44 +27,35 @@ const ConfirmationModal = ({
     const isDanger = type === 'danger';
     const isWarning = type === 'warning';
     const isSuccess = type === 'success';
-    const isInfo = type === 'info' || type === 'blue';
 
-    // Theme configurations
+    // One layout, a tone per type: the icon chip and the confirm button carry the meaning, the surface stays neutral.
     const getTheme = () => {
         if (isDanger) {
             return {
-                headerBg: 'bg-red-50/70 dark:bg-red-950/40',
-                iconBg: 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
-                titleColor: 'text-red-900 dark:text-red-200',
-                btnGradient: 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 focus:ring-red-500',
-                icon: <Trash2 size={24} className="stroke-[2.2]" />
+                iconBg: 'bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400',
+                btn: 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-500/60',
+                icon: <Trash2 size={20} />
             };
         }
         if (isWarning) {
             return {
-                headerBg: 'bg-amber-50/70 dark:bg-amber-950/40',
-                iconBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400',
-                titleColor: 'text-amber-900 dark:text-amber-200',
-                btnGradient: 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 focus:ring-amber-500',
-                icon: <AlertTriangle size={24} className="stroke-[2.2]" />
+                iconBg: 'bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400',
+                btn: 'bg-amber-600 hover:bg-amber-700 focus-visible:ring-amber-500/60',
+                icon: <AlertTriangle size={20} />
             };
         }
         if (isSuccess) {
             return {
-                headerBg: 'bg-emerald-50/70 dark:bg-emerald-950/40',
-                iconBg: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400',
-                titleColor: 'text-emerald-900 dark:text-emerald-200',
-                btnGradient: 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 focus:ring-emerald-500',
-                icon: <CheckCircle2 size={24} className="stroke-[2.2]" />
+                iconBg: 'bg-[#5d8c2c]/15 dark:bg-emerald-950/60 text-[#4c7324] dark:text-emerald-400',
+                btn: 'bg-[#5d8c2c] hover:bg-[#4c7324] dark:bg-emerald-600 dark:hover:bg-emerald-500 focus-visible:ring-[#5d8c2c]/60',
+                icon: <CheckCircle2 size={20} />
             };
         }
-        // Default: info / blue / brand
+        // Default: info / blue
         return {
-            headerBg: 'bg-blue-50/70 dark:bg-blue-950/40',
-            iconBg: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',
-            titleColor: 'text-blue-900 dark:text-blue-200',
-            btnGradient: 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-blue-500',
-            icon: <Info size={24} className="stroke-[2.2]" />
+            iconBg: 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400',
+            btn: 'bg-[#5d8c2c] hover:bg-[#4c7324] dark:bg-emerald-600 dark:hover:bg-emerald-500 focus-visible:ring-[#5d8c2c]/60',
+            icon: <Info size={20} />
         };
     };
 
@@ -79,49 +70,53 @@ const ConfirmationModal = ({
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
+                        transition={{ duration: 0.15 }}
                         onClick={onClose}
                         className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
                     />
 
                     {/* Centered Modal Card */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.92, y: 12 }}
+                        initial={{ opacity: 0, scale: 0.97, y: 8 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.94, y: 8 }}
-                        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                        className="relative z-10 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-gray-100 dark:border-slate-800"
+                        exit={{ opacity: 0, scale: 0.98, y: 4 }}
+                        transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={title}
+                        className="relative z-10 bg-white dark:bg-[var(--pw-surface)] rounded-xl shadow-[0_2px_4px_rgba(15,23,42,0.06),0_24px_48px_-12px_rgba(15,23,42,0.40)] max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Header */}
-                        <div className={`p-6 ${theme.headerBg} border-b border-gray-100 dark:border-slate-800 flex items-start gap-4`}>
-                            <div className={`p-3 rounded-2xl ${theme.iconBg} shadow-sm shrink-0`}>
+                        {/* Body */}
+                        <div className="p-5 sm:p-6 flex items-start gap-4">
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${theme.iconBg}`}>
                                 {theme.icon}
                             </div>
-                            <div className="flex-1 pr-2">
-                                <h3 className={`text-lg font-bold ${theme.titleColor} tracking-tight leading-snug`}>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-[17px] font-semibold text-slate-900 dark:text-white tracking-[-0.015em] leading-6">
                                     {title}
                                 </h3>
-                                <div className="mt-2 text-sm text-gray-600 dark:text-slate-300 whitespace-pre-line leading-relaxed font-normal">
+                                <div className="mt-1.5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-6 break-words">
                                     {message}
                                 </div>
                             </div>
                             <button
+                                type="button"
                                 onClick={onClose}
-                                className="text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-slate-200 transition-colors p-1 rounded-lg hover:bg-gray-100/60 dark:hover:bg-slate-800"
+                                className="-mr-2 -mt-1 text-slate-400 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
                                 aria-label="Close dialog"
                             >
-                                <X size={20} />
+                                <X size={18} />
                             </button>
                         </div>
 
                         {/* Actions */}
-                        <div className="p-4 bg-gray-50/80 dark:bg-slate-950/60 border-t border-gray-100 dark:border-slate-800 flex justify-end items-center gap-3">
+                        <div className="px-5 sm:px-6 py-4 bg-slate-50/80 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 rounded-b-xl flex flex-col-reverse sm:flex-row sm:justify-end sm:items-center gap-2 sm:gap-3">
                             {!isAlert && (
                                 <button
                                     type="button"
                                     onClick={onClose}
-                                    className="px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200/80 dark:hover:bg-slate-800 rounded-xl transition-all"
+                                    className="min-h-[40px] px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
                                 >
                                     {cancelText}
                                 </button>
@@ -133,7 +128,7 @@ const ConfirmationModal = ({
                                     if (onConfirm) onConfirm();
                                     onClose();
                                 }}
-                                className={`px-5 py-2.5 text-sm font-bold text-white rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme.btnGradient}`}
+                                className={`min-h-[40px] px-5 py-2 text-sm font-semibold text-white rounded-lg shadow-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900 ${theme.btn}`}
                             >
                                 {confirmText}
                             </button>

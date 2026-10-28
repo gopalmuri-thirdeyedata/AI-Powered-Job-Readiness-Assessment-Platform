@@ -125,22 +125,22 @@ const ShareWithStudents = ({ role, onToast }) => {
     const canSend = meta.canSend && meta.emailConfigured;
 
     return (
-        <div className={`${cardCls} mt-3 p-4 space-y-3`} aria-label={`Share ${role.title} with students`} data-testid="share-with-students">
+        <div className={`${cardCls} mt-4 p-4 sm:p-5 space-y-4 bg-slate-50/70 dark:bg-slate-950/40`} aria-label={`Share ${role.title} with students`} data-testid="share-with-students">
             <div>
-                <h4 className="font-bold text-slate-900 dark:text-white">Share with Students</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <h4 className="pw-card-title">Share with Students</h4>
+                <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400 mt-1">
                     E-mail the link above to students you choose. This is optional: you can always copy the link and share it yourself.
                     Students still register and take the assessment through the same link.
                 </p>
             </div>
 
             {!meta.emailConfigured && (
-                <p className="text-sm rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3 py-2" role="status">
+                <p className="text-sm rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3 py-2.5" role="status">
                     E-mail sending is not configured on the server, so invitations cannot be sent. Copy the link above to share it manually.
                 </p>
             )}
             {meta.emailConfigured && !meta.canSend && meta.reason && (
-                <p className="text-sm rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3 py-2" role="status">{meta.reason}</p>
+                <p className="text-sm rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3 py-2.5" role="status">{meta.reason}</p>
             )}
 
             <div className="relative">
@@ -151,8 +151,8 @@ const ShareWithStudents = ({ role, onToast }) => {
 
             {error && <ErrorBanner onRetry={() => load(query.trim())}>{error}</ErrorBanner>}
 
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <label className="flex items-center gap-3 px-3 py-2 bg-slate-50 dark:bg-slate-950 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-[var(--pw-surface)]">
+                <label className="flex items-center gap-3 px-3 py-2.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
                     <input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={toggleAll} disabled={visibleIds.length === 0 || sending} aria-label="Select all students" />
                     Select all{query.trim() ? ' matching' : ''} ({visibleIds.length})
                 </label>
@@ -163,15 +163,15 @@ const ShareWithStudents = ({ role, onToast }) => {
                         const st = statusOf(s, outcomes[s.id]);
                         return (
                             <li key={s.id}>
-                                <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                     <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} disabled={sending} aria-label={`Select ${s.name || s.email}`} />
                                     <span className="min-w-0 flex-1">
-                                        <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{s.name || '—'}</span>
+                                        <span className="block text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{s.name || '—'}</span>
                                         <span className="block text-xs text-slate-500 dark:text-slate-400 truncate">{s.email}</span>
                                     </span>
                                     {st && (
                                         <span className="text-right shrink-0 max-w-[45%]">
-                                            <span title={st.hint || undefined} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${BADGE[st.key]}`}>{st.label}</span>
+                                            <span title={st.hint || undefined} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${BADGE[st.key]}`}>{st.label}</span>
                                             {st.key === 'FAILED' && st.hint && <span className="block text-[11px] text-red-600 dark:text-red-400 mt-0.5">{st.hint}</span>}
                                         </span>
                                     )}
@@ -191,7 +191,7 @@ const ShareWithStudents = ({ role, onToast }) => {
                     <button type="button" className={ghostBtn} disabled={!canSend || sending} onClick={() => send(failedIds)}>Retry failed ({failedIds.length})</button>
                 )}
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-300" data-testid="selected-count" aria-live="polite">{selected.size} selected</span>
-                {selected.size > 0 && !sending && <button type="button" className="text-xs font-semibold text-slate-500 hover:underline" onClick={() => setSelected(new Set())}>Clear</button>}
+                {selected.size > 0 && !sending && <button type="button" className="text-[13px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:underline rounded cursor-pointer" onClick={() => setSelected(new Set())}>Clear</button>}
             </div>
             {meta.expiresAt && <p className="text-xs text-slate-500 dark:text-slate-400">The e-mail tells students the link expires {formatDate(meta.expiresAt)}.</p>}
 

@@ -96,14 +96,14 @@ const JobDescriptionInput = ({ value, onChange, minChars, initialMode = 'manual'
     const showText = mode === 'manual' || (value || '').length > 0 || phase === 'done';
 
     return (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <span id="jd-input-label" className="text-xs font-bold text-slate-600 dark:text-slate-300">Job description</span>
-                <div role="radiogroup" aria-label="Job description input method" className="inline-flex rounded-xl border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-50 dark:bg-slate-950">
+                <span id="jd-input-label" className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Job description</span>
+                <div role="radiogroup" aria-label="Job description input method" className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-50 dark:bg-slate-950">
                     {MODES.map(({ id, label, icon: Icon }) => (
                         <button
                             key={id} type="button" role="radio" aria-checked={mode === id} onClick={() => setMode(id)}
-                            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${mode === id ? 'bg-[#5d8c2c] text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
+                            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${mode === id ? 'bg-[#5d8c2c] dark:bg-emerald-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
                         >
                             <Icon size={13} /> {label}
                         </button>
@@ -116,7 +116,7 @@ const JobDescriptionInput = ({ value, onChange, minChars, initialMode = 'manual'
                     {!file && (
                         <div
                             {...getRootProps()}
-                            className={`rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${isDragActive ? 'border-[#5d8c2c] bg-[#5d8c2c]/5' : 'border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/40'}`}
+                            className={`rounded-lg border-2 border-dashed px-4 py-7 text-center transition-colors ${isDragActive ? 'border-[#5d8c2c] bg-[#5d8c2c]/5' : 'border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/40'}`}
                         >
                             <input {...getInputProps({ 'aria-label': 'Upload job description file', accept: JD_EXTENSIONS.join(',') })} />
                             <UploadCloud size={26} className="mx-auto text-[#5d8c2c]" />
@@ -127,7 +127,7 @@ const JobDescriptionInput = ({ value, onChange, minChars, initialMode = 'manual'
                     )}
 
                     {file && (
-                        <div {...getRootProps()} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5">
+                        <div {...getRootProps()} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-3">
                             <input {...getInputProps({ 'aria-label': 'Replace job description file', accept: JD_EXTENSIONS.join(',') })} />
                             <div className="flex items-center gap-2.5 min-w-0">
                                 <FileText size={18} className="text-[#5d8c2c] shrink-0" />
@@ -156,7 +156,7 @@ const JobDescriptionInput = ({ value, onChange, minChars, initialMode = 'manual'
                     )}
 
                     {pending !== null && (
-                        <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-3.5 py-3 text-sm text-amber-900 dark:text-amber-200" role="alert">
+                        <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200" role="alert">
                             <p className="font-semibold">Replace the description you already entered ({count.toLocaleString()} characters) with the text from this file ({pending.trim().length.toLocaleString()} characters)?</p>
                             <div className="flex gap-2 mt-2.5">
                                 <button type="button" className={primaryBtn} onClick={() => { onChange(pending); setPending(null); }}>Replace with file text</button>
@@ -171,13 +171,13 @@ const JobDescriptionInput = ({ value, onChange, minChars, initialMode = 'manual'
                 <label className="block">
                     <span className="sr-only">Job description text</span>
                     <textarea
-                        className={inputCls} rows={mode === 'upload' ? 10 : 6} value={value} aria-labelledby="jd-input-label"
+                        className={`${inputCls} leading-6 resize-y`} rows={mode === 'upload' ? 10 : 6} value={value} aria-labelledby="jd-input-label"
                         onChange={(e) => onChange(e.target.value)}
                         placeholder="Paste the full job description: responsibilities, required technologies, seniority..."
                     />
                 </label>
             )}
-            <span className={`block text-[11px] ${count < minChars ? 'text-slate-500' : 'text-[#4c7324] dark:text-[#9fd05a]'}`}>{count} characters (minimum {minChars})</span>
+            <span className={`block text-xs ${count < minChars ? 'text-slate-500 dark:text-slate-400' : 'text-[#4c7324] dark:text-[#9fd05a]'}`}>{count} characters (minimum {minChars})</span>
         </div>
     );
 };

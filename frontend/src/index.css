@@ -715,3 +715,78 @@
     .student-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
     .student-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 }
+/* ─── PrepWin Admin Workspace design system ─────────────────────────────────────────────────────────────────
+   One token set for every admin page. Light values are the defaults, `.dark` (the existing theme switch) overrides them.
+   Brand green stays the existing #5d8c2c / #4c7324 pair; surfaces, text and status colours follow the slate scale used by the
+   shared classes in components/admin/adminUi.jsx, so a page picks up both themes without a second mechanism. */
+:root {
+    --pw-brand:        #5d8c2c;
+    --pw-brand-strong: #4c7324;
+    --pw-brand-soft:   #edf5e7;
+    --pw-bg:           #f4f6fa;
+    --pw-surface:      #ffffff;
+    --pw-text:         #172033;
+    --pw-text-2:       #64748b;
+    --pw-border:       #e2e8f0;
+    --pw-success:      #16845b;
+    --pw-warning:      #d97706;
+    --pw-danger:       #dc4545;
+    --pw-info:         #3478d4;
+    --pw-radius:       12px;
+    --pw-shadow-card:  0 1px 2px rgba(15, 23, 42, 0.04);
+    --pw-shadow-pop:   0 12px 32px -8px rgba(15, 23, 42, 0.18);
+    --pw-ease:         cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+    --pw-brand:        #10b981;
+    --pw-brand-strong: #34d399;
+    --pw-brand-soft:   rgba(16, 185, 129, 0.12);
+    --pw-bg:           #0b1220;
+    --pw-surface:      #111b2e;
+    --pw-text:         #f1f5f9;
+    --pw-text-2:       #94a3b8;
+    --pw-border:       #1e293b;
+    --pw-success:      #34d399;
+    --pw-warning:      #fbbf24;
+    --pw-danger:       #f87171;
+    --pw-info:         #60a5fa;
+    --pw-shadow-card:  0 1px 2px rgba(0, 0, 0, 0.3);
+    --pw-shadow-pop:   0 12px 32px -8px rgba(0, 0, 0, 0.6);
+}
+
+@layer components {
+    /* Type scale (admin): page 28-32px, section 18-22px, card 15-18px, body 14-15px, supporting 12-13px */
+    .pw-page-title    { font-size: clamp(1.75rem, 1.5rem + 0.9vw, 2rem); line-height: 1.15; font-weight: 600; letter-spacing: -0.03em; color: var(--pw-text); }
+    .pw-section-title { font-size: 1.125rem; line-height: 1.4; font-weight: 600; letter-spacing: -0.015em; color: var(--pw-text); }
+    .pw-card-title    { font-size: 1rem; line-height: 1.4; font-weight: 600; letter-spacing: -0.01em; color: var(--pw-text); }
+    .pw-body          { font-size: 0.875rem; line-height: 1.55; color: var(--pw-text-2); }
+    .pw-support       { font-size: 0.75rem; line-height: 1.5; color: var(--pw-text-2); }
+    .pw-eyebrow       { font-size: 0.6875rem; line-height: 1; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pw-text-2); }
+
+    /* Keyboard focus: one visible ring for every interactive admin control */
+    .pw-admin :is(a, button, input, select, textarea, summary, [role="radio"], [tabindex]):focus-visible {
+        outline: 2px solid var(--pw-brand);
+        outline-offset: 2px;
+        border-radius: 8px;
+    }
+    .pw-admin :is(input, select, textarea):focus-visible { outline-offset: 0; }
+
+    .pw-admin input[type="checkbox"] { accent-color: var(--pw-brand); }
+    .pw-admin { text-rendering: optimizeLegibility; font-variant-numeric: lining-nums; }
+    .pw-admin ::selection { background: rgba(93, 140, 44, 0.22); }
+    .dark .pw-admin ::selection { background: rgba(16, 185, 129, 0.28); }
+
+    /* Native <select> chevron + readable option list in both themes */
+    .pw-admin select { color-scheme: light; }
+    .dark .pw-admin select { color-scheme: dark; }
+
+    .pw-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .pw-skeleton { background: linear-gradient(90deg, rgba(148,163,184,0.12), rgba(148,163,184,0.24), rgba(148,163,184,0.12)); background-size: 200% 100%; animation: pw-skeleton 1.4s ease-in-out infinite; }
+}
+
+@keyframes pw-skeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .pw-skeleton { animation: none; }
+}

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Loader2, Lock, Unlock, Mail, Pencil, Power, Search, ShieldCheck, GraduationCap, UserPlus, Users, X } from 'lucide-react';
 import WorkspacePage from '../../components/admin/WorkspacePage';
 import ConfirmationModal from '../../components/ConfirmationModal';
-import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, Toast, cardCls, formatDate, ghostBtn, inputCls, primaryBtn } from '../../components/admin/adminUi';
+import { Badge, EmptyState, ErrorBanner, LoadingRow, PanelIntro, Toast, cardCls, dangerGhostBtn, formatDate, ghostBtn, hintCls, inputCls, labelCls, primaryBtn, tableWrapCls, tbodyCls, tdCls, theadCls, thCls, trCls } from '../../components/admin/adminUi';
 import { apiError, passwordProblems, shareFailureCode, userManagementApi } from '../../services/userManagementApi';
 import { useAuth } from '../../auth/useAuth';
 import { ROLE_LABELS, creatableRoles, manageableRoles, isAdminRole } from '../../auth/roles';
@@ -10,35 +10,20 @@ import { ROLE_LABELS, creatableRoles, manageableRoles, isAdminRole } from '../..
 const PAGE_SIZE = 25;
 
 const RoleBadge = ({ role }) => (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap shadow-2xs ${role === 'SUPER_ADMIN'
-        ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'
-        : role === 'ADMIN'
-        ? 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900'
-        : 'bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'}`}>
-        {role === 'STUDENT' ? <GraduationCap size={12} className="shrink-0" /> : <ShieldCheck size={12} className="shrink-0" />}
-        <span>{ROLE_LABELS[role] || role}</span>
-    </span>
+    <Badge tone={role === 'SUPER_ADMIN' ? 'warning' : role === 'ADMIN' ? 'violet' : 'brand'} icon={role === 'STUDENT' ? GraduationCap : ShieldCheck}>
+        {ROLE_LABELS[role] || role}
+    </Badge>
 );
 
 const ActiveBadge = ({ active }) => (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap shadow-2xs ${active
-        ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
-        : 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60'}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-        <span>{active ? 'Active' : 'Deactivated'}</span>
-    </span>
+    <Badge tone={active ? 'brand' : 'danger'} dot>{active ? 'Active' : 'Deactivated'}</Badge>
 );
 
 const AccessBadge = ({ granted }) => (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap shadow-2xs ${granted
-        ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
-        : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'}`}>
-        {granted ? <Unlock size={11} className="shrink-0" /> : <Lock size={11} className="shrink-0" />}
-        <span>{granted ? 'Access Granted' : 'Access Locked'}</span>
-    </span>
+    <Badge tone={granted ? 'brand' : 'warning'} icon={granted ? Unlock : Lock}>{granted ? 'Access Granted' : 'Access Locked'}</Badge>
 );
 
-/** Modal frame shared by the create / details / reset dialogs. */
+/** Modal frame shared by the create / details / reset dialogs: fixed header, scrolling body, Escape closes. */
 const Dialog = ({ title, onClose, children, wide = false }) => {
     useEffect(() => {
         const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -46,14 +31,16 @@ const Dialog = ({ title, onClose, children, wide = false }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [onClose]);
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-            <div className={`relative z-10 w-full ${wide ? 'max-w-xl' : 'max-w-md'} my-auto ${cardCls} p-5 sm:p-6`}>
-                <div className="flex items-start justify-between gap-3 mb-4">
-                    <h2 className="text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">{title}</h2>
-                    <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"><X size={16} /></button>
+            <div className={`relative z-10 w-full ${wide ? 'max-w-xl' : 'max-w-md'} max-h-[calc(100vh-2rem)] flex flex-col ${cardCls} shadow-[0_24px_48px_-12px_rgba(15,23,42,0.35)]`}>
+                <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/30 rounded-t-xl shrink-0">
+                    <h2 className="pw-section-title">{title}</h2>
+                    <button type="button" onClick={onClose} aria-label="Close" className="-mr-2 p-2 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"><X size={16} /></button>
                 </div>
-                {children}
+                <div className="px-5 sm:px-6 py-5 overflow-y-auto">
+                    {children}
+                </div>
             </div>
         </div>
     );
@@ -61,9 +48,9 @@ const Dialog = ({ title, onClose, children, wide = false }) => {
 
 const Field = ({ label, hint, children, htmlFor }) => (
     <div>
-        <label htmlFor={htmlFor} className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{label}</label>
+        <label htmlFor={htmlFor} className={labelCls}>{label}</label>
         {children}
-        {hint && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">{hint}</p>}
+        {hint && <p className={hintCls}>{hint}</p>}
     </div>
 );
 
@@ -74,7 +61,7 @@ const PasswordField = ({ id, value, onChange, autoComplete = 'new-password' }) =
         <div className="relative">
             <input id={id} type={shown ? 'text' : 'password'} autoComplete={autoComplete} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputCls} pr-10`} />
             <button type="button" tabIndex={-1} onClick={() => setShown((v) => !v)} aria-label="Toggle password visibility"
-                className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer">
+                className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-r-lg cursor-pointer">
                 {shown ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
         </div>
@@ -82,7 +69,7 @@ const PasswordField = ({ id, value, onChange, autoComplete = 'new-password' }) =
 };
 
 const FormError = ({ children }) => children ? (
-    <div role="alert" className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 px-3 py-2 text-xs font-semibold">{children}</div>
+    <div role="alert" className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 px-3 py-2.5 text-[13px] font-medium leading-5">{children}</div>
 ) : null;
 
 /* ─────────────────────────── Create user ─────────────────────────── */
@@ -114,13 +101,13 @@ const CreateUserDialog = ({ onClose, onCreated, allowedRoles }) => {
 
     return (
         <Dialog title="Create account" onClose={onClose}>
-            <form onSubmit={submit} className="space-y-3.5" noValidate>
+            <form onSubmit={submit} className="space-y-4" noValidate>
                 <Field label="Role">
                     <div className={`grid gap-2 ${allowedRoles.length > 2 ? 'grid-cols-3' : allowedRoles.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} role="radiogroup" aria-label="Role">
                         {[['STUDENT', 'Student', GraduationCap], ['ADMIN', 'Admin', ShieldCheck], ['SUPER_ADMIN', 'Super Admin', ShieldCheck]].filter(([value]) => allowedRoles.includes(value)).map(([value, label, Icon]) => (
                             <button key={value} type="button" role="radio" aria-checked={form.role === value} onClick={() => set('role')(value)}
-                                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition-colors cursor-pointer ${form.role === value
-                                    ? 'border-[#5d8c2c] bg-[#5d8c2c]/10 text-[#4c7324] dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                className={`flex items-center justify-center gap-2 rounded-lg border min-h-[40px] px-3 py-2 text-sm font-semibold transition-colors cursor-pointer ${form.role === value
+                                    ? 'border-[#5d8c2c] bg-[#5d8c2c]/10 text-[#4c7324] ring-1 ring-[#5d8c2c]/30 dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-300'
                                     : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                                 <Icon size={15} />{label}
                             </button>
@@ -134,7 +121,7 @@ const CreateUserDialog = ({ onClose, onCreated, allowedRoles }) => {
                 </Field>
                 <Field label="Mobile number (optional)" htmlFor="um-phone"><input id="um-phone" type="tel" className={inputCls} value={form.phone} onChange={(e) => set('phone')(e.target.value)} maxLength={50} autoComplete="off" placeholder="+91 98765 43210" /></Field>
                 <FormError>{error}</FormError>
-                <div className="flex justify-end gap-2 pt-1">
+                <div className="flex justify-end gap-2 pt-2">
                     <button type="button" className={ghostBtn} onClick={onClose} disabled={busy}>Cancel</button>
                     <button type="submit" className={primaryBtn} disabled={busy}>{busy ? <><Loader2 size={14} className="animate-spin" /> Creating...</> : <><UserPlus size={14} /> Create {(ROLE_LABELS[form.role] || '').toLowerCase()}</>}</button>
                 </div>
@@ -168,11 +155,11 @@ const ResetPasswordDialog = ({ user, onClose, onDone }) => {
 
     return (
         <Dialog title="Replace password" onClose={onClose}>
-            <form onSubmit={submit} className="space-y-3.5" noValidate>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Set a new password for <span className="font-bold text-slate-900 dark:text-white">{user.email}</span>. Their current sessions are signed out. Share the new password with them through a secure channel.</p>
+            <form onSubmit={submit} className="space-y-4" noValidate>
+                <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">Set a new password for <span className="font-bold text-slate-900 dark:text-white">{user.email}</span>. Their current sessions are signed out. Share the new password with them through a secure channel.</p>
                 <Field label="New password" htmlFor="um-reset-password"><PasswordField id="um-reset-password" value={password} onChange={setPassword} /></Field>
                 <FormError>{error}</FormError>
-                <div className="flex justify-end gap-2 pt-1">
+                <div className="flex justify-end gap-2 pt-2">
                     <button type="button" className={ghostBtn} onClick={onClose} disabled={busy}>Cancel</button>
                     <button type="submit" className={primaryBtn} disabled={busy}>{busy ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : <><KeyRound size={14} /> Replace password</>}</button>
                 </div>
@@ -213,8 +200,8 @@ const DetailsDialog = ({ userId, onClose, onChanged, onResetPassword, onToggleAc
     };
 
     const row = (label, value) => (
-        <div className="flex justify-between gap-4 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0 text-sm">
-            <dt className="text-slate-500 dark:text-slate-400 font-semibold">{label}</dt>
+        <div className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 text-sm">
+            <dt className="text-slate-500 dark:text-slate-400 font-medium">{label}</dt>
             <dd className="text-slate-900 dark:text-slate-100 font-medium text-right break-all">{value || '—'}</dd>
         </div>
     );
@@ -240,7 +227,7 @@ const DetailsDialog = ({ userId, onClose, onChanged, onResetPassword, onToggleAc
                         {user.student_profile && row('Target role', user.student_profile.target_role)}
                         {user.student_profile && row('Onboarded', user.student_profile.is_onboarded ? 'Yes' : 'No')}
                     </dl>
-                    <div className="flex flex-wrap justify-end gap-2 mt-4">
+                    <div className="flex flex-wrap justify-end gap-2 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
                         {canManage && user.role === 'STUDENT' && (
                             <button
                                 type="button"
@@ -255,15 +242,15 @@ const DetailsDialog = ({ userId, onClose, onChanged, onResetPassword, onToggleAc
                         )}
                         {manageable.includes(user.role) && <button type="button" className={ghostBtn} onClick={() => setEditing(true)}><Pencil size={14} /> Edit</button>}
                         {canManage && <button type="button" className={ghostBtn} onClick={() => onResetPassword(user)}><KeyRound size={14} /> Replace password</button>}
-                        {canManage && <button type="button" className={ghostBtn} onClick={() => onToggleActive(user)}><Power size={14} /> {user.is_active ? 'Deactivate' : 'Activate'}</button>}
+                        {canManage && <button type="button" className={user.is_active ? dangerGhostBtn : ghostBtn} onClick={() => onToggleActive(user)}><Power size={14} /> {user.is_active ? 'Deactivate' : 'Activate'}</button>}
                     </div>
                 </>
             )}
             {user && editing && (
-                <form onSubmit={save} className="space-y-3.5" noValidate>
+                <form onSubmit={save} className="space-y-4" noValidate>
                     <Field label="Name" htmlFor="um-edit-name"><input id="um-edit-name" className={inputCls} value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} maxLength={150} /></Field>
                     <Field label="Mobile number (optional)" htmlFor="um-edit-phone"><input id="um-edit-phone" type="tel" className={inputCls} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} maxLength={50} /></Field>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Email, role and organization cannot be changed here.</p>
+                    <p className={hintCls}>Email, role and organization cannot be changed here.</p>
                     <FormError>{error}</FormError>
                     <div className="flex justify-end gap-2">
                         <button type="button" className={ghostBtn} onClick={() => { setEditing(false); setError(''); }} disabled={busy}>Cancel</button>
@@ -281,29 +268,29 @@ const BulkResultsDialog = ({ data, onClose }) => {
         <Dialog title="Credential Sharing Results" onClose={onClose} wide>
             <div className="space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-center">
-                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Selected</div>
-                        <div className="text-xl font-bold text-slate-800 dark:text-white mt-0.5">{data.total}</div>
+                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-center">
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Selected</div>
+                        <div className="text-xl font-semibold text-slate-800 dark:text-white mt-0.5">{data.total}</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-[#5d8c2c]/10 border border-[#5d8c2c]/30 text-center">
-                        <div className="text-xs font-semibold text-[#4c7324] dark:text-[#9fd05a]">Sent</div>
-                        <div className="text-xl font-bold text-[#4c7324] dark:text-[#9fd05a] mt-0.5">{data.sent}</div>
+                    <div className="p-3 rounded-lg bg-[#5d8c2c]/10 border border-[#5d8c2c]/30 text-center">
+                        <div className="text-xs font-medium text-[#4c7324] dark:text-[#9fd05a]">Sent</div>
+                        <div className="text-xl font-semibold text-[#4c7324] dark:text-[#9fd05a] mt-0.5">{data.sent}</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-center">
-                        <div className="text-xs font-semibold text-red-600 dark:text-red-400">Failed</div>
-                        <div className="text-xl font-bold text-red-600 dark:text-red-400 mt-0.5">{data.failed}</div>
+                    <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-center">
+                        <div className="text-xs font-medium text-red-600 dark:text-red-400">Failed</div>
+                        <div className="text-xl font-semibold text-red-600 dark:text-red-400 mt-0.5">{data.failed}</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-center">
-                        <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">Skipped</div>
-                        <div className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5">{data.skipped}</div>
+                    <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-center">
+                        <div className="text-xs font-medium text-amber-700 dark:text-amber-400">Skipped</div>
+                        <div className="text-xl font-semibold text-amber-700 dark:text-amber-400 mt-0.5">{data.skipped}</div>
                     </div>
                 </div>
 
-                <div className="text-[12px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <div className="text-[13px] leading-5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
                     <span className="font-semibold">Note:</span> Sent indicates the mail server accepted the message; delivery to the inbox is not guaranteed. Retained credentials for successful recipients were deleted.
                 </div>
 
-                <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/70">
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/70">
                     {(data.results || []).map((r, idx) => {
                         const isSent = r.status === 'sent';
                         const isFailed = r.status === 'failed';
@@ -315,11 +302,11 @@ const BulkResultsDialog = ({ data, onClose }) => {
                         return (
                             <div key={r.id || idx} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-xs">
                                 <div className="min-w-0">
-                                    <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{r.name || 'Student'}</div>
+                                    <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">{r.name || 'Student'}</div>
                                     <div className="text-slate-500 dark:text-slate-400 text-[11px] truncate">{r.email || (r.id ? `User ID ${r.id}` : '—')}</div>
                                 </div>
                                 <div className="flex sm:flex-col sm:items-end gap-1 shrink-0">
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${badgeCls}`}>
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide border uppercase ${badgeCls}`}>
                                         {r.status}
                                     </span>
                                     <span className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs text-right truncate" title={r.message}>
@@ -341,9 +328,111 @@ const BulkResultsDialog = ({ data, onClose }) => {
     );
 };
 
+/** True below the lg breakpoint: the user list switches from a table to one card per user (no sideways scrolling). */
+const useIsNarrow = () => {
+    const query = '(max-width: 1023px)';
+    const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(query).matches);
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+        const mq = window.matchMedia(query);
+        const onChange = (e) => setNarrow(e.matches);
+        setNarrow(mq.matches);
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+    }, []);
+    return narrow;
+};
+
+/** Assessment access badge and its Lock / Unlock switch (students only). */
+const AssessmentAccess = ({ u, canManage, accessBusyId, setAccessConfirm }) => (
+    u.role === 'STUDENT' ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <AccessBadge granted={Boolean(u.assessment_access_granted)} />
+            {canManage && u.role === 'STUDENT' && (
+                <button type="button" onClick={() => setAccessConfirm(u)}
+                    disabled={accessBusyId !== null}
+                    id={`assessment-access-btn-${u.id}`}
+                    aria-busy={accessBusyId === u.id}
+                    aria-label={`${u.assessment_access_granted ? 'Lock' : 'Unlock'} assessment access for ${u.email}`}
+                    title={u.assessment_access_granted ? 'Lock access to assessments' : 'Unlock access to assessments'}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50 ${
+                        u.assessment_access_granted
+                            ? 'border-amber-300/80 bg-amber-50/90 text-amber-800 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50'
+                            : 'border-[#5d8c2c]/40 bg-[#5d8c2c]/10 text-[#4c7324] hover:bg-[#5d8c2c]/20 hover:border-[#5d8c2c]/60 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                    {accessBusyId === u.id ? <Loader2 size={12} className="animate-spin" /> : u.assessment_access_granted ? <Lock size={12} /> : <Unlock size={12} />}
+                    <span>{u.assessment_access_granted ? 'Lock' : 'Unlock'}</span>
+                </button>
+            )}
+        </div>
+    ) : (
+        <span className="text-slate-400 dark:text-slate-500 font-medium">—</span>
+    )
+);
+
+/** View / Share / Replace password / Deactivate for one user (the same four actions in the table and in the cards). */
+const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentials, setConfirm, compact = false }) => (
+    <div className={`flex items-center gap-1.5 ${compact ? 'flex-nowrap justify-end [&_button]:min-h-[32px] [&_button]:px-2.5 [&_button]:py-1 [&_button]:text-[13px]' : 'flex-wrap'}`}>
+        <button
+            type="button"
+            className={ghostBtn}
+            onClick={() => setDialog({ type: 'details', userId: u.id, isSelf, canManage })}
+            aria-label={`View ${u.email}`}
+            title="View user details"
+        >
+            <Eye size={14} />
+            <span>View</span>
+        </button>
+        {canManage && u.role === 'STUDENT' && (
+            <button
+                type="button"
+                className={ghostBtn}
+                onClick={() => shareCredentials(u)}
+                disabled={sharingId !== null || !u.is_active}
+                aria-label={`Share login credentials with ${u.email}`}
+                aria-busy={sharingId === u.id}
+                title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? "E-mail this student's login details" : 'Set a new password with Replace password first'}
+            >
+                {sharingId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                <span>{sharingId === u.id ? 'Sending...' : 'Share'}</span>
+            </button>
+        )}
+        {canManage && (
+            <button
+                type="button"
+                className={ghostBtn}
+                onClick={() => setDialog({ type: 'reset', user: u })}
+                aria-label={`Replace password for ${u.email}`}
+                title="Replace password"
+            >
+                <KeyRound size={14} />
+            </button>
+        )}
+        {canManage && (
+            <button
+                type="button"
+                className={u.is_active ? dangerGhostBtn : ghostBtn}
+                onClick={() => setConfirm(u)}
+                aria-label={`${u.is_active ? 'Deactivate' : 'Activate'} ${u.email}`}
+                title={u.is_active ? 'Deactivate account' : 'Activate account'}
+            >
+                <Power size={14} />
+            </button>
+        )}
+    </div>
+);
+
+const Avatar = ({ u }) => (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-100 to-slate-200/70 dark:from-slate-800 dark:to-slate-700/60 ring-1 ring-slate-200 dark:ring-slate-700 text-[13px] font-semibold uppercase text-slate-600 dark:text-slate-300" aria-hidden="true">{(u.full_name || u.email || '?').charAt(0)}</span>
+);
+
+const SelfTag = () => <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">(you)</span>;
+
 /* ─────────────────────────── Page ─────────────────────────── */
 const UserManagementPage = () => {
     const { user: me } = useAuth();
+    const narrow = useIsNarrow();
     const [filters, setFilters] = useState({ q: '', role: '', status: '' });
     const [debouncedQ, setDebouncedQ] = useState('');
     const [page, setPage] = useState(1);
@@ -517,12 +606,12 @@ const UserManagementPage = () => {
 
     return (
         <WorkspacePage title="User Management" description="Create and manage the Student and Admin accounts that can sign in to PrepWin. There is no public sign-up: every account starts here.">
-            <div className="space-y-4">
+            <div className="space-y-5">
                 <PanelIntro onRefresh={load} loading={loading}>Passwords are stored securely and are never shown again after an account is created. Use Replace password to give someone a new one. Share e-mails a student their login details right after you create the account or replace the password.</PanelIntro>
 
                 <div className={`${cardCls} p-3 sm:p-4 flex flex-col lg:flex-row gap-3 lg:items-center`}>
                     <div className="relative flex-1 min-w-0">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" aria-hidden="true" />
                         <input aria-label="Search by name or email" placeholder="Search by name or email" className={`${inputCls} pl-9`} value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />
                     </div>
                     <select aria-label="Filter by role" className={`${inputCls} lg:w-40`} value={filters.role} onChange={(e) => { setFilters((f) => ({ ...f, role: e.target.value })); setPage(1); }}>
@@ -546,12 +635,12 @@ const UserManagementPage = () => {
                 </div>
 
                 {selectedIds.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#5d8c2c]/10 border border-[#5d8c2c]/30 text-slate-800 dark:text-slate-100">
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl bg-[#5d8c2c]/10 dark:bg-emerald-950/30 border border-[#5d8c2c]/30 dark:border-emerald-800/50 text-slate-800 dark:text-slate-100">
                         <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-[#5d8c2c] text-white text-xs font-bold">
+                            <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-[#5d8c2c] dark:bg-emerald-600 text-white text-xs font-semibold">
                                 {selectedIds.length}
                             </span>
-                            <span className="text-sm font-bold">
+                            <span className="text-sm font-semibold">
                                 {selectedIds.length} {selectedIds.length === 1 ? 'student' : 'students'} selected
                             </span>
                         </div>
@@ -593,12 +682,71 @@ const UserManagementPage = () => {
                         {debouncedQ || filters.role || filters.status ? 'Try a different search or clear the filters.' : 'Create the first Student or Admin account.'}
                     </EmptyState>
                 ) : (
-                    <div className={`${cardCls} overflow-hidden shadow-xs border border-slate-200/80 dark:border-slate-800`}>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left border-collapse min-w-[1180px]">
-                                <thead>
-                                    <tr className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/60 font-semibold select-none">
-                                        <th className="w-[52px] min-w-[52px] max-w-[52px] px-3 py-3.5 text-center">
+                    narrow ? (
+                        <div className="space-y-3">
+                        {displayedEligible.length > 0 && (
+                            <label className="flex items-center gap-2.5 px-1 text-[13px] font-medium text-slate-600 dark:text-slate-300 cursor-pointer w-fit">
+                                <input
+                                    type="checkbox"
+                                    id="select-all-students"
+                                    aria-label="Select all eligible students on this page"
+                                    checked={allSelected}
+                                    ref={(el) => { if (el) el.indeterminate = !allSelected && someSelected; }}
+                                    onChange={toggleSelectAll}
+                                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 cursor-pointer"
+                                />
+                                Select all students on this page
+                            </label>
+                        )}
+                        <ul className={`grid gap-3 grid-cols-[minmax(0,1fr)] min-[1000px]:grid-cols-[repeat(2,minmax(0,1fr))] ${loading ? 'opacity-70' : ''} transition-opacity`} aria-label="Users" aria-busy={loading}>
+                            {data.items.map((u) => {
+                                const isSelf = me && (Number(me.user_id) === u.id || Number(me.id) === u.id);
+                                const canManage = !isSelf && (
+                                    !me?.role ||
+                                    manageableRoles(me?.role).includes(u.role) ||
+                                    isAdminRole(me?.role)
+                                );
+                                const isEligibleStudent = canManage && u.role === 'STUDENT';
+                                return (
+                                    <li key={u.id} className={`${cardCls} p-4 space-y-3`}>
+                                        <div className="flex items-start gap-3">
+                                            {isEligibleStudent && (
+                                                <input
+                                                    type="checkbox"
+                                                    id={`select-user-${u.id}`}
+                                                    aria-label={`Select ${u.email}`}
+                                                    checked={selectedIds.includes(u.id)}
+                                                    onChange={() => toggleSelectOne(u.id)}
+                                                    className="mt-2 w-4 h-4 rounded border-slate-300 dark:border-slate-600 cursor-pointer"
+                                                />
+                                            )}
+                                            <Avatar u={u} />
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-medium text-slate-900 dark:text-slate-100 break-words">{u.full_name || '—'}{isSelf && <SelfTag />}</p>
+                                                <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400 truncate" title={u.email}>{u.email}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <RoleBadge role={u.role} />
+                                            <ActiveBadge active={u.is_active} />
+                                        </div>
+                                        {u.role === 'STUDENT' && <AssessmentAccess u={u} canManage={canManage} accessBusyId={accessBusyId} setAccessConfirm={setAccessConfirm} />}
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Last sign-in: {formatDate(u.last_login_at)}</p>
+                                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                                            <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} />
+                                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        </div>
+                    ) : (
+                    <div className={`${tableWrapCls} ${loading ? 'opacity-70' : ''} transition-opacity`} aria-busy={loading}>
+                        <div className="pw-scroll-x">
+                            <table className="w-full text-sm text-left border-collapse min-w-[1000px]">
+                                <thead className={theadCls}>
+                                    <tr className="select-none">
+                                        <th scope="col" className="w-[44px] min-w-[44px] max-w-[44px] px-3 py-3 text-center">
                                             <div className="flex items-center justify-center">
                                                 <input
                                                     type="checkbox"
@@ -608,20 +756,20 @@ const UserManagementPage = () => {
                                                     ref={(el) => { if (el) el.indeterminate = !allSelected && someSelected; }}
                                                     disabled={displayedEligible.length === 0}
                                                     onChange={toggleSelectAll}
-                                                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-[#5d8c2c] focus:ring-[#5d8c2c]/40 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                                 />
                                             </div>
                                         </th>
-                                        <th className="w-[170px] min-w-[160px] px-4 py-3.5 font-bold">Name</th>
-                                        <th className="w-[240px] min-w-[220px] px-4 py-3.5 font-bold">Email</th>
-                                        <th className="w-[125px] min-w-[115px] px-4 py-3.5 font-bold">Role</th>
-                                        <th className="w-[115px] min-w-[105px] px-4 py-3.5 font-bold">Status</th>
-                                        <th className="w-[210px] min-w-[200px] px-4 py-3.5 font-bold">Assessment</th>
-                                        <th className="w-[140px] min-w-[130px] px-4 py-3.5 font-bold hidden md:table-cell">Last sign-in</th>
-                                        <th className="w-[230px] min-w-[220px] px-4 py-3.5 font-bold text-right">Actions</th>
+                                        <th scope="col" className={`${thCls} !px-3 min-w-[120px]`}>Name</th>
+                                        <th scope="col" className={`${thCls} !px-3 min-w-[130px]`}>Email</th>
+                                        <th scope="col" className={`${thCls} !px-3 min-w-[110px]`}>Role</th>
+                                        <th scope="col" className={`${thCls} !px-3 min-w-[100px]`}>Status</th>
+                                        <th scope="col" className={`${thCls} !px-3 min-w-[140px]`}>Assessment</th>
+                                        <th scope="col" className={`${thCls} !px-3 min-w-[130px] hidden 2xl:table-cell`}>Last sign-in</th>
+                                        <th scope="col" className={`${thCls} !px-3 sticky right-0 z-[1] bg-slate-50 dark:bg-slate-950 text-right shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.15)]`}>Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                <tbody className={tbodyCls}>
                                     {data.items.map((u) => {
                                         const isSelf = me && (Number(me.user_id) === u.id || Number(me.id) === u.id);
                                         const canManage = !isSelf && (
@@ -631,8 +779,8 @@ const UserManagementPage = () => {
                                         );
                                         const isEligibleStudent = canManage && u.role === 'STUDENT';
                                         return (
-                                            <tr key={u.id} className="h-[72px] hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                                                <td className="w-[52px] min-w-[52px] max-w-[52px] px-3 py-3 align-middle text-center">
+                                            <tr key={u.id} className={`group h-[68px] ${trCls}`}>
+                                                <td className="w-[44px] min-w-[44px] max-w-[44px] px-3 py-3 align-middle text-center">
                                                     <div className="flex items-center justify-center">
                                                         {isEligibleStudent ? (
                                                             <input
@@ -641,106 +789,39 @@ const UserManagementPage = () => {
                                                                 aria-label={`Select ${u.email}`}
                                                                 checked={selectedIds.includes(u.id)}
                                                                 onChange={() => toggleSelectOne(u.id)}
-                                                                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-[#5d8c2c] focus:ring-[#5d8c2c]/40 cursor-pointer transition-colors"
+                                                                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 cursor-pointer"
                                                             />
                                                         ) : null}
                                                     </div>
                                                 </td>
-                                                <td className="w-[170px] min-w-[160px] px-4 py-3 align-middle">
-                                                    <div className="font-semibold text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug">
-                                                        {u.full_name || '—'}
-                                                        {isSelf && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">(you)</span>}
+                                                <td className={`${tdCls} !px-3`}>
+                                                    <div className="flex items-center gap-2.5">
+                                                        <Avatar u={u} />
+                                                        <div className="font-medium text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug">
+                                                            {u.full_name || '—'}
+                                                            {isSelf && <SelfTag />}
+                                                        </div>
                                                     </div>
                                                 </td>
-                                                <td className="w-[240px] min-w-[220px] px-4 py-3 align-middle">
-                                                    <div className="truncate max-w-[230px] text-slate-600 dark:text-slate-300 font-medium text-xs leading-normal" title={u.email}>
+                                                <td className={`${tdCls} !px-3`}>
+                                                    <div className="truncate max-w-[150px] text-slate-600 dark:text-slate-300 text-[13px] leading-normal" title={u.email}>
                                                         {u.email}
                                                     </div>
                                                 </td>
-                                                <td className="w-[125px] min-w-[115px] px-4 py-3 align-middle whitespace-nowrap">
+                                                <td className={`${tdCls} !px-3 whitespace-nowrap`}>
                                                     <RoleBadge role={u.role} />
                                                 </td>
-                                                <td className="w-[115px] min-w-[105px] px-4 py-3 align-middle whitespace-nowrap">
+                                                <td className={`${tdCls} !px-3 whitespace-nowrap`}>
                                                     <ActiveBadge active={u.is_active} />
                                                 </td>
-                                                <td className="w-[210px] min-w-[200px] px-4 py-3 align-middle">
-                                                    {u.role === 'STUDENT' ? (
-                                                        <div className="flex items-center gap-2 whitespace-nowrap">
-                                                            <AccessBadge granted={Boolean(u.assessment_access_granted)} />
-                                                            {canManage && u.role === 'STUDENT' && (
-                                                                <button type="button" onClick={() => setAccessConfirm(u)}
-                                                                    disabled={accessBusyId !== null}
-                                                                    id={`assessment-access-btn-${u.id}`}
-                                                                    aria-busy={accessBusyId === u.id}
-                                                                    aria-label={`${u.assessment_access_granted ? 'Lock' : 'Unlock'} assessment access for ${u.email}`}
-                                                                    title={u.assessment_access_granted ? 'Lock access to assessments' : 'Unlock access to assessments'}
-                                                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#5d8c2c]/40 ${
-                                                                        u.assessment_access_granted
-                                                                            ? 'border-amber-300/80 bg-amber-50/90 text-amber-800 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50'
-                                                                            : 'border-[#5d8c2c]/40 bg-[#5d8c2c]/10 text-[#4c7324] hover:bg-[#5d8c2c]/20 hover:border-[#5d8c2c]/60 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50'
-                                                                    } disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs`}
-                                                                >
-                                                                    {accessBusyId === u.id ? <Loader2 size={12} className="animate-spin" /> : u.assessment_access_granted ? <Lock size={12} /> : <Unlock size={12} />}
-                                                                    <span>{u.assessment_access_granted ? 'Lock' : 'Unlock'}</span>
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-slate-400 dark:text-slate-500 font-medium">—</span>
-                                                    )}
+                                                <td className={`${tdCls} !px-3`}>
+                                                    <AssessmentAccess u={u} canManage={canManage} accessBusyId={accessBusyId} setAccessConfirm={setAccessConfirm} />
                                                 </td>
-                                                <td className="w-[140px] min-w-[130px] px-4 py-3 align-middle text-slate-500 dark:text-slate-400 hidden md:table-cell whitespace-nowrap text-xs">
+                                                <td className={`${tdCls} !px-3 text-slate-500 dark:text-slate-400 hidden 2xl:table-cell whitespace-nowrap text-[13px]`}>
                                                     {formatDate(u.last_login_at)}
                                                 </td>
-                                                <td className="w-[230px] min-w-[220px] px-4 py-3 align-middle text-right">
-                                                    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                                                        <button
-                                                            type="button"
-                                                            className={ghostBtn}
-                                                            onClick={() => setDialog({ type: 'details', userId: u.id, isSelf, canManage })}
-                                                            aria-label={`View ${u.email}`}
-                                                            title="View user details"
-                                                        >
-                                                            <Eye size={14} />
-                                                            <span>View</span>
-                                                        </button>
-                                                        {canManage && u.role === 'STUDENT' && (
-                                                            <button
-                                                                type="button"
-                                                                className={ghostBtn}
-                                                                onClick={() => shareCredentials(u)}
-                                                                disabled={sharingId !== null || !u.is_active}
-                                                                aria-label={`Share login credentials with ${u.email}`}
-                                                                aria-busy={sharingId === u.id}
-                                                                title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? "E-mail this student's login details" : 'Set a new password with Replace password first'}
-                                                            >
-                                                                {sharingId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
-                                                                <span>{sharingId === u.id ? 'Sending...' : 'Share'}</span>
-                                                            </button>
-                                                        )}
-                                                        {canManage && (
-                                                            <button
-                                                                type="button"
-                                                                className={ghostBtn}
-                                                                onClick={() => setDialog({ type: 'reset', user: u })}
-                                                                aria-label={`Replace password for ${u.email}`}
-                                                                title="Replace password"
-                                                            >
-                                                                <KeyRound size={14} />
-                                                            </button>
-                                                        )}
-                                                        {canManage && (
-                                                            <button
-                                                                type="button"
-                                                                className={ghostBtn}
-                                                                onClick={() => setConfirm(u)}
-                                                                aria-label={`${u.is_active ? 'Deactivate' : 'Activate'} ${u.email}`}
-                                                                title={u.is_active ? 'Deactivate account' : 'Activate account'}
-                                                            >
-                                                                <Power size={14} />
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                <td className={`${tdCls} !px-3 sticky right-0 z-[1] bg-white dark:bg-[var(--pw-surface)] group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.15)]`}>
+                                                    <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} compact />
                                                 </td>
                                             </tr>
                                         );
@@ -749,10 +830,11 @@ const UserManagementPage = () => {
                             </table>
                         </div>
                     </div>
+                    )
                 )}
 
                 {data.total > PAGE_SIZE && (
-                    <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600 dark:text-slate-400">
                         <span>{data.total} users · page {page} of {pages}</span>
                         <div className="flex gap-2">
                             <button type="button" className={ghostBtn} disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>Previous</button>
@@ -826,9 +908,9 @@ const UserManagementPage = () => {
             {bulkSending && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Sending credentials">
                     <div className={`relative z-10 w-full max-w-sm ${cardCls} p-6 text-center space-y-3`}>
-                        <Loader2 size={36} className="mx-auto text-[#5d8c2c] animate-spin" />
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Sending Credentials</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <Loader2 size={36} className="mx-auto text-[#5d8c2c] dark:text-emerald-400 animate-spin" />
+                        <h3 className="pw-card-title">Sending Credentials</h3>
+                        <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400">
                             Processing emails for {selectedIds.length} {selectedIds.length === 1 ? 'student' : 'students'}... Please do not close this window.
                         </p>
                     </div>

@@ -17,9 +17,11 @@ const SharedLinkField = ({ role, onCopy }) => {
     return (
         <div className="flex flex-col sm:flex-row gap-2">
             <input readOnly value={url} onFocus={(e) => e.target.select()} aria-label={`Shared link for ${role.title}`}
-                className="flex-1 min-w-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono px-3 py-2 text-slate-700 dark:text-slate-300" />
-            <button type="button" className={primaryBtn} onClick={copy}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy link'}</button>
-            <a className={ghostBtn} href={url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Preview</a>
+                className="flex-1 min-w-0 min-h-[40px] rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/70 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none text-[13px] font-mono px-3 py-2 text-slate-600 dark:text-slate-300 truncate focus:outline-none focus:ring-2 focus:ring-[#5d8c2c]/25 dark:focus:ring-emerald-500/30 focus:border-[#5d8c2c] dark:focus:border-emerald-500 transition-colors" />
+            <div className="flex gap-2 shrink-0">
+                <button type="button" className={`${primaryBtn} flex-1 sm:flex-none`} onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />} {copied ? 'Copied' : 'Copy link'}</button>
+                <a className={`${ghostBtn} flex-1 sm:flex-none`} href={url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" /> Preview</a>
+            </div>
         </div>
     );
 };

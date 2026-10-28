@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Sun, Moon, LogOut, User } from 'lucide-react';
+import { Menu, Sun, Moon, LogOut } from 'lucide-react';
 import CandidateLoginModal from './CandidateLoginModal';
 import { useAuth } from '../auth/useAuth';
 import { ROLE_LABELS } from '../auth/roles';
@@ -28,9 +28,24 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
 
     const [showLoginModal, setShowLoginModal] = useState(false);
 
+    const signOutBtn = (title) => (
+        <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-medium text-slate-700 dark:text-slate-200 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg border border-slate-300/80 dark:border-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] dark:shadow-none hover:border-red-200 dark:hover:border-red-900 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+            title={title}
+        >
+            <LogOut className="w-4 h-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Sign Out</span>
+        </button>
+    );
+
+    const studentTab = (active) => `text-sm font-semibold px-3.5 py-1.5 rounded-lg border transition-colors ${active ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'}`;
+    const accountName = profile.email || 'Administrator';
+
     return (
         <>
-            <nav className="h-16 bg-white dark:bg-[#0d1527] border-b border-gray-200 dark:border-slate-800 fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-3 sm:px-6 shadow-sm transition-colors">
+            <nav className="h-16 bg-white/95 dark:bg-[var(--pw-surface)] backdrop-blur border-b border-slate-200/90 dark:border-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] fixed top-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-3 sm:px-6 transition-colors">
                 {/* Logo & Mobile Menu Section */}
                 <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                     {onToggleMobileMenu && (
@@ -38,17 +53,21 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                             type="button"
                             onClick={onToggleMobileMenu}
                             aria-label="Toggle navigation menu"
-                            className="md:hidden p-2 text-gray-700 dark:text-slate-300 hover:text-[#5d8c2c] dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-slate-800/80 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[#5d8c2c]/30"
+                            className="md:hidden p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50"
                         >
                             <Menu className="w-5 h-5" />
                         </button>
                     )}
-                    <Link to={isAdminRoute ? "/admin/dashboard" : "/"} className="flex items-center gap-3 focus:outline-none min-w-0 shrink-0">
-                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-[38px] w-auto object-contain shrink-0" />
-                        <div className="hidden sm:block w-px h-6 bg-gray-200 dark:bg-slate-800 shrink-0" />
-                        <div className="flex flex-col justify-center">
-                            <span className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight leading-none">PrepWin</span>
-                            <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 leading-none mt-0.5">Job Readiness Platform</span>
+                    <Link to={isAdminRoute ? "/admin/dashboard" : "/"} className="flex items-center gap-3 min-w-0 shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50">
+                        <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-9 w-auto object-contain shrink-0" />
+                        <div className="hidden sm:block w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
+                        <div className="flex flex-col justify-center min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-[19px] font-bold text-slate-900 dark:text-white tracking-[-0.03em] leading-none shrink-0">PrepWin</span>
+                                <span className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 shrink-0" aria-hidden="true" />
+                                <span className="text-[14px] sm:text-[15px] font-semibold text-slate-700 dark:text-slate-200 tracking-tight leading-none truncate">Assessment Management</span>
+                            </div>
+                            <span className="hidden sm:block text-[11px] font-medium tracking-wide text-slate-400 dark:text-slate-500 leading-none mt-1 self-start">Job Readiness Platform</span>
                         </div>
                     </Link>
                 </div>
@@ -59,18 +78,11 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                         {profile.role === 'STUDENT' && (
                             <>
                                 {hasCompletedTask && (
-                                    <Link
-                                        to="/student/dashboard"
-                                        className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/student') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-                                    >
+                                    <Link to="/student/dashboard" className={studentTab(location.pathname.startsWith('/student'))}>
                                         Student Dashboard
                                     </Link>
                                 )}
-                                <Link
-                                    to="/assessment/setup"
-                                    data-fallback="/student/dashboard"
-                                    className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-all ${location.pathname.startsWith('/assessment') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-                                >
+                                <Link to="/assessment/setup" data-fallback="/student/dashboard" className={studentTab(location.pathname.startsWith('/assessment'))}>
                                     Student Assessment
                                 </Link>
                             </>
@@ -78,62 +90,49 @@ const GlobalNavbar = ({ onToggleMobileMenu }) => {
                     </div>
                 )}
 
-                {/* Right Section: Profile & Actions */}
-                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
+                {/* Right Section: Theme, account, sign out */}
+                <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                     {/* Theme Toggle Button */}
                     <button
                         type="button"
                         onClick={toggleTheme}
                         aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                        className="p-1.5 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/80 rounded-lg transition-colors focus:outline-none"
+                        className="flex h-9 w-9 items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50"
                         title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                     >
-                        {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-slate-600" />}
+                        {theme === 'dark' ? <Sun className="w-[18px] h-[18px] text-amber-400" /> : <Moon className="w-[18px] h-[18px]" />}
                     </button>
 
-                    <div className="h-8 w-px bg-gray-200 dark:bg-slate-800 mx-2" />
+                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
 
                     {/* ADMIN PORTAL IDENTITY & ACTIONS (server-verified session) */}
                     {isAdminRoute ? (
-                        <div className="flex items-center gap-3 sm:gap-4">
-                            <div className="hidden sm:flex flex-col items-end">
-                                <span className="text-xs font-bold text-gray-900 dark:text-slate-100 truncate max-w-[180px]">
-                                    {profile.email || 'Administrator'}
+                        <div className="flex items-center gap-3">
+                            <div className="hidden sm:flex items-center gap-2.5 min-w-0">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5d8c2c]/20 to-[#5d8c2c]/5 dark:from-emerald-500/25 dark:to-emerald-500/5 ring-1 ring-[#5d8c2c]/25 dark:ring-emerald-500/30 text-[13px] font-semibold uppercase text-[#4c7324] dark:text-emerald-300" aria-hidden="true">
+                                    {accountName.charAt(0)}
                                 </span>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                    {profile.organization_name && (
-                                        <span className="text-[10px] text-gray-500 dark:text-slate-400 truncate max-w-[120px]">
-                                            {profile.organization_name}
-                                        </span>
-                                    )}
-                                    <span className="text-[10px] font-semibold text-[#5d8c2c] dark:text-emerald-300 uppercase tracking-wider bg-green-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-green-200 dark:border-emerald-800/60">
-                                        {ROLE_LABELS[profile.role] || 'Admin'}
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-[13px] font-semibold leading-4 tracking-tight text-slate-900 dark:text-slate-100 truncate max-w-[200px]">
+                                        {accountName}
                                     </span>
+                                    <div className="flex items-center gap-1.5 mt-1 leading-none">
+                                        {profile.organization_name && (
+                                            <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[120px]">
+                                                {profile.organization_name}
+                                            </span>
+                                        )}
+                                        <span className="text-[10px] font-semibold text-[#4c7324] dark:text-emerald-300 uppercase tracking-[0.08em] bg-[#5d8c2c]/10 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded ring-1 ring-inset ring-[#5d8c2c]/25 dark:ring-emerald-800/60 whitespace-nowrap">
+                                            {ROLE_LABELS[profile.role] || 'Admin'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={handleSignOut}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 transition-colors cursor-pointer"
-                                title="Sign Out of Admin Portal"
-                            >
-                                <LogOut className="w-3.5 h-3.5 text-red-500" />
-                                <span className="hidden sm:inline">Sign Out</span>
-                            </button>
+                            {signOutBtn('Sign Out of Admin Portal')}
                         </div>
                     ) : (
                         /* STUDENT / PUBLIC IDENTITY & ACTIONS */
-                        <>
-                            <button
-                                type="button"
-                                onClick={handleSignOut}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 transition-colors cursor-pointer"
-                                title="Sign Out"
-                            >
-                                <LogOut className="w-3.5 h-3.5 text-red-500" />
-                                <span className="hidden sm:inline">Sign Out</span>
-                            </button>
-                        </>
+                        signOutBtn('Sign Out')
                     )}
                 </div>
             </nav>

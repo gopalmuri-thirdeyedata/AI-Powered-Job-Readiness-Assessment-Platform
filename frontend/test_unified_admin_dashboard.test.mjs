@@ -147,7 +147,8 @@ describe('Admin dashboard structure and requirements', () => {
         assert.ok(dashboardSrc.includes('<OverviewKpis') && !/<JobRoleManager|<SharedLinkManager|<CandidateResultsTable/.test(dashboardSrc), 'Overview renders only the overview');
         assert.ok(dashboardSrc.includes('Create job assessments, share assessment links, and review candidate results.'));
         assert.ok(!dashboardSrc.includes('Upload student resumes'), 'the page no longer describes the email-invitation flow');
-        for (const kept of ['Assessment Management']) assert.ok(dashboardSrc.includes(kept), `existing title preserved: ${kept}`);
+        for (const kept of ['Overview']) assert.ok(dashboardSrc.includes(kept), `existing title preserved: ${kept}`);
+        assert.ok(read('src/components/GlobalNavbar.jsx').includes('Assessment Management'), 'top header renders Assessment Management');
         assert.ok(read('src/components/admin/WorkspacePage.jsx').includes('PrepWin Admin Workspace'));
         // no horizontal workflow tabs anywhere
         for (const [name, src] of [['Dashboard', dashboardSrc], ['WorkspacePage', read('src/components/admin/WorkspacePage.jsx')]]) {

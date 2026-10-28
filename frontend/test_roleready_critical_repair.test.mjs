@@ -61,7 +61,7 @@ describe('RoleReady Critical Repair — Authentication, Routing, and Integration
 
     test('6. Dashboard.jsx replaces old Hiring Control Panel and legacy command center with Assessment Management', () => {
         assert.ok(!dashboardCode.includes('Hiring Control Panel'), 'Old Hiring Control Panel title must not exist');
-        assert.ok(dashboardCode.includes('Assessment Management'), 'Dashboard must render Assessment Management');
+        assert.ok(dashboardCode.includes('title="Overview"'), 'Dashboard must render Overview');
         assert.ok(dashboardCode.includes('Create job assessments, share assessment links, and review candidate results.'), 'Dashboard describes the shared-link workflow');
         assert.ok(!dashboardCode.includes('Upload student resumes, send assessment invitations'), 'the old invitation description no longer misdescribes the workspace');
         assert.ok(!dashboardCode.includes('dispatchBatch') && !dashboardCode.includes('getTrackingData'), 'the legacy email-invitation flow is not part of the workspace');

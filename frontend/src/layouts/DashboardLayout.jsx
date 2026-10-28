@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
     LayoutDashboard,
     Briefcase,
@@ -29,37 +29,28 @@ const SidebarItem = ({ icon: Icon, label, path, isOpen, onClick, scope }) => {
         : location.pathname === path;
 
     return (
-        <Link to={path} onClick={onClick} className="focus:outline-none group block">
-            <div
-                className={`relative flex items-center transition-all duration-300 cursor-pointer ${isOpen
-                    ? 'gap-3 px-4 py-3 mx-3 rounded-xl ' + (isActive ? 'bg-[#5d8c2c] dark:bg-emerald-600 text-white shadow-lg' : 'text-slate-800 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:text-black dark:hover:text-white')
-                    : 'w-12 h-12 mx-auto justify-center rounded-xl ' + (isActive ? 'text-[#5d8c2c] dark:text-emerald-400 bg-white dark:bg-slate-800 shadow-xs' : 'text-slate-700 dark:text-slate-400 hover:text-[#5d8c2c] dark:hover:text-emerald-400 hover:bg-white/40 dark:hover:bg-slate-800/40')
-                    }`}
-            >
-                {isActive && (
-                    <motion.div
-                        layoutId={`active-pill-${scope}`}
-                        className={`absolute ${isOpen ? 'left-[-12px] w-1 h-7' : 'left-[-8px] w-1.5 h-6'} bg-[#5d8c2c] dark:bg-emerald-500 rounded-r-full shadow-[0_0_15px_rgba(93,140,44,0.5)] dark:shadow-[0_0_15px_rgba(16,185,129,0.5)]`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.2 }}
-                    />
-                )}
-
-                <Icon size={22} className={`shrink-0 z-10 transition-colors ${isActive ? (isOpen ? 'text-white' : 'text-[#5d8c2c] dark:text-emerald-400') : 'text-slate-700 dark:text-slate-400 group-hover:scale-110 group-hover:text-slate-900 dark:group-hover:text-white'}`} />
-
-                {isOpen && (
-                    <motion.span
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        transition={{ duration: 0.2 }}
-                        className={`text-[16px] font-semibold tracking-tight whitespace-nowrap z-10 ${isActive ? 'text-white' : 'text-slate-800 dark:text-slate-200 group-hover:text-black dark:group-hover:text-white'}`}
-                    >
-                        {label}
-                    </motion.span>
-                )}
-            </div>
+        <Link
+            to={path}
+            onClick={onClick}
+            title={isOpen ? undefined : label}
+            aria-label={isOpen ? undefined : label}
+            aria-current={isActive ? 'page' : undefined}
+            className={`group relative flex items-center rounded-lg text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50 ${isOpen ? 'h-10 gap-3 px-3 mx-3' : 'h-10 w-10 mx-auto justify-center'} ${isActive
+                ? 'bg-[#5d8c2c]/[0.09] dark:bg-emerald-500/10 ring-1 ring-inset ring-[#5d8c2c]/15 dark:ring-emerald-400/15 text-[#4c7324] dark:text-emerald-300 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}
+        >
+            {isActive && (
+                <motion.span
+                    layoutId={`active-pill-${scope}`}
+                    className={`absolute ${isOpen ? '-left-3' : '-left-[21px]'} top-2 bottom-2 w-[3px] rounded-r-full bg-[#5d8c2c] dark:bg-emerald-400`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                    aria-hidden="true"
+                />
+            )}
+            <Icon size={18} strokeWidth={isActive ? 2.1 : 1.8} className={`shrink-0 transition-colors ${isActive ? '' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-200'}`} aria-hidden="true" />
+            {isOpen && <span className="whitespace-nowrap truncate">{label}</span>}
         </Link>
     );
 };
@@ -69,6 +60,7 @@ const DashboardLayout = () => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
+    const reduceMotion = useReducedMotion();
 
     // Close mobile menu on route change
     useEffect(() => {
@@ -86,17 +78,16 @@ const DashboardLayout = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isMobileMenuOpen]);
 
+    const groupHeading = (text, isOpen) => (isOpen
+        ? <h3 className="px-6 mb-2 text-[10.5px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-[0.14em]">{text}</h3>
+        : <div className="mx-auto mb-2 h-px w-6 bg-slate-200 dark:bg-slate-800" aria-hidden="true" />);
+
     const renderNavItems = (isOpen, onItemClick, scope) => (
-        <div className="py-6 space-y-6">
+        <nav className="py-5 space-y-7" aria-label="Admin sections">
             {/* Assessment Workspace */}
             <div>
-                {isOpen && (
-                    <h3 className="text-[11px] font-black text-[#5d8c2c] dark:text-emerald-400 uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c] dark:bg-emerald-400" /> PrepWin Assessment Suite
-                    </h3>
-                )}
-                {!isOpen && <div className="h-2" />}
-                <div className={isOpen ? "space-y-1.5" : "space-y-3"}>
+                {groupHeading('PrepWin Assessment Suite', isOpen)}
+                <div className="space-y-1">
                     <SidebarItem icon={LayoutDashboard} label="Overview" path={WORKFLOW_ROUTES.overview} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                     <SidebarItem icon={Briefcase} label="Job Roles & Blueprints" path={WORKFLOW_ROUTES.roles} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                     <SidebarItem icon={Link2} label="Shared Links" path={WORKFLOW_ROUTES.links} isOpen={isOpen} onClick={onItemClick} scope={scope} />
@@ -106,20 +97,16 @@ const DashboardLayout = () => {
 
             {/* Administration */}
             <div>
-                {isOpen && (
-                    <h3 className="text-[11px] font-black text-[#5d8c2c] dark:text-emerald-400 uppercase tracking-[0.2em] mb-4 px-6 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#5d8c2c] dark:bg-emerald-400" /> Administration
-                    </h3>
-                )}
-                <div className={isOpen ? "space-y-1.5" : "space-y-3"}>
+                {groupHeading('Administration', isOpen)}
+                <div className="space-y-1">
                     <SidebarItem icon={UserCog} label="User Management" path={WORKFLOW_ROUTES.users} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                 </div>
             </div>
-        </div>
+        </nav>
     );
 
     return (
-        <div className="h-screen bg-[#F8FAFC] dark:bg-[#0B1220] flex flex-col overflow-hidden font-sans antialiased text-slate-900 dark:text-slate-100 selection:bg-green-100 selection:text-green-900 transition-colors">
+        <div className="pw-admin h-screen bg-[var(--pw-bg)] flex flex-col overflow-hidden font-sans antialiased text-[var(--pw-text)] selection:bg-green-100 selection:text-green-900 transition-colors">
             {/* 1. Global Navbar (Fixed Height) */}
             <div className="flex-none z-50 relative">
                 <GlobalNavbar onToggleMobileMenu={() => setIsMobileMenuOpen(prev => !prev)} />
@@ -139,7 +126,7 @@ const DashboardLayout = () => {
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: 0.2 }}
                                 onClick={() => setIsMobileMenuOpen(false)}
-                                className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 md:hidden"
+                                className="fixed inset-0 bg-slate-900/50 z-50 md:hidden"
                                 aria-hidden="true"
                             />
 
@@ -149,27 +136,27 @@ const DashboardLayout = () => {
                                 animate={{ x: 0 }}
                                 exit={{ x: '-100%' }}
                                 transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-                                className="fixed top-0 bottom-0 left-0 w-72 max-w-[85vw] bg-[#ecefec] dark:bg-[#0f172a] z-50 shadow-2xl flex flex-col border-r border-[#d9e2d9] dark:border-slate-800 md:hidden"
+                                className="fixed top-0 bottom-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-[var(--pw-surface)] z-50 shadow-2xl flex flex-col border-r border-slate-200 dark:border-slate-800 md:hidden"
                                 aria-label="Mobile Navigation"
                             >
                                 {/* Drawer Header */}
-                                <div className="h-16 px-5 border-b border-[#d9e2d9] dark:border-slate-800 flex items-center justify-between bg-white dark:bg-[#0f172a] flex-shrink-0">
+                                <div className="h-16 px-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
                                     <div className="flex items-center gap-3">
                                         <img src="/logo_main.png" alt="ThirdEye Data Logo" className="h-7 w-auto object-contain" />
-                                        <span className="text-lg font-bold text-[#5d8c2c] dark:text-emerald-400 tracking-tight">PrepWin</span>
+                                        <span className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">PrepWin</span>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setIsMobileMenuOpen(false)}
                                         aria-label="Close navigation menu"
-                                        className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-800/80 transition-colors focus:outline-none focus:ring-2 focus:ring-[#5d8c2c]/40"
+                                        className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50"
                                     >
                                         <X size={20} />
                                     </button>
                                 </div>
 
                                 {/* Drawer Menu List */}
-                                <div className="flex-1 overflow-y-auto no-scrollbar">
+                                <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
                                     {renderNavItems(true, () => setIsMobileMenuOpen(false), 'drawer')}
                                 </div>
                             </motion.aside>
@@ -181,31 +168,31 @@ const DashboardLayout = () => {
                 <motion.aside
                     initial={false}
                     animate={{ width: isSidebarOpen ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED }}
-                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                    className="hidden md:flex bg-[#ecefec] dark:bg-[#0f172a] border-r border-[#d9e2d9] dark:border-slate-800 flex-col h-full z-40 relative shadow-xs flex-shrink-0 transition-colors"
+                    transition={{ duration: reduceMotion ? 0 : 0.25, ease: [0.22, 1, 0.36, 1] }}
+                    className="hidden md:flex bg-white dark:bg-[var(--pw-surface)] border-r border-slate-200 dark:border-slate-800 flex-col h-full z-40 relative flex-shrink-0 transition-colors"
                     aria-label="Sidebar Navigation"
                 >
                     {/* Collapse/Expand Toggle Button */}
-                    <div className="absolute -right-3 top-6 z-50">
+                    <div className="absolute -right-3 top-5 z-50">
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(!isSidebarOpen)}
                             aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-                            className="p-1 rounded-full bg-white dark:bg-slate-800 text-[#5d8c2c] dark:text-emerald-400 shadow-md hover:shadow-lg hover:scale-110 transition-all border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#5d8c2c]/30 dark:focus:ring-emerald-500/30"
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-[#4c7324] dark:hover:text-emerald-300 shadow-sm border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/50"
                         >
-                            {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                            {isSidebarOpen ? <ChevronLeft size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
                         </button>
                     </div>
 
                     {/* Scrollable Desktop Menu */}
-                    <div className="flex-1 overflow-y-auto no-scrollbar">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
                         {renderNavItems(isSidebarOpen, null, 'desktop')}
                     </div>
                 </motion.aside>
 
                 {/* Main Content Area */}
-                <main className="flex-1 min-w-0 h-full overflow-y-auto bg-slate-50/50 dark:bg-[#0B1220] p-3 sm:p-5 md:p-6 relative scroll-smooth w-full transition-colors">
-                    <div className="w-full max-w-full pb-16">
+                <main className="flex-1 min-w-0 h-full overflow-y-auto bg-[var(--pw-bg)] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 relative scroll-smooth w-full transition-colors">
+                    <div className="w-full max-w-full">
                         <Outlet />
                     </div>
                 </main>

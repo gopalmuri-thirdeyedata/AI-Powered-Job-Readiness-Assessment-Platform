@@ -14,7 +14,7 @@ const Dashboard = () => {
     if (legacyTab && legacyTab !== 'overview' && WORKFLOW_ROUTES[legacyTab]) return <Navigate to={WORKFLOW_ROUTES[legacyTab]} replace />;
 
     return (
-        <WorkspacePage title="Assessment Management" description="Create job assessments, share assessment links, and review candidate results.">
+        <WorkspacePage title="Overview" description="Create job assessments, share assessment links, and review candidate results.">
             <OverviewKpis onNavigate={goTo} />
         </WorkspacePage>
     );
