@@ -170,7 +170,6 @@ describe('structure: no Clerk, no sign-up, one login, no stored credentials', ()
         const pkg = JSON.parse(read('package.json'));
         assert.equal(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((d) => d.includes('clerk')), false);
         assert.equal(/clerk/i.test(read('vite.config.js')), false);
-        assert.equal(/clerk/i.test(read('.env.example')) || /clerk/i.test(read('.env.production.example')), false);
     });
 
     test('11. there is no sign-up route, page, link or API call anywhere', () => {

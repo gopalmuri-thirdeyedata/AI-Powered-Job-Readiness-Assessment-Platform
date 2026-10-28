@@ -176,9 +176,8 @@ cd frontend
 # Install dependencies
 npm install
 
-# Configure environment
-cp .env.example .env.local
-# Set VITE_API_URL=http://localhost:8000 and your Clerk publishable key
+# No env file needed: in dev the API defaults to http://<host>:8000
+# (optionally set VITE_API_URL to override)
 
 # Launch Vite development server
 npm run dev
