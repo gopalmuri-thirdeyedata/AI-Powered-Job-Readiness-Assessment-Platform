@@ -130,6 +130,13 @@ def login_url() -> str:
     return f"{base}/student/login"
 
 
+RECOMMENDED_SITES_HEADING = "Recommended Websites"
+RECOMMENDED_SITES_INTRO = "We also recommend exploring the following platforms to enhance your learning and interview preparation:"
+RECOMMENDED_SITES_OUTRO = "Visit these websites to explore the available learning resources and interview preparation opportunities."
+RECOMMENDED_SITES = (("Neev Learning Platform", "https://neev.learningpath.ai/"),
+                     ("Interviewer Platform", "https://interviewer.learningpath.ai/"))
+
+
 @dataclass(frozen=True)
 class RenderedCredentials:
     subject: str
@@ -146,8 +153,13 @@ def render_email(*, student_name: Optional[str], student_email: str, password: s
         f"Hello {name},", "", "Your PrepWin student account is ready.", "", "Your login details are:", "",
         f"Login Email: {student_email}", f"Password: {password}", f"Student Login: {url}", "",
         "How to log in", *[f"{i}. {s}" for i, s in enumerate(steps, 1)], "",
-        "Keep your login credentials private.", "", "Regards,", "PrepWin Team"])
+        "Keep your login credentials private.", "",
+        RECOMMENDED_SITES_HEADING, "", RECOMMENDED_SITES_INTRO, "",
+        *[f"- {site}: {site_url}" for site, site_url in RECOMMENDED_SITES], "",
+        RECOMMENDED_SITES_OUTRO, "", "Regards,", "PrepWin Team"])
     items = "".join(f'<li style="margin:0 0 6px 0;">{escape(s)}</li>' for s in steps)
+    sites = "".join(f'<li style="margin:0 0 6px 0;">{escape(site)}: <a href="{escape(site_url, quote=True)}" style="color:#4c7324;word-break:break-all;">{escape(site_url)}</a></li>'
+                    for site, site_url in RECOMMENDED_SITES)
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(SUBJECT)}</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
@@ -169,6 +181,10 @@ def render_email(*, student_name: Optional[str], student_email: str, password: s
 <p style="margin:18px 0 8px 0;font-weight:bold;">How to log in</p>
 <ol style="margin:0 0 18px 0;padding-left:20px;font-size:14px;">{items}</ol>
 <p style="margin:0 0 18px 0;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:14px;">Keep your login credentials private.</p>
+<p style="margin:0 0 8px 0;font-weight:bold;">{escape(RECOMMENDED_SITES_HEADING)}</p>
+<p style="margin:0 0 8px 0;font-size:14px;">{escape(RECOMMENDED_SITES_INTRO)}</p>
+<ul style="margin:0 0 12px 0;padding-left:20px;font-size:14px;">{sites}</ul>
+<p style="margin:0 0 18px 0;font-size:14px;">{escape(RECOMMENDED_SITES_OUTRO)}</p>
 <p style="margin:0;">Regards,<br>PrepWin Team</p>
 </td></tr></table></td></tr></table></body></html>"""
     return RenderedCredentials(subject=SUBJECT, html=html, text=text)

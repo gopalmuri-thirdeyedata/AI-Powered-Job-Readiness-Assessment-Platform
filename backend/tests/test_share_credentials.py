@@ -409,6 +409,24 @@ def test_template_escapes_html_and_has_no_placeholders():
     assert cd.render_email(student_name=None, student_email="x@y.org", password="p", url="u").text.startswith("Hello Student,")
 
 
+def test_template_has_recommended_websites_and_keeps_login_unchanged():
+    url = "https://app.test/student/login"
+    r = cd.render_email(student_name="Eve", student_email="eve@students.example.org", password="Pw-1234", url=url)
+    sites = [("Neev Learning Platform", "https://neev.learningpath.ai/"), ("Interviewer Platform", "https://interviewer.learningpath.ai/")]
+    for name, link in sites:
+        assert f'<a href="{link}"' in r.html and f">{link}</a>" in r.html and name in r.html
+        assert f"- {name}: {link}" in r.text
+    for body in (r.html, r.text):
+        assert "Recommended Websites" in body
+        assert "We also recommend exploring the following platforms to enhance your learning and interview preparation:" in body
+        assert "Visit these websites to explore the available learning resources and interview preparation opportunities." in body
+        assert body.index("Keep your login credentials private.") < body.index("Recommended Websites") < body.index("Regards,")
+    # the existing login button / link, username and password are untouched
+    assert f'<a href="{url}" style="display:inline-block' in r.html and ">Open PrepWin Student Login</a>" in r.html
+    assert f"Student Login: {url}" in r.text and "Login Email: eve@students.example.org" in r.text and "Password: Pw-1234" in r.text
+    assert "eve@students.example.org" in r.html and "Pw-1234" in r.html
+
+
 def test_encryption_roundtrip_key_binding_and_explicit_key(monkeypatch):
     token = cd._seal(7, "s3cret!")
     assert "s3cret" not in token and cd._open(7, token) == "s3cret!"
