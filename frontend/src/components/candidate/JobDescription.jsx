@@ -1,13 +1,12 @@
 import React, { useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 /**
- * The job description on the assessment opening page. The server sends it as text that an administrator typed or uploaded, usually
- * Markdown (`## Heading`, `**bold**`, `- bullet`) and sometimes plain text.
+ * The job description on the candidate assessment opening page.
+ * Displays a concise initial job overview (short role summary + compact key skills tags)
+ * with a single collapsible control to view the complete job description.
  *
- * This is a deliberately small renderer that builds React ELEMENTS only: nothing is ever turned into HTML, so a `<script>` or `<img onerror>`
- * inside a description is shown as harmless visible text, and the only thing that can become a link is an explicit http(s) URL.
- * Supported: # headings, **bold** / __bold__, *italic*, `code`, [text](https://...), - / * / + / numbered lists and paragraphs; a plain-text
- * description (no Markdown at all) renders as one paragraph per line. A long description starts as a compact preview with Show more / Show less.
+ * Safe rendering: builds React elements only without HTML injection.
  */
 
 const HEADING = /^#{1,6}\s+(.*?)\s*#*\s*$/;
@@ -65,9 +64,131 @@ export const renderInline = (text, keyPrefix = 'i') => {
     return out;
 };
 
+/** Extract a concise 2-3 line role summary from the JD content. */
+export const extractRoleSummary = (raw, title = '') => {
+    if (!raw) return '';
+    const text = String(raw).replace(/\r\n?/g, '\n');
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+    let summary = '';
+    let inSummaryHeading = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.startsWith('```') || /^[-*_]{3,}$/.test(line)) continue;
+
+        if (/^#{1,6}\s*(?:about\s+(?:the\s+)?(?:role|job|us|position)|role\s+overview|job\s+overview|summary|overview)\b/i.test(line)) {
+            inSummaryHeading = true;
+            continue;
+        }
+
+        if (/^#{1,6}\s+/.test(line)) {
+            if (inSummaryHeading) break;
+            continue;
+        }
+
+        if (/^[-*+•\d.]\s+/.test(line)) {
+            if (!summary && inSummaryHeading) {
+                summary = line.replace(/^[-*+•\d.]\s+/, '');
+                break;
+            }
+            continue;
+        }
+
+        if (/^(?:key\s+skills|technical\s+skills|required\s+skills|skills|tech\s+stack)\s*:/i.test(line)) {
+            continue;
+        }
+
+        const cleanLine = line.replace(/^[*_`#]+|[*_`#]+$/g, '').trim();
+        if (title && cleanLine.toLowerCase() === title.trim().toLowerCase()) {
+            continue;
+        }
+        if (!inSummaryHeading && i === 0 && cleanLine.length < 40 && lines[i + 1] && !lines[i + 1].startsWith('#')) {
+            continue;
+        }
+
+        summary = line;
+        break;
+    }
+
+    if (!summary) {
+        for (const line of lines) {
+            if (/^#{1,6}\s+/.test(line)) continue;
+            summary = line.replace(/^[-*+•\d.]\s+/, '');
+            break;
+        }
+    }
+
+    if (summary.length > 220) {
+        const sentenceEnd = summary.indexOf('. ', 120);
+        if (sentenceEnd > 0 && sentenceEnd <= 220) {
+            summary = summary.slice(0, sentenceEnd + 1);
+        } else {
+            const lastSpace = summary.lastIndexOf(' ', 210);
+            summary = (lastSpace > 100 ? summary.slice(0, lastSpace) : summary.slice(0, 210)).trim() + '...';
+        }
+    }
+
+    return summary;
+};
+
+/** Extract key skills from inline labels or dedicated Skills headings in the JD text. */
+export const extractKeySkills = (raw) => {
+    if (!raw) return [];
+    const text = String(raw).replace(/\r\n?/g, '\n');
+    const skills = [];
+
+    // Pattern 1: Inline label: "Key Skills:", "Skills:", "Tech Stack:", etc.
+    const inlineMatches = text.matchAll(/(?:key\s+skills|technical\s+skills|required\s+skills|core\s+skills|tech\s+stack|technologies|skills)\s*:\s*([^\n\r]+)/gi);
+    for (const match of inlineMatches) {
+        if (match && match[1]) {
+            const parts = match[1].split(/[,/•;|]+/).map((s) => s.trim().replace(/^[\*\-_`\s]+|[\*\-_`\.\s]+$/g, ''));
+            for (const p of parts) {
+                if (p && p.length <= 32 && !/^(and|or|etc|with|in|including)$/i.test(p)) {
+                    skills.push(p);
+                }
+            }
+        }
+    }
+
+    // Pattern 2: Heading for Skills followed by list or paragraph
+    const lines = text.split('\n');
+    let inSkillsSection = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        if (/^#{1,6}\s*(?:key\s+skills|technical\s+skills|required\s+skills|core\s+skills|tech\s+stack|technologies|skills)\b/i.test(line)) {
+            inSkillsSection = true;
+            continue;
+        }
+        if (inSkillsSection) {
+            if (/^#{1,6}\s+/.test(line)) break;
+            const bullet = line.match(/^[-*+•\d.]\s*(.*)/);
+            const content = bullet ? bullet[1] : line;
+            const parts = content.split(/[,/•;|]+/).map((s) => s.trim().replace(/^[\*\-_`\s]+|[\*\-_`\.\s]+$/g, ''));
+            for (const p of parts) {
+                if (p && p.length <= 32 && !/^(and|or|etc|with|in|including)$/i.test(p)) {
+                    skills.push(p);
+                }
+            }
+        }
+    }
+
+    const seen = new Set();
+    const deduped = [];
+    for (const s of skills) {
+        const lower = s.toLowerCase();
+        if (!seen.has(lower)) {
+            seen.add(lower);
+            deduped.push(s);
+        }
+    }
+    return deduped.slice(0, 8);
+};
+
 const blockLength = (b) => (b.items ? b.items.reduce((n, s) => n + s.length, 0) : b.text.length);
 
-/** The blocks shown in the collapsed preview: as many as fit the character budget (always at least the first). A long list is cut between items. */
+/** Backwards-compatible preview helper if required by external tests or tools. */
 export const previewBlocks = (blocks, budget = 650) => {
     let used = 0;
     const shown = [];
@@ -90,8 +211,6 @@ export const previewBlocks = (blocks, budget = 650) => {
     return shown;
 };
 
-const totalLength = (blocks) => blocks.reduce((n, b) => n + blockLength(b), 0);
-
 const Block = ({ block, index }) => {
     const key = `b${index}`;
     if (block.type === 'heading') {
@@ -110,21 +229,74 @@ const Block = ({ block, index }) => {
     return <p>{renderInline(block.text, key)}</p>;
 };
 
-const JobDescription = ({ text, budget = 650, className = '' }) => {
+const JobDescription = ({ text, title = '', budget = 650, className = '' }) => {
     const blocks = useMemo(() => parseDescription(text), [text]);
+    const summary = useMemo(() => extractRoleSummary(text, title), [text, title]);
+    const skills = useMemo(() => extractKeySkills(text), [text]);
     const [expanded, setExpanded] = useState(false);
+
     if (!blocks.length) return null;
-    const shown = expanded ? blocks : previewBlocks(blocks, budget);
-    const collapsible = expanded || totalLength(shown) < totalLength(blocks);
+
+    const hasFullDetails = blocks.length > 1 || (summary && text.trim().length > summary.trim().length + 15) || skills.length > 0;
+
+    if (!hasFullDetails) {
+        return (
+            <div data-testid="job-description" className={`text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words [overflow-wrap:anywhere] ${className}`}>
+                <div className="space-y-2">{blocks.map((b, i) => <Block key={i} block={b} index={i} />)}</div>
+            </div>
+        );
+    }
+
     return (
         <div data-testid="job-description" className={`text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words [overflow-wrap:anywhere] ${className}`}>
-            <div className="space-y-2">{shown.map((b, i) => <Block key={i} block={b} index={i} />)}</div>
-            {collapsible && (
-                <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
-                    className="mt-2 rounded-md text-sm font-semibold text-[#4c7324] dark:text-[#9fd05a] hover:underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/60">
-                    {expanded ? 'Show less' : 'Show more'}
-                </button>
+            {/* 1. Concise Overview: 2-3 line role summary */}
+            {summary && (
+                <p data-testid="role-summary" className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 line-clamp-3">
+                    {renderInline(summary)}
+                </p>
             )}
+
+            {/* 2. Compact Key Skills tags (if available) */}
+            {skills.length > 0 && (
+                <div data-testid="key-skills" className="flex flex-wrap items-center gap-1.5 pt-2" aria-label="Key skills">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mr-0.5">Key skills:</span>
+                    {skills.map((skill, idx) => (
+                        <span
+                            key={idx}
+                            className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60"
+                        >
+                            {skill}
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {/* 3. Collapsible Control */}
+            <div className="pt-2.5">
+                <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    aria-expanded={expanded}
+                    aria-controls="full-job-description"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#4c7324] dark:text-[#9fd05a] hover:underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d8c2c]/60 cursor-pointer"
+                >
+                    <span>{expanded ? 'Hide Full Job Description' : 'View Full Job Description'}</span>
+                    <ChevronDown size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+            </div>
+
+            {/* 4. Complete Full JD: hidden by default, expanded on click */}
+            <div
+                id="full-job-description"
+                data-testid="full-job-description"
+                className={expanded
+                    ? "mt-3 pt-3 border-t border-slate-200 dark:border-slate-800/80 space-y-2.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300"
+                    : "hidden"}
+            >
+                {blocks.map((b, i) => (
+                    <Block key={i} block={b} index={i} />
+                ))}
+            </div>
         </div>
     );
 };

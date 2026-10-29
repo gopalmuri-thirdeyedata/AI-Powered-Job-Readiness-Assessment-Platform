@@ -65,23 +65,35 @@ describe('Opening page: the job description renders Markdown safely', () => {
         assert.ok(!/dompurify|marked|require\(/i.test(jdSrc), 'no new library');
     });
 
-    test('4. a long description starts as a preview with Show more (and the full text is still reachable)', async () => {
-        const { default: JobDescription, parseDescription, previewBlocks } = await loadModule('src/components/candidate/JobDescription.jsx');
+    test('4. a full description starts with a concise overview (role summary, key skills) and a View Full Job Description toggle', async () => {
+        const { default: JobDescription, parseDescription, previewBlocks, extractRoleSummary, extractKeySkills } = await loadModule('src/components/candidate/JobDescription.jsx');
         const long = Array.from({ length: 30 }, (_, i) => `Paragraph ${i} ${'lorem ipsum '.repeat(10)}`).join('\n\n');
         const blocks = parseDescription(long);
         const shown = previewBlocks(blocks, 650);
-        assert.ok(shown.length >= 1 && shown.length < blocks.length, 'the preview is a prefix');
+        assert.ok(shown.length >= 1 && shown.length < blocks.length, 'previewBlocks helper remains backward-compatible');
         const html = renderToStaticMarkup(React.createElement(JobDescription, { text: long }));
-        assert.match(html, /<button[^>]*aria-expanded="false"[^>]*>Show more<\/button>/);
-        assert.ok(html.includes('Paragraph 0 ') && !html.includes('Paragraph 29 '), 'collapsed: the end is not rendered');
-        assert.ok(jdSrc.includes("expanded ? 'Show less' : 'Show more'"));
-        const list = parseDescription(Array.from({ length: 24 }, (_, i) => `- Requirement ${i}: ${'detail '.repeat(18)}`).join('\n'));
-        assert.equal(list.length, 1, 'one long list');
-        const listPreview = previewBlocks(list, 650);
-        assert.ok(listPreview[0].items.length >= 1 && listPreview[0].items.length < 24, 'a long list is cut between items, not shown whole');
-        assert.ok(renderToStaticMarkup(React.createElement(JobDescription, { text: 'x\n' + list[0].items.map((i) => `- ${i}`).join('\n') })).includes('Show more'));
-        const short = renderToStaticMarkup(React.createElement(JobDescription, { text: MARKDOWN }));
-        assert.ok(!short.includes('Show more'), 'a short description has no toggle');
+        assert.match(html, /<button[^>]*aria-expanded="false"[^>]*>.*View Full Job Description.*<\/button>/);
+        assert.ok(html.includes('data-testid="role-summary"'), 'shows concise role summary');
+        assert.ok(html.includes('data-testid="full-job-description"'), 'keeps full job description accessible in collapsible section');
+        assert.ok(jdSrc.includes("expanded ? 'Hide Full Job Description' : 'View Full Job Description'"));
+
+        // Test key skills extraction and rendering
+        const textWithSkills = [
+            '## Senior Frontend Developer',
+            'We are seeking an experienced frontend developer to build responsive web applications.',
+            'Key Skills: React, TypeScript, Tailwind CSS, Next.js',
+            '### Requirements',
+            '- 5+ years of experience with modern frontend frameworks'
+        ].join('\n\n');
+        const skillsExtracted = extractKeySkills(textWithSkills);
+        assert.deepEqual(skillsExtracted, ['React', 'TypeScript', 'Tailwind CSS', 'Next.js']);
+        const htmlWithSkills = renderToStaticMarkup(React.createElement(JobDescription, { text: textWithSkills }));
+        assert.ok(htmlWithSkills.includes('data-testid="key-skills"'), 'renders key skills tags');
+        assert.ok(htmlWithSkills.includes('React') && htmlWithSkills.includes('Tailwind CSS'));
+
+        // Test single short line description has no toggle
+        const singleLine = renderToStaticMarkup(React.createElement(JobDescription, { text: 'Plain text only, 5 - 7 years of experience' }));
+        assert.ok(!singleLine.includes('View Full Job Description'), 'a simple single-line description has no toggle');
         assert.ok(jdSrc.includes('break-words') && jdSrc.includes('overflow-wrap:anywhere'), 'long words / URLs cannot break the layout');
     });
 
