@@ -20,6 +20,7 @@ import {
     Sun,
     Moon,
     LayoutTemplate,
+    Terminal,
 } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 import { isAdminRole } from '../auth/roles';
@@ -37,6 +38,7 @@ export const navItems = [
     { label: 'Dashboard',            path: '/student/dashboard',  icon: LayoutDashboard, accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Skill Gap',            path: '/student/skill-gap',  icon: Target,          accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Roadmap',              path: '/student/roadmap',    icon: Compass,         accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+    { label: 'Coding',               path: '/student/coding',     icon: Terminal,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Mock Interview',       path: '/student/interview',  icon: MessageSquare,   accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
@@ -52,13 +54,15 @@ const ASSESSMENT_GATED_PATHS = {
     '/student/skill-gap': 'your skill gap analysis',
     '/student/roadmap': 'your personalised learning roadmap',
     '/student/practice': 'targeted practice questions',
+    '/student/coding': 'the coding problem set',
     '/student/interview': 'mock interviews tailored to your profile',
     '/student/simulation': 'placement simulations',
     '/student/projects': 'project reviews and recommendations',
     '/student/dashboard': 'your performance dashboard and career readiness metrics',
 };
 const gatedFeatureFor = (pathname) => {
-    const normalized = pathname.replace(/^\/student\/hub/, '/student').replace(/\/+$/, '') || '/student';
+    let normalized = pathname.replace(/^\/student\/hub/, '/student').replace(/\/+$/, '') || '/student';
+    if (normalized.startsWith('/student/coding/')) normalized = '/student/coding';     // a problem page is gated like the list
     return ASSESSMENT_GATED_PATHS[normalized === '/student' ? '/student/dashboard' : normalized] || null;
 };
 
@@ -195,6 +199,7 @@ const StudentLayout = () => {
                 () => import('../pages/student/StudentSkillGap'),
                 () => import('../pages/student/StudentRoadmap'),
                 () => import('../pages/student/StudentPractice'),
+                () => import('../pages/student/StudentCoding'),
                 () => import('../pages/student/StudentMockInterview'),
                 () => import('../pages/student/StudentPlacementSimulation'),
                 () => import('../pages/student/StudentProjects'),
@@ -449,7 +454,7 @@ const StudentLayout = () => {
 
                 {/* ─── Main Column ─── */}
                 <div
-                    className={`flex flex-col flex-1 min-h-[calc(100vh-4rem)] transition-all duration-300 ease-in-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
+                    className={`flex flex-col flex-1 min-w-0 min-h-[calc(100vh-4rem)] transition-all duration-300 ease-in-out ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-[252px]'}`}
                 >
                     {/* Page Content */}
                     <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-28 sm:pb-24">

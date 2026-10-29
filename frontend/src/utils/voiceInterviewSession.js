@@ -1,10 +1,12 @@
+import { RealtimeCaptions } from './liveCaptions';
+
 // Browser side of the voice interview. It records the candidate, sends each answer to the backend (speech-to-text -> interviewer
 // reply -> text-to-speech) and plays the interviewer's voice. It exposes the small event API the interview screens already use:
 //   on('call-start' | 'call-end' | 'speech-start' | 'speech-end' | 'processing' | 'volume-level' | 'message' | 'error', handler)
 //   start(config) / stop() / setMuted(bool) / setInputDevicesAsync({ audioDeviceId }) / removeAllListeners()
 // The turn-taking logic (UtteranceDetector) is pure and framework-free so it can be unit tested without a browser or a microphone.
 
-export const END_SILENCE_MS = 1800;        // pause that ends an answer: lets the candidate think mid-answer without being cut off
+export const END_SILENCE_MS = 1100;        // pause that ends an answer: long enough to think mid-answer, short enough that the reply feels prompt
 export const MIN_SPEECH_MS = 400;          // shorter sounds (a cough, a click) are discarded, not sent
 export const MAX_UTTERANCE_MS = 90000;     // an answer is cut here and sent
 export const SPEECH_CONFIRM_MS = 120;      // sound must last this long to count as speech
@@ -86,6 +88,14 @@ export class UtteranceDetector {
     }
 }
 
+// Live captions use the browser's own speech recognition (Chrome, Edge, Safari) purely to SHOW the candidate what is being heard while they
+// speak. The transcript that counts (and that is scored) is still the server's. Set VITE_LIVE_CAPTIONS=off to disable them.
+const getRecognition = () => globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition || null;
+const CAPTION_FATAL_ERRORS = ['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'];
+const captionsDisabledByEnv = () => {
+    try { return String(import.meta.env.VITE_LIVE_CAPTIONS || '').toLowerCase() === 'off'; } catch { return false; }
+};
+
 const base64ToBlob = (base64, mime) => {
     const bytes = atob(base64);
     const out = new Uint8Array(bytes.length);
@@ -114,9 +124,31 @@ export const buildVoiceTurnForm = ({ blob, history = [], opening = false } = {})
 };
 
 export class VoiceInterviewSession {
-    /** @param {{ turn: (args: { blob?: Blob, history: Array, opening?: boolean }) => Promise<object>, audioDeviceId?: string }} options */
-    constructor({ turn, audioDeviceId } = {}) {
+    /**
+     * @param {{ turn: (args: { blob?: Blob, history: Array, opening?: boolean }) => Promise<object>, audioDeviceId?: string,
+     *           turnStream?: (args: { blob: Blob, history: Array }, options: { signal: AbortSignal }) => AsyncIterable<object> }} options
+     * `turnStream` is optional: when given, the interviewer's reply is spoken chunk by chunk as it arrives; if it fails before
+     * anything was heard, the plain `turn` request is used instead.
+     */
+    constructor({ turn, turnStream, audioDeviceId, captions = true, captionLang = 'en-IN', captionSession } = {}) {
         this.turn = turn;
+        this.captionsEnabled = captions !== false && !captionsDisabledByEnv();
+        this.captionLang = captionLang;
+        this.captionRec = null;
+        this.captionTimer = null;
+        this.captionBase = '';
+        this.captionCurrent = '';
+        // Primary live captions: the microphone streamed to the realtime speech service (needs `captionSession`, which asks our backend for a
+        // single-use connection). If that is unavailable or fails, the browser's own recogniser below takes over.
+        this.rtCaptions = captionSession && this.captionsEnabled
+            ? new RealtimeCaptions({
+                getSession: captionSession,
+                onCaption: (text) => this.emit('caption', { role: 'user', text }),
+                onFatal: (reason) => this.captionFallback(reason),
+            })
+            : null;
+        this.turnStream = turnStream || null;
+        this.abortController = null;
         this.audioDeviceId = audioDeviceId || null;
         this.listeners = {};
         this.closed = false;
@@ -190,6 +222,9 @@ export class VoiceInterviewSession {
 
     cleanup() {
         this.closed = true;
+        try { this.abortController?.abort(); } catch { /* ignore */ }
+        this.stopCaptions({ clear: true });
+        this.rtCaptions?.close();
         clearInterval(this.poll);
         clearTimeout(this.maxTimer);
         clearInterval(this.volumeTimer);
@@ -213,6 +248,7 @@ export class VoiceInterviewSession {
         this.micAnalyser.fftSize = 1024;
         this.ctx.createMediaStreamSource(this.stream).connect(this.micAnalyser);
         this.micBuffer = new Float32Array(this.micAnalyser.fftSize);
+        this.rtCaptions?.attach(this.stream);             // (re)connect the live-caption capture to this microphone
     }
 
     async setInputDevicesAsync({ audioDeviceId } = {}) {
@@ -226,6 +262,8 @@ export class VoiceInterviewSession {
         this.muted = !!muted;
         this.stream?.getAudioTracks().forEach((t) => { t.enabled = !this.muted; });
         this.detector.reset();
+        if (this.muted) this.stopCaptions({ clear: true });
+        else if (this.state === 'listening') this.startCaptions();
     }
 
     // ── Recording ────────────────────────────────────────────────────────────────
@@ -255,12 +293,85 @@ export class VoiceInterviewSession {
         return rms(this.micBuffer);
     }
 
+    // ── Live captions ────────────────────────────────────────────────────────────
+    // Emits 'caption' { role: 'user', text } with everything heard since the candidate started this answer ('' clears it).
+    startCaptions() {
+        if (!this.captionsEnabled || this.closed || this.muted) return;
+        if (this.rtCaptions?.available) { this.rtCaptions.start(); return; }
+        const Recognition = getRecognition();
+        if (!this.captionsEnabled || !Recognition || this.captionRec || this.closed || this.muted) return;
+        const rec = new Recognition();
+        rec.lang = this.captionLang;
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.maxAlternatives = 1;
+        rec.onresult = (event) => {
+            let text = '';
+            for (let i = 0; i < event.results.length; i += 1) text += event.results[i][0]?.transcript || '';
+            this.captionCurrent = text;                                   // finished words and the ones still being recognised
+            this.emit('caption', { role: 'user', text: `${this.captionBase} ${this.captionCurrent}`.trim() });
+        };
+        rec.onerror = (event) => {
+            if (CAPTION_FATAL_ERRORS.includes(event?.error)) {            // no permission / no service: captions are simply not available
+                this.captionsEnabled = false;
+                this.stopCaptions({ clear: true });
+                this.emit('caption-status', { available: false, reason: event.error });
+            }                                                             // 'no-speech' / 'aborted' / network blips: onend restarts it
+        };
+        rec.onend = () => {
+            this.captionRec = null;
+            this.captionBase = `${this.captionBase} ${this.captionCurrent}`.trim();      // browsers stop after a pause: keep what was heard
+            this.captionCurrent = '';
+            if (this.state === 'listening' && !this.closed && this.captionsEnabled && !this.muted) {
+                this.captionTimer = setTimeout(() => this.startCaptions(), 150);
+            }
+        };
+        try { rec.start(); this.captionRec = rec; } catch { this.captionRec = null; }
+    }
+
+    stopCaptions({ clear = false } = {}) {
+        this.rtCaptions?.stop();
+        clearTimeout(this.captionTimer);
+        const rec = this.captionRec;
+        this.captionRec = null;
+        if (rec) {
+            rec.onend = null; rec.onresult = null; rec.onerror = null;
+            try { rec.stop(); } catch { /* not started */ }
+        }
+        if (clear) {
+            this.captionBase = '';
+            this.captionCurrent = '';
+            this.emit('caption', { role: 'user', text: '' });
+        }
+    }
+
+    /** A new answer starts from a blank caption. */
+    resetCaptions() {
+        if (this.rtCaptions?.available) {
+            // keep the (already warmed) connection: only the text restarts
+            this.captionBase = '';
+            this.captionCurrent = '';
+            this.emit('caption', { role: 'user', text: '' });
+            this.startCaptions();
+            return;
+        }
+        this.stopCaptions({ clear: true });
+        if (this.state === 'listening') this.startCaptions();
+    }
+
+    /** The realtime captions cannot work (no token, refused, repeated failures): continue with the browser's own recogniser. */
+    captionFallback(reason) {
+        this.emit('caption-status', { available: true, source: 'browser', reason });
+        if (this.state === 'listening' && !this.closed) this.startCaptions();
+    }
+
     // ── Turn taking ──────────────────────────────────────────────────────────────
     startListening() {
         this.state = 'listening';
         this.detector.reset();
         this.lastActivityAt = Date.now();
         this.beginRecording();
+        this.resetCaptions();
     }
 
     tick() {
@@ -274,16 +385,19 @@ export class VoiceInterviewSession {
         } else if (event === 'speech-end') {
             this.answerGiven();
         } else if (event === 'discard' || (!this.detector.speaking && now - this.recorderStartedAt > PRE_ROLL_RESET_MS)) {
+            if (event === 'discard') this.resetCaptions();       // a cough or click is not an answer: do not leave its caption on screen
             this.beginRecording();       // nothing worth sending: start a fresh recording so silence is never uploaded
         }
     }
 
     async answerGiven() {
         this.state = 'processing';
+        this.stopCaptions();             // the caption stays on screen until the server's transcript replaces it
         this.emit('processing');
         try {
             const blob = await this.endRecording();
             if (this.closed) return;
+            if (this.turnStream && blob && blob.size && await this.streamAnswer(blob)) return;
             const result = blob && blob.size ? await this.requestTurn({ blob, history: this.history }) : null;
             if (this.closed) return;
             if (!result || !result.user_text) { this.startListening(); return; }      // no speech recognised: keep listening
@@ -293,6 +407,64 @@ export class VoiceInterviewSession {
         } catch (err) {
             this.fail(err);
         }
+    }
+
+    /**
+     * Streaming exchange: the first spoken chunk plays while the rest of the reply is still being produced.
+     * @returns {Promise<boolean>} true when the turn was handled here; false when the stream failed before anything was heard,
+     *   so the caller can repeat the exchange with the plain request (nothing was recorded twice).
+     */
+    async streamAnswer(blob) {
+        let heard = false;
+        let spoke = false;
+        let spokenSoFar = '';
+        let playback = Promise.resolve();
+        this.abortController = typeof AbortController === 'undefined' ? null : new AbortController();
+        try {
+            for await (const event of this.turnStream({ blob, history: this.history }, { signal: this.abortController?.signal })) {
+                if (this.closed) return true;
+                if (event.type === 'transcript') {
+                    if (!event.user_text) { this.startListening(); return true; }       // no speech recognised: keep listening
+                    heard = true;
+                    this.history.push({ role: 'user', text: event.user_text });
+                    this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'user', transcript: event.user_text });
+                } else if (event.type === 'audio') {
+                    if (!spoke) {
+                        spoke = true;
+                        this.state = 'speaking';
+                        this.stopCaptions({ clear: true });
+                        this.rtCaptions?.warm();
+                        this.lastActivityAt = Date.now();
+                        this.emit('speech-start');
+                    }
+                    const chunk = base64ToBlob(event.audio_base64, event.mime);
+                    const caption = { prefix: spokenSoFar, text: event.text || '' };
+                    spokenSoFar = `${spokenSoFar} ${event.text || ''}`.trim();
+                    playback = playback.then(() => (this.closed ? undefined : this.play(chunk, caption)));
+                    playback.catch(() => {});       // surfaced below when awaited; never an unhandled rejection meanwhile
+                } else if (event.type === 'done') {
+                    if (event.reply_text) {
+                        this.history.push({ role: 'ai', text: event.reply_text });
+                        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: event.reply_text });
+                    }
+                } else if (event.type === 'error') {
+                    const err = new Error(event.message || 'The interviewer is unavailable right now.');
+                    err.response = { status: event.status };
+                    throw err;
+                }
+            }
+        } catch (err) {
+            if (this.closed) return true;
+            if (!heard) return false;       // nothing consumed or recorded yet: safe to repeat with the plain request
+            throw err;
+        }
+        await playback;
+        if (this.closed) return true;
+        if (!spoke) { this.startListening(); return true; }
+        this.emit('speech-end');
+        await new Promise((resolve) => setTimeout(resolve, REPLY_GUARD_MS));
+        if (!this.closed) this.startListening();
+        return true;
     }
 
     /** One backend exchange; a single automatic retry hides a momentary network or provider hiccup. */
@@ -311,23 +483,33 @@ export class VoiceInterviewSession {
     async say(result) {
         if (this.closed || !result?.audio_base64) { if (!this.closed) this.startListening(); return; }
         this.state = 'speaking';
+        this.stopCaptions({ clear: true });
+        this.rtCaptions?.warm();                  // ready before the candidate's turn: the first words are not delayed
         this.lastActivityAt = Date.now();
         const text = result.reply_text || '';
         this.history.push({ role: 'ai', text });
         this.emit('speech-start');
         this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: text });
-        await this.play(base64ToBlob(result.audio_base64, result.mime));
+        await this.play(base64ToBlob(result.audio_base64, result.mime), { prefix: '', text });
         if (this.closed) return;
         this.emit('speech-end');
         await new Promise((resolve) => setTimeout(resolve, REPLY_GUARD_MS));
         if (!this.closed) this.startListening();
     }
 
-    play(blob) {
+    play(blob, caption) {
         return new Promise((resolve, reject) => {
             const url = URL.createObjectURL(blob);
             const player = new Audio(url);
             this.player = player;
+            if (caption?.text) {
+                // The words follow the voice: the earlier chunks in full, this chunk spread over its audio duration
+                const announce = () => this.emit('caption', {
+                    role: 'assistant', prefix: caption.prefix || '', text: caption.text,
+                    durationMs: Number.isFinite(player.duration) && player.duration > 0 ? player.duration * 1000 : null,
+                });
+                if (player.readyState >= 1) announce(); else player.addEventListener('loadedmetadata', announce, { once: true });
+            }
             const done = () => { clearInterval(this.volumeTimer); URL.revokeObjectURL(url); this.emit('volume-level', 0); };
             player.onended = () => { done(); resolve(); };
             player.onerror = () => { done(); reject(audioError('Interviewer audio could not be played. Choose Retry Connection.')); };

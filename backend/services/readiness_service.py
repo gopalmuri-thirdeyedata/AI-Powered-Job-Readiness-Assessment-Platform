@@ -183,6 +183,10 @@ def _gather_activity_scores(profile: models.StudentProfile) -> Dict[str, float]:
         models.StudentPracticeAttempt.student_profile_id == profile.id,
         models.StudentPracticeAttempt.is_correct == True  # noqa: E712
     ).count()
+    solved += db.query(models.CodingSubmission.problem_id).filter(
+        models.CodingSubmission.student_profile_id == profile.id,
+        models.CodingSubmission.verdict == "ACCEPTED"
+    ).distinct().count()          # distinct problems, so resubmitting a solved problem adds nothing
     if solved:
         scores["practice"] = min(100.0, solved * 5.0)  # 20 correct answers = full marks
 

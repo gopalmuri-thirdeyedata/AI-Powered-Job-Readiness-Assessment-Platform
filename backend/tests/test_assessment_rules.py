@@ -325,7 +325,8 @@ def test_public_run_shows_samples_and_errors_while_hidden_tests_stay_confidentia
     err = client.post(h.sess_url(started, "run-code"), headers=h.sh(started),
                       json={"problem_id": pid, "language": "python", "code": "raise SystemExit('boom')"}).json()
     assert err["all_passed"] is False and err["error_type"] == "Runtime Error"          # errors are shown, not hidden
-    assert client.post(h.sess_url(started, "run-code"), headers=h.sh(started), json={"problem_id": pid, "language": "java", "code": "class Main{}"}).status_code == 200
+    java = client.post(h.sess_url(started, "run-code"), headers=h.sh(started), json={"problem_id": pid, "language": "java", "code": "class Main{}"})
+    assert java.status_code == 400 and "Python" in java.json()["detail"]                 # candidates code in Python only, like the students
     bad_lang = client.post(h.sess_url(started, "run-code"), headers=h.sh(started), json={"problem_id": pid, "language": "javascript", "code": "1"})
     assert bad_lang.status_code == 400
     too_big = client.post(h.sess_url(started, "run-code"), headers=h.sh(started),

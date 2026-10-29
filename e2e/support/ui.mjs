@@ -2,11 +2,11 @@
 import { chromium } from 'playwright-core';
 import { chromePath } from './stack.mjs';
 
-export async function launch({ grantMedia = true, viewport = { width: 1366, height: 900 } } = {}) {
+export async function launch({ grantMedia = true, viewport = { width: 1366, height: 900 }, extraArgs = [] } = {}) {
   const exe = chromePath();
   if (!exe) throw new Error('No Chrome/Chromium found: set E2E_CHROME to a browser executable.');
   // Fake camera/microphone devices; permission is granted (and can be revoked) per context, never auto-accepted by a flag.
-  const args = ['--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--window-size=1366,900'];
+  const args = ['--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--window-size=1366,900', ...extraArgs];
   const browser = await chromium.launch({ executablePath: exe, headless: !process.env.E2E_HEADED, args });
   const context = await browser.newContext({ viewport, permissions: grantMedia ? ['camera', 'microphone'] : [] });
   return { browser, context };
@@ -82,39 +82,50 @@ export async function answerAptitude(ui, { count = 15, submit = true } = {}) {
 export async function setCode(ui, code) {
   const { page } = ui;
   await page.locator('.monaco-editor .view-lines').first().click();
+  if (await page.evaluate((c) => { const m = window.monaco?.editor?.getModels?.() || []; if (!m.length) return false; m[0].setValue(c); return true; }, code)) {
+    await page.waitForTimeout(700);
+    return;
+  }
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Delete');
   await page.keyboard.insertText(code);
   await page.waitForTimeout(700);
 }
 
+// Like a paste: sets the editor text exactly. Typing into Monaco re-applies auto-indent to every new line, which corrupts nested Python
+// (students now write `class Solution` with an indented method). Falls back to typing when Monaco is not exposed on the page.
+export async function setCodeExact(ui, code) {
+  const { page } = ui;
+  await page.locator('.monaco-editor .view-lines').first().click();
+  const done = await page.evaluate((c) => {
+    const models = window.monaco?.editor?.getModels?.() || [];
+    if (!models.length) return false;
+    models[0].setValue(c);
+    return true;
+  }, code);
+  if (!done) return setCode(ui, code);
+  await page.waitForTimeout(700);
+}
+
 export const editorText = (ui) => ui.page.locator('.monaco-editor .view-lines').first().innerText().then((t) => t.replace(/\s+/g, ' '));
-export const runPublicTests = async (ui, waitMs = 8000) => {
-  await ui.page.getByRole('button', { name: 'Run Public Tests' }).click();
-  await ui.page.waitForSelector('text=Execution Output', { timeout: 30000 });
-  await ui.page.waitForTimeout(waitMs > 2000 ? 1500 : waitMs);
+// The student coding round is the LeetCode-style workspace: a Run button and a Result tab (recruitment keeps runPublicTests below).
+export const runSample = async (ui, settleMs = 1500) => {
+  await ui.page.getByRole('button', { name: /^Run\b/ }).click();
+  await ui.page.waitForSelector('text=/Sample tests passed|Wrong Answer|Compilation Error|Runtime Error|Time Limit Exceeded|Finished/', { timeout: 60000 });
+  await ui.page.waitForTimeout(settleMs);
   return ui.text();
 };
+
+// The shared LeetCode-style workspace: the Run button, then the Result tab (kept under its old name for the specs that use it)
+export const runPublicTests = (ui, settleMs = 1500) => runSample(ui, settleMs);
 
 // Programs (stdin = one JSON value per line, stdout = JSON result) for the offline blueprint's problems:
 // problem 1 "Sum Two Numbers" (solve(a, b)) and problem 2 "Reverse String" (solve(s)).
 export const SOLUTIONS = {
-  // no nested indentation: Monaco auto-indents inserted lines
-  sumPython: 'def solve(a, b): return a + b\n'
-    + 'if __name__ == "__main__": import json, sys; _a = [json.loads(l) for l in sys.stdin.read().splitlines() if l.strip()]; print(json.dumps(solve(*_a)))\n',
-  reverseJava: [
-    'import java.util.*;',
-    'public class Main {',
-    'public static void main(String[] args) {',
-    'Scanner scanner = new Scanner(System.in);',
-    'String line = scanner.hasNextLine() ? scanner.nextLine().trim() : "";',
-    'String s = line.length() >= 2 ? line.substring(1, line.length() - 1) : "";',
-    `System.out.println('"' + new StringBuilder(s).reverse().toString() + '"');`,
-    '}',
-    '}',
-  ].join('\n') + '\n',
-  javaCompileError: 'public class Main { public static void main(String[] args) { int x = ; } }\n',
-  pythonRuntimeError: 'import sys; print(1 // 0)\n',
+  // LeetCode structure: students and shared-link candidates alike write only the method of `class Solution`
+  sumPython: 'class Solution:\n    def solve(self, a, b):\n        return a + b\n',
+  reversePython: 'class Solution:\n    def solve(self, s):\n        return s[::-1]\n',
+  pythonRuntimeError: 'class Solution:\n    def solve(self, s):\n        return 1 // 0\n',
 };
 
 export const openCoding = async (ui) => { await ui.page.waitForSelector('text=Round 2', { timeout: 30000 }).catch(() => {}); await ui.page.waitForTimeout(1500); };
@@ -230,7 +241,8 @@ export const aptitudeCount = async (ui) => Number(((await ui.text()).match(/Ques
 // One-expression Python / plain Java solutions for the two problems the offline student question set produces
 // (longest run of distinct tokens; balanced tag sequence). Python stays free of nested indentation (Monaco auto-indents).
 export const STUDENT_SOLUTIONS = {
-  uniqueRunPython: "import sys\ndef longest_unique_run(tokens): return max((j - i for i in range(len(tokens)) for j in range(i + 1, len(tokens) + 1) if len(set(tokens[i:j])) == j - i), default=0)\nif __name__ == '__main__': print(longest_unique_run(sys.stdin.read().split()))\n",
+  // Students write only the function inside `class Solution` (LeetCode structure); reading stdin and printing are added by the server.
+  uniqueRunPython: "class Solution:\n    def longest_unique_run(self, tokens):\n        return max((j - i for i in range(len(tokens)) for j in range(i + 1, len(tokens) + 1) if len(set(tokens[i:j])) == j - i), default=0)\n",
   uniqueRunJava: [
     'import java.util.*;',
     'public class Main {',
@@ -247,7 +259,8 @@ export const STUDENT_SOLUTIONS = {
     '}',
     '}',
   ].join('\n') + '\n',
-  tagsPython: "import sys, functools\ndef is_valid_jsx(tag_str): return 'true' if functools.reduce(lambda st, t: None if st is None else ((st[:-1] if st and st[-1] == t[2:-1] else None) if t.startswith('</') else st + [t[1:-1]]), tag_str.split(), []) == [] else 'false'\nif __name__ == '__main__': print(is_valid_jsx(sys.stdin.read().strip()))\n",
+  tagsPython: "import functools\n\nclass Solution:\n    def is_valid_jsx(self, tag_str):\n        return 'true' if functools.reduce(lambda st, t: None if st is None else ((st[:-1] if st and st[-1] == t[2:-1] else None) if t.startswith('</') else st + [t[1:-1]]), tag_str.split(), []) == [] else 'false'\n",
+  pythonSyntaxError: "class Solution:\n    def is_valid_jsx(self, tag_str):\n        return (\n",
   tagsJava: [
     'import java.util.*;',
     'public class Main {',

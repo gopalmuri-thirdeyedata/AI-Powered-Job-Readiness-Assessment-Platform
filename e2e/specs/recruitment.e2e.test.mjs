@@ -1,7 +1,7 @@
 // Recruitment (shared-link) workflow in a real browser against the real backend on a scratch database.
 //
 // What is real: the frontend, the FastAPI backend, the scoring/timing code, Chrome with fake camera + microphone devices,
-// and the Python / Java runtimes of this machine (the code sandbox stand-in for Judge0).
+// and the Python runtime of this machine (the code sandbox stand-in for Judge0).
 // What is NOT real here (and therefore not proven): Gemini (offline mock mode), ElevenLabs (stubbed in the backend harness; a
 // real spoken conversation needs a person and a microphone), Judge0.
 import { after, before, describe, test } from 'node:test';
@@ -81,7 +81,7 @@ describe('student sign-in and the explicit start', () => {
 });
 
 describe('the full journey in the browser', () => {
-  test('aptitude -> coding (Python + Java, errors surfaced) -> interview -> reports show the persisted scores', async () => {
+  test('aptitude -> coding (Python only, errors surfaced) -> interview -> reports show the persisted scores', async () => {
     const { browser, ui } = await open();
     try {
       await U.startRecruitmentAttempt(ui, stack, org);
@@ -96,21 +96,18 @@ describe('the full journey in the browser', () => {
       const [, totalAfter] = await U.timers(ui);
       assert.ok(U.toSeconds(totalAfter) < 60 * 60, 'the overall clock keeps running across sections');
 
-      // ---- coding: Python passes, a Java compile error and a Python runtime error are shown to the candidate, then Java passes
+      // ---- coding: the LeetCode workspace (function only, Python only): a pass, then a runtime error is shown, then the fix passes
+      assert.doesNotMatch(await U.editorText(ui), /import|__main__|stdin|json/i, 'the candidate sees only class Solution and the signature');
+      assert.equal(await ui.page.getByRole('button', { name: /Java/ }).count(), 0, 'Python is the only language');
       await U.setCode(ui, U.SOLUTIONS.sumPython);
-      assert.match(await U.runPublicTests(ui), /PASS \(All Public Cases\)/);
+      assert.match(await U.runPublicTests(ui), /Sample tests passed/);
       await ui.page.getByRole('button', { name: 'Problem 2' }).click();
-      await ui.page.getByRole('button', { name: /Java 17/ }).click();
-      await U.setCode(ui, U.SOLUTIONS.javaCompileError);
-      assert.match(await U.runPublicTests(ui), /Compilation Error|COMPILE ERROR|error:/i);
-      await ui.page.getByRole('button', { name: /Python 3\.11/ }).click();
       await U.setCode(ui, U.SOLUTIONS.pythonRuntimeError);
       assert.match(await U.runPublicTests(ui), /ZeroDivisionError|Runtime Error/i);
-      await ui.page.getByRole('button', { name: /Java 17/ }).click();
-      await U.setCode(ui, U.SOLUTIONS.reverseJava);
-      assert.match(await U.runPublicTests(ui), /PASS \(All Public Cases\)/);
+      await U.setCode(ui, U.SOLUTIONS.reversePython);
+      assert.match(await U.runPublicTests(ui), /Sample tests passed/);
       const executed = (await stack.info()).executions;
-      assert.ok(executed.includes('python') && executed.includes('java'), `both runtimes were used: ${executed}`);
+      assert.ok(executed.includes('python') && !executed.includes('java'), `only Python was used: ${executed}`);
 
       // ---- interview (voice is covered separately; here the written fallback keeps the journey free of external calls)
       await U.stubVoiceApi(ui.page);
@@ -132,7 +129,7 @@ describe('the full journey in the browser', () => {
       const questions = dossier.report.sections.aptitude.details.questions;
       const expectedAptitude = questions.filter((q, i) => q.correct_key === chosen[i]).length / questions.length * 100;
       assert.ok(Math.abs(row.aptitude - expectedAptitude) < 1e-6, `aptitude ${row.aptitude} vs ${expectedAptitude}`);
-      assert.equal(row.coding, 100, 'Python sum and Java reverse-string pass every hidden test');
+      assert.equal(row.coding, 100, 'Python sum and reverse-string pass every hidden test');
       assert.equal(row.rounds.INTERVIEW.status, 'EVALUATED');
       const expectedOverall = Math.round(((row.aptitude + row.coding + row.interview) / 3) * 100) / 100;
       assert.equal(row.reported_overall, expectedOverall, 'overall = equal-weight mean of the full-precision sections, two decimals');

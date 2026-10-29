@@ -6,6 +6,7 @@ Exposes endpoints for:
 3. Candidate Invitation Portal: Verification and sequential assessment execution
 """
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Header, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -168,6 +169,7 @@ class RunCodeSchema(BaseModel):
     problem_id: str
     code: str
     language: Optional[str] = "python"
+    custom_input: Optional[str] = None      # the student's own testcase (stdin text in the problem's input format)
 
 class CodingSubmissionSchema(BaseModel):
     solutions: Dict[str, Dict[str, str]] # { "1": {"code": "...", "language": "python"} }
@@ -597,8 +599,9 @@ def run_code_test(
         db, 
         session, 
         payload.problem_id, 
-        payload.code, 
-        payload.language or "python"
+        payload.code,
+        payload.language or "python",
+        payload.custom_input
     )
 
 
@@ -657,6 +660,43 @@ def voice_interview_turn(
     return roleready_service.voice_interview_turn(
         db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
         parsed_history, opening)
+
+
+@router.post("/session/{session_uuid}/voice-caption-token")
+def voice_caption_token(
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """A single-use live-caption connection (the browser streams the microphone and shows the words as they are recognised)."""
+    return JSONResponse(content=roleready_service.voice_caption_session(db, session), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/session/{session_uuid}/voice-turn-stream")
+def voice_interview_turn_stream(
+    audio: Optional[UploadFile] = File(None),
+    history: str = Form("[]"),
+    opening: bool = Form(False),
+    session: models.RoleReadySession = Depends(get_authorized_session),
+    db: Session = Depends(database.get_db)
+):
+    """
+    The same exchange as /voice-turn, streamed as newline-delimited JSON events (transcript, then one audio event per spoken
+    chunk, then done) so the browser can start speaking the first sentence before the reply is finished.
+    """
+    audio_bytes = audio.file.read(elevenlabs_service.MAX_AUDIO_BYTES + 1) if audio is not None else None
+    try:
+        parsed_history = json.loads(history or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation history.")
+    events = roleready_service.voice_interview_turn_stream(
+        db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
+        parsed_history, opening)
+    return StreamingResponse(
+        (json.dumps(event, separators=(",", ":")) + "\n" for event in events),
+        media_type="application/x-ndjson",
+        # No proxy may hold the first chunk back. `identity` also keeps GZipMiddleware off this response: its compressor
+        # buffers streamed chunks without flushing, which would delay the first sentence until much later.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no", "Content-Encoding": "identity"})
 
 
 @router.post("/session/{session_uuid}/submit-interview")

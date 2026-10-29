@@ -1,0 +1,8 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""825cb8a5-5686-4f2f-9892-c1ab0edb9f6a"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:24:08Z,2026-10-28T07:24:08Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""d09e550d-493f-4408-ba33-ebfa7529a331"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:24:08Z,2026-10-28T07:24:08Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""5f9ad5fe-5028-41d6-b784-46ccde45fe49"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:24:07Z,2026-10-28T07:24:07Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""18900c4b-a793-4346-aa2c-b5bee62c08aa"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:24:07Z,2026-10-28T07:24:07Z
+POST,6 run code (sandbox),"CatchResponseError('429 {""detail"":""The code runner is busy. Please retry in a few seconds.""}')",2,2026-10-28T07:24:06Z,2026-10-28T07:24:06Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""7acccc46-f506-4965-8ce9-5e8a9f9f5b7f"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:24:07Z,2026-10-28T07:24:07Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""ee039d8f-3f34-4fc2-bf60-4c0fb852f4c5"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:24:08Z,2026-10-28T07:24:08Z

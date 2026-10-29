@@ -227,7 +227,7 @@ describe('Candidate API client and runner behaviour', () => {
         await candidateApi.register('SH', { name: 'N', phone: '+1415', email: 'e@x.co' });
         await candidateApi.submitAptitude(s, { A1: 'B' }, [{ type: 'Tab switch' }]);
         await candidateApi.startCoding(s);
-        await candidateApi.runCode(s, 'C1', 'code', 'java');
+        await candidateApi.runCode(s, 'C1', 'code', 'python', '1 2');
         await candidateApi.submitCoding(s, { C1: { language: 'python', code: 'x' } });
         await candidateApi.startInterview(s);
         await candidateApi.voiceInit(s);
@@ -240,7 +240,7 @@ describe('Candidate API client and runner behaviour', () => {
             'POST /session/U/submit-coding', 'POST /session/U/start-interview', 'POST /session/U/voice-init', 'POST /session/U/submit-interview',
             'PUT /session/U/draft', 'POST /session/U/finalize',
         ]);
-        assert.deepEqual(globalThis.__axiosCalls[3].body, { problem_id: 'C1', language: 'java', code: 'code' }, 'the shared editor supports Java as well as Python');
+        assert.deepEqual(globalThis.__axiosCalls[3].body, { problem_id: 'C1', language: 'python', code: 'code', custom_input: '1 2' }, 'the shared editor is Python only and sends a custom input like the students');
         assert.deepEqual(globalThis.__axiosCalls[1].body, { answers: { A1: 'B' }, violations: [{ type: 'Tab switch' }] });
         assert.deepEqual(globalThis.__axiosCalls[7].body, { answers: [{ question_id: 'I1', response: 'ans' }], transcript: [{ role: 'user', text: 'ans' }], violations: null });
     });
@@ -272,11 +272,11 @@ describe('Candidate API client and runner behaviour', () => {
         assert.ok(adapterSrc.includes('setLease(session.lease)') && adapterSrc.includes('// volatile lease: in-memory ONLY'));
     });
 
-    test('15. all three sections are the Student Platform workspace: Monaco, Python + Java, voice interview, proctoring', () => {
+    test('15. all three sections are the Student Platform workspace: Monaco, Python only, voice interview, proctoring', () => {
         assert.ok(pageSrc.includes("import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment'"), 'the page reuses the student workspace');
         assert.ok(pageSrc.includes('mode="recruitment"') && pageSrc.includes('skipInstructions') && pageSrc.includes('proctoringPolicy="flag"'));
         assert.ok(!pageSrc.includes('<textarea') && !pageSrc.includes('@monaco-editor') && !pageSrc.includes('voiceInterviewSession'), 'no second editor / voice implementation in the recruitment page');
-        for (const needle of ["from '@monaco-editor/react'", "from '../../utils/voiceInterviewSession'", "handleLanguageChange('java')", "handleLanguageChange('python')", 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
+        for (const needle of ["from '@monaco-editor/react'", "from '../../utils/voiceInterviewSession'", "const selectedLanguage = 'python'", 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
             assert.ok(workspaceSrc.includes(needle), `shared workspace has: ${needle}`);
         }
         assert.ok(!/hidden_test|hiddenTest|hidden test/i.test(adapterSrc + pageSrc), 'recruitment code never references hidden tests');
@@ -297,8 +297,8 @@ describe('Candidate API client and runner behaviour', () => {
     });
 
     test('15c. an empty Constraints block is not rendered (blueprint problems carry no separate constraints text)', () => {
-        const at = workspaceSrc.indexOf('Constraints:</span>');
-        assert.ok(at > 0 && workspaceSrc.lastIndexOf("String(activeProblem.constraints || '').trim() &&", at) > at - 400);
+        const panel = read('src/components/coding/AssessmentCodingWorkspace.jsx');
+        assert.ok(panel.includes("String(problem.constraints || '').trim() && ("), 'the shared LeetCode panel hides an empty Constraints block');
     });
 
     test('15d. frame analysis is authenticated per workflow and the workspace wires the adapter credential into the hook', () => {

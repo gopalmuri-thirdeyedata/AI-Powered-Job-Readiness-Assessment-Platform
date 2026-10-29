@@ -17,7 +17,7 @@ load_dotenv()
 
 import models, database, utils
 from routers import auth, assessments, resume, dashboard, settings, interview, proctor, platform, organization, student, college, roleready
-from routers import job_assessments, public_assessment, admin_results, users, student_assessment
+from routers import job_assessments, public_assessment, admin_results, users, student_assessment, student_coding
 
 # Validate JWT secret configuration on startup (fails safely in production if secret is weak/default)
 utils.validate_jwt_secret()
@@ -279,6 +279,17 @@ def warm_up_proctoring_model():
 
 
 @app.on_event("startup")
+def seed_coding_problem_bank():
+    """Load the LeetCode-style problem bank once at startup so no student waits for it on their first request."""
+    try:
+        from services import coding_platform_service
+        with database.SessionLocal() as db:
+            coding_platform_service.ensure_seeded(db)
+    except Exception as e:  # never stop the server from starting; the first request seeds it instead
+        print(f"[Startup] Coding problem bank seeding skipped: {type(e).__name__}: {e}")
+
+
+@app.on_event("startup")
 def ensure_default_platform_admin():
     try:
         with database.SessionLocal() as db:
@@ -456,6 +467,7 @@ app.include_router(settings.router)
 app.include_router(interview.router)
 app.include_router(proctor.router)
 app.include_router(student.router)
+app.include_router(student_coding.router)
 app.include_router(college.router)
 app.include_router(roleready.router)
 app.include_router(job_assessments.router)

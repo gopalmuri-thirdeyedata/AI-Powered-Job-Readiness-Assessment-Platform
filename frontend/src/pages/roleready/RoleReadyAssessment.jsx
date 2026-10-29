@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { VoiceInterviewSession } from '../../utils/voiceInterviewSession';
+import { errorMessage } from '../../utils/codingPlatform';
 import { VOICE_CONNECT_TIMEOUT_MS, classifyVoiceError, disposeVoice, interviewSubmitErrorMessage, isClosedAttemptStatus, toDisplayText } from '../../utils/voiceSession';
 import {
     Clock,
@@ -42,6 +43,8 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Counter } from '../../components/home/primitives';
 import { StepHighlight, PopIn, Stagger, StaggerItem, SlideSwap, ProgressBar, Enter } from '../../components/roleready-ui/assessmentMotion';
 import { Editor } from '@monaco-editor/react';
+import AssessmentCodingWorkspace from '../../components/coding/AssessmentCodingWorkspace';
+import { AiLiveCaption, UserLiveCaption } from '../../components/interview/LiveCaptionBubbles';
 import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
 import useMicrophone from '../../hooks/useMicrophone';
@@ -117,7 +120,8 @@ const ProctorCameraFeed = ({
     limit = MAX_MALPRACTICE_WARNINGS,
     className = "",
     showDiagnostics = true,
-    compact = false
+    compact = false,
+    thumb = false          // small picture with the status as an overlay: the coding round's slim top bar
 }) => {
     const videoRef = useRef(null);
 
@@ -167,7 +171,7 @@ const ProctorCameraFeed = ({
     return (
         <div className={`flex flex-col gap-1.5 w-full ${className}`}>
             {/* Status & Warning Bar: Placed cleanly outside camera viewport so face is completely unblocked */}
-            <div className="flex items-center justify-between gap-1 text-[10px] font-semibold flex-wrap">
+            <div className={`${thumb ? 'hidden' : 'flex'} items-center justify-between gap-1 text-[10px] font-semibold flex-wrap`}>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md ${
                     isModelActive
                         ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
@@ -242,6 +246,17 @@ const ProctorCameraFeed = ({
                     </div>
                 ))}
 
+                {thumb && (
+                    <div className="absolute bottom-0 inset-x-0 z-[6] flex items-center justify-between gap-1 px-1.5 py-0.5 bg-black/60 text-[9px] font-bold text-white"
+                        title={`${isModelActive ? 'Proctoring active' : 'Proctoring connecting'} · ${personCount} person${personCount === 1 ? '' : 's'} · ${violationCount}${limit ? `/${limit}` : ''} warnings`}>
+                        <span className="inline-flex items-center gap-1">
+                            <span className={`w-1.5 h-1.5 rounded-full ${isModelActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`} />
+                            <span className={personCount === 1 ? '' : 'text-amber-300'}>👤 {personCount}</span>
+                        </span>
+                        <span className={violationCount > 0 ? 'text-amber-300' : ''}>⚠ {violationCount}{limit ? `/${limit}` : ''}</span>
+                    </div>
+                )}
+
                 {!stream && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 text-slate-400 text-xs p-3 text-center z-10">
                         <CameraOff className="w-5 h-5 mb-1 text-slate-500" />
@@ -263,7 +278,7 @@ const ProctorCameraFeed = ({
 
 /**
  * The assessment workspace shared by the Student Platform and the Admin Recruitment shared-link workflow.
- * Aptitude, Monaco coding (Python / Java), the voice interview, timers, drafts and proctoring are this one
+ * Aptitude, Monaco coding (Python only), the voice interview, timers, drafts and proctoring are this one
  * implementation; a workflow differs only through the `api` adapter (services/assessmentApi.js) it is given:
  *   mode               'student' | 'recruitment'
  *   skipInstructions   recruitment candidates already read and acknowledged the instructions: start at the device check
@@ -507,7 +522,7 @@ export const AssessmentWorkspace = ({
     // ── Round 2: Coding State ────────────────────────────────────────
     const [codingProblems, setCodingProblems] = useState([]);
     const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
-    const [selectedLanguage, setSelectedLanguage] = useState('python'); // 'python' | 'java'
+    const selectedLanguage = 'python'; // Python only, for students and shared-link candidates alike
     const [codeSolutions, setCodeSolutions] = useState({}); // { [probId]: { code: string, language: string } }
     const [codeOutput, setCodeOutput] = useState(null);
     const [isRunningCode, setIsRunningCode] = useState(false);
@@ -529,6 +544,10 @@ export const AssessmentWorkspace = ({
     const [voiceSpeakingState, setVoiceSpeakingState] = useState('connecting'); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
     const [voiceVolume, setVoiceVolume] = useState(0);
     const [voiceTranscript, setVoiceTranscript] = useState([]);
+    const [liveCaption, setLiveCaption] = useState('');          // what the candidate is saying right now (replaced by the server's transcript)
+    const [captionsUnavailable, setCaptionsUnavailable] = useState(false);
+    const [aiCaption, setAiCaption] = useState(null);                 // the interviewer's words while they are being spoken
+    const pendingAiRef = useRef([]);                                  // the interviewer's finished lines, added to the transcript once spoken
     const [voiceIsMuted, setVoiceIsMuted] = useState(false);
     const [currentSpeaker, setCurrentSpeaker] = useState(null); // 'ai' | 'user'
     const [voiceConnectionError, setVoiceConnectionErrorRaw] = useState(null);
@@ -740,7 +759,7 @@ export const AssessmentWorkspace = ({
             }
         } catch (err) {
             console.error("Failed to fetch session:", err);
-            setError(err.response?.data?.detail || "Could not load assessment session.");
+            setError(errorMessage(err, "Could not load assessment session."));
         } finally {
             setIsLoading(false);
         }
@@ -794,7 +813,7 @@ export const AssessmentWorkspace = ({
             if (updated.is_completed) finishAssessment('closed');   // the overall deadline ended the attempt meanwhile
         } catch (err) {
             console.error("Aptitude submission error:", err);
-            alert(err.response?.data?.detail || "Aptitude submission failed. Please retry.");
+            alert(errorMessage(err, "Aptitude submission failed. Please retry."));
         } finally {
             setIsSubmittingApt(false);
             setSubmitDone(false);
@@ -833,37 +852,12 @@ export const AssessmentWorkspace = ({
         }));
     };
 
-    const handleLanguageChange = (newLang) => {
-        setSelectedLanguage(newLang);
-        if (!codingProblems[currentProblemIndex]) return;
-        const activeProb = codingProblems[currentProblemIndex];
-        const probId = String(activeProb.id);
-        const existingSol = codeSolutions[probId];
-
-        const defaultPython = activeProb.starter_code?.python || `# Write your Python solution for ${activeProb.title}\ndef solve():\n    pass\n`;
-        const defaultJava = activeProb.starter_code?.java || `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        // Write solution for ${activeProb.title}\n        \n    }\n}\n`;
-
-        // If switching language and existing solution has different language, load template for new language
-        if (!existingSol || existingSol.language !== newLang) {
-            setCodeSolutions(prev => ({
-                ...prev,
-                [probId]: {
-                    code: newLang === 'java' ? defaultJava : defaultPython,
-                    language: newLang
-                }
-            }));
-        }
-        setCodeOutput(null);
-    };
-
     const handleResetCode = () => {
         if (!codingProblems[currentProblemIndex]) return;
         const activeProb = codingProblems[currentProblemIndex];
         const probId = String(activeProb.id);
-        const starter = (selectedLanguage === 'java')
-            ? (activeProb.starter_code?.java || `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        // Write solution for ${activeProb.title}\n        \n    }\n}\n`)
-            : (activeProb.starter_code?.python || `# Write your Python solution for ${activeProb.title}\ndef solve():\n    pass\n`);
-        
+        const starter = activeProb.starter_code?.python || '';
+
         setCodeSolutions(prev => ({
             ...prev,
             [probId]: {
@@ -874,6 +868,7 @@ export const AssessmentWorkspace = ({
         setCodeOutput(null);
     };
 
+    const runCodeRef = useRef(() => {});
     const handleRunCode = async () => {
         if (!codingProblems[currentProblemIndex]) return;
         const activeProb = codingProblems[currentProblemIndex];
@@ -891,12 +886,14 @@ export const AssessmentWorkspace = ({
             setCodeOutput({
                 all_passed: false,
                 test_results: [],
-                error: err.response?.data?.detail || "Execution failed in sandboxed container."
+                error: errorMessage(err, "Execution failed in sandboxed container.")
             });
         } finally {
             setIsRunningCode(false);
         }
     };
+
+    runCodeRef.current = handleRunCode;
 
     const handleSubmitCoding = async () => {
         if (isSubmittingCoding || codingSubmitResult) return;
@@ -950,7 +947,7 @@ export const AssessmentWorkspace = ({
         if (voiceTranscriptScrollRef.current) {
             voiceTranscriptScrollRef.current.scrollTop = voiceTranscriptScrollRef.current.scrollHeight;
         }
-    }, [voiceTranscript]);
+    }, [voiceTranscript, liveCaption, aiCaption]);
 
     // ── Voice Lifecycle Cleanup ───────────────────────────────────────
     useEffect(() => {
@@ -968,6 +965,8 @@ export const AssessmentWorkspace = ({
 
             const voice = new VoiceInterviewSession({
                 turn: (args) => api.voiceTurn(args),
+                turnStream: api.voiceTurnStream ? (args, options) => api.voiceTurnStream(args, options) : undefined,
+                captionSession: api.voiceCaptionSession ? () => api.voiceCaptionSession() : undefined,
                 audioDeviceId: micDeviceRef.current || undefined,
             });
             voiceRef.current = voice;
@@ -998,6 +997,17 @@ export const AssessmentWorkspace = ({
                 setVoiceSpeakingState('processing');
             });
 
+            voice.on('caption', (caption) => {
+                if (!current()) return;
+                if (caption?.role === 'assistant') setAiCaption({ ...caption, startedAt: Date.now() });
+                else setLiveCaption(caption?.text || '');
+            });
+
+            voice.on('caption-status', (status) => {
+                if (!current()) return;
+                setCaptionsUnavailable(status?.available === false);
+            });
+
             voice.on('speech-start', () => {
                 if (!current()) return;
                 listeningSinceRef.current = 0;
@@ -1005,8 +1015,25 @@ export const AssessmentWorkspace = ({
                 setCurrentSpeaker('ai');
             });
 
+            const addEntry = (role, text) => {
+                const newEntry = {
+                    id: Date.now() + Math.random(),
+                    role,
+                    text,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                };
+                setVoiceTranscript(prev => [...prev, newEntry]);
+                setCurrentSpeaker(role);
+                setTimeout(() => setCurrentSpeaker(null), 2500);
+            };
+            const flushInterviewerLines = () => {
+                setAiCaption(null);
+                pendingAiRef.current.splice(0).forEach((line) => addEntry('ai', line));
+            };
+
             voice.on('speech-end', () => {
                 if (!current()) return;
+                flushInterviewerLines();
                 listeningSinceRef.current = Date.now();
                 setVoiceSpeakingState('listening');
                 setCurrentSpeaker(null);
@@ -1021,15 +1048,12 @@ export const AssessmentWorkspace = ({
                 if (!current()) return;
                 if (msg.type === 'transcript' && msg.transcriptType === 'final') {
                     const role = (msg.role === 'assistant' || msg.role === 'ai') ? 'ai' : 'user';
-                    const newEntry = {
-                        id: Date.now() + Math.random(),
-                        role,
-                        text: msg.transcript,
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                    };
-                    setVoiceTranscript(prev => [...prev, newEntry]);
-                    setCurrentSpeaker(role);
-                    setTimeout(() => setCurrentSpeaker(null), 2500);
+                    if (role === 'user') {
+                        setLiveCaption('');                  // the real transcript replaces the live one
+                        addEntry('user', msg.transcript);
+                    } else {
+                        pendingAiRef.current.push(msg.transcript);       // shown word by word while spoken, then added to the transcript
+                    }
 
                     // Automatically detect progression across questions
                     if (role === 'ai') {
@@ -1052,8 +1076,10 @@ export const AssessmentWorkspace = ({
             voice.on('call-end', () => {
                 if (!current()) return;
                 clearTimeout(voiceConnectTimerRef.current);
+                flushInterviewerLines();
                 setVoiceCallStatus('ended');
                 setVoiceSpeakingState('completed');
+                setLiveCaption('');
                 setCurrentSpeaker(null);
             });
 
@@ -1063,6 +1089,8 @@ export const AssessmentWorkspace = ({
                 console.error("[RoleReady Voice Error]:", err);
                 setVoiceCallStatus('error');
                 setVoiceConnectionError(classifyVoiceError(err).message);      // e.g. an explicit microphone-permission message
+                flushInterviewerLines();
+                setLiveCaption('');
                 setCurrentSpeaker(null);
             };
             voice.on('error', failCall);
@@ -1108,7 +1136,7 @@ export const AssessmentWorkspace = ({
         } catch (err) {
             console.error("Failed to load the voice interview session:", err);
             setVoiceCallStatus('error');
-            setVoiceConnectionError(err.response?.data?.detail || "Could not set up the voice interview. Choose Retry Connection.");
+            setVoiceConnectionError(errorMessage(err, "Could not set up the voice interview. Choose Retry Connection."));
             try {
                 const fallback = await api.startInterview();
                 setInterviewQuestions(fallback.questions || []);
@@ -2322,303 +2350,114 @@ export const AssessmentWorkspace = ({
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {/* Coding Sub-Header Bar: Title + Submit (row 1), Problem Tabs + Language + Proctor chip (row 2) */}
-                                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                                <Code2 className="w-5 h-5 text-cyan-600 shrink-0" />
-                                                Round 2: Practical Coding
-                                            </h2>
-                                            <p className="text-[11px] text-slate-500 mt-0.5">Solve each problem, run the public tests, then submit everything to unlock the interview.</p>
-                                        </div>
+                                {/* Students: one slim bar (title, problems, camera thumbnail, submit) so the workspace gets the screen */}
+                                    <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                                            <div className="min-w-0 flex-1 sm:flex-none order-1">
+                                                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                                    <Code2 className="w-5 h-5 text-cyan-600 shrink-0" />
+                                                    <span className="truncate">Round 2: Practical Coding</span>
+                                                </h2>
+                                                <p className="hidden sm:block text-[11px] text-slate-500 mt-0.5">Solve each problem, run the public tests, then submit everything to unlock the interview.</p>
+                                            </div>
 
-                                        <button
-                                            type="button"
-                                            disabled={isSubmittingCoding}
-                                            onClick={handleSubmitCoding}
-                                            className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed"
-                                        >
-                                            {isSubmittingCoding ? "Evaluating Tests..." : (codingSubmitError ? "Retry Submission" : "Submit All & Unlock Interview")}
-                                        </button>
-                                    </div>
+                                            <div className="order-3 sm:order-2 flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full overflow-x-auto [&>*]:shrink-0">
+                                                {codingProblems.map((prob, idx) => (
+                                                    <button
+                                                        key={prob.id}
+                                                        type="button"
+                                                        onClick={() => { setCurrentProblemIndex(idx); setCodeOutput(null); }}
+                                                        className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                                                            currentProblemIndex === idx ? 'text-cyan-700' : 'text-slate-600 hover:text-slate-900'
+                                                        }`}
+                                                    >
+                                                        {currentProblemIndex === idx && (
+                                                            <motion.span
+                                                                layoutId="pw-problem-tab"
+                                                                className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
+                                                                transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+                                                            />
+                                                        )}
+                                                        Problem {idx + 1}
+                                                    </button>
+                                                ))}
+                                            </div>
 
-                                    {codingSubmitError && !isSubmittingCoding && (
-                                        <div role="alert" className="flex items-start gap-2.5 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-800">
-                                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                                            <span>{codingSubmitError}</span>
-                                        </div>
-                                    )}
+                                            <div className="hidden sm:block sm:flex-1 sm:order-3" aria-hidden="true" />
 
-                                    <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
-                                        {/* Problem Switcher Tabs */}
-                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full overflow-x-auto [&>*]:shrink-0">
-                                            {codingProblems.map((prob, idx) => (
-                                                <button
-                                                    key={prob.id}
-                                                    type="button"
-                                                    onClick={() => { setCurrentProblemIndex(idx); setCodeOutput(null); }}
-                                                    className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                                                        currentProblemIndex === idx
-                                                            ? 'text-cyan-700'
-                                                            : 'text-slate-600 hover:text-slate-900'
-                                                    }`}
-                                                >
-                                                    {currentProblemIndex === idx && (
-                                                        <motion.span
-                                                            layoutId="pw-problem-tab"
-                                                            className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
-                                                            transition={{ type: 'spring', stiffness: 420, damping: 36 }}
-                                                        />
-                                                    )}
-                                                    Problem {idx + 1}
-                                                </button>
-                                            ))}
-                                        </div>
+                                            <div className="order-2 sm:order-8 w-28 sm:w-36 shrink-0">
+                                                <ProctorCameraFeed
+                                                    stream={cameraStream || proctorStream}
+                                                    detections={detections}
+                                                    faceBoxes={faceBoxes}
+                                                    personCount={personCount}
+                                                    suspectLabel={suspectLabel}
+                                                    isModelActive={isModelActive}
+                                                    detectionStatus={detectionStatus}
+                                                    violationCount={violationCount} limit={strikeLimit}
+                                                    compact={true}
+                                                    thumb={true}
+                                                />
+                                            </div>
 
-                                        {/* Language Selector (Python and Java) */}
-                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full overflow-x-auto [&>*]:shrink-0">
                                             <button
                                                 type="button"
-                                                onClick={() => handleLanguageChange('python')}
-                                                className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
-                                                    selectedLanguage === 'python'
-                                                        ? 'text-cyan-800'
-                                                        : 'text-slate-600 hover:text-slate-900'
-                                                }`}
+                                                disabled={isRunningCode}
+                                                onClick={handleRunCode}
+                                                title="Run (Ctrl + ')"
+                                                className="order-4 flex-1 sm:flex-none min-h-[44px] px-4 rounded-xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-all active:scale-[0.97] shrink-0"
                                             >
-                                                {selectedLanguage === 'python' && (
-                                                    <motion.span
-                                                        layoutId="pw-lang-tab"
-                                                        className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
-                                                        transition={{ type: 'spring', stiffness: 420, damping: 36 }}
-                                                    />
-                                                )}
-                                                <span>🐍</span>
-                                                <span>Python 3.11</span>
+                                                <Play className="w-4 h-4" />
+                                                <span>{isRunningCode ? 'Running…' : 'Run'}</span>
                                             </button>
+
                                             <button
                                                 type="button"
-                                                onClick={() => handleLanguageChange('java')}
-                                                className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
-                                                    selectedLanguage === 'java'
-                                                        ? 'text-cyan-800'
-                                                        : 'text-slate-600 hover:text-slate-900'
-                                                }`}
+                                                disabled={isSubmittingCoding}
+                                                onClick={handleSubmitCoding}
+                                                className="order-5 flex-[2] sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
-                                                {selectedLanguage === 'java' && (
-                                                    <motion.span
-                                                        layoutId="pw-lang-tab"
-                                                        className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
-                                                        transition={{ type: 'spring', stiffness: 420, damping: 36 }}
-                                                    />
-                                                )}
-                                                <span>☕</span>
-                                                <span>Java 17 (OpenJDK)</span>
+                                                {isSubmittingCoding ? "Evaluating Tests..." : (codingSubmitError ? "Retry Submission" : "Submit All & Unlock Interview")}
                                             </button>
+
+                                            {/* Run and Submit sit together in the middle (like LeetCode's top bar); the camera is apart, behind a divider */}
+                                            <div className="hidden sm:block sm:flex-1 sm:order-6" aria-hidden="true" />
+                                            <div className="hidden sm:block sm:order-7 w-px h-14 bg-slate-200" aria-hidden="true" />
                                         </div>
 
-                                        {/* Compact Proctor Stream chip */}
-                                        <div className="w-40 sm:w-48 shrink-0 sm:ml-auto">
-                                            <ProctorCameraFeed
-                                                stream={cameraStream || proctorStream}
-                                                detections={detections}
-                                                faceBoxes={faceBoxes}
-                                                personCount={personCount}
-                                                suspectLabel={suspectLabel}
-                                                isModelActive={isModelActive}
-                                                detectionStatus={detectionStatus}
-                                                violationCount={violationCount} limit={strikeLimit}
-                                                compact={true}
-                                            />
-                                        </div>
+                                        {codingSubmitError && !isSubmittingCoding && (
+                                            <div role="alert" className="mt-3 flex items-start gap-2.5 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-800">
+                                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                                <span>{codingSubmitError}</span>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
+
 
                                 {codingProblems.length > 0 && (() => {
                                     const activeProblem = codingProblems[currentProblemIndex] || codingProblems[0];
                                     const probId = String(activeProblem.id);
                                     const curSol = codeSolutions[probId] || { 
-                                        code: (selectedLanguage === 'java' ? activeProblem.starter_code?.java : activeProblem.starter_code?.python) || "", 
+                                        code: activeProblem.starter_code?.python || "", 
                                         language: selectedLanguage 
                                     };
 
-                                    return (
-                                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                                            {/* Left Pane (~45% / 5 Cols): Problem Statement, Constraints, Public Tests */}
-                                            <div className="min-w-0 lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 max-h-[500px] lg:max-h-[700px] overflow-y-auto">
-                                                <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                                                    <h3 className="text-base font-bold text-slate-900 min-w-0 break-words">{activeProblem.title}</h3>
-                                                    <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
-                                                        <QuestionProvenance provenance={activeProblem.provenance} styleCompany={activeProblem.style_company} />
-                                                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
-                                                            activeProblem.difficulty === 'Easy' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                                                            activeProblem.difficulty === 'Medium' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                                                            'bg-red-50 text-red-800 border-red-200'
-                                                        }`}>
-                                                            {activeProblem.difficulty}
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                        const ranWithResults = codeOutput && (codeOutput.test_results || []).length > 0;
+                                        return (
+                                            <AssessmentCodingWorkspace
+                                                key={probId}
+                                                problem={activeProblem}
+                                                code={curSol.code}
+                                                onCodeChange={(val) => handleCodeChange(probId, val)}
+                                                onReset={() => { if (window.confirm('Reset to the starter code? Your current code will be replaced.')) handleResetCode(); }}
+                                                onRun={handleRunCode}
+                                                running={isRunningCode}
+                                                result={ranWithResults ? codeOutput : null}
+                                                error={codeOutput && !ranWithResults ? toDisplayText(codeOutput.error, '') : ''}
+                                                badge={<QuestionProvenance provenance={activeProblem.provenance} styleCompany={activeProblem.style_company} />}
+                                            />
+                                        );
 
-                                                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                                                    {activeProblem.description}
-                                                </p>
-
-                                                <div className="space-y-2.5 text-xs pt-1">
-                                                    {String(activeProblem.constraints || '').trim() && (
-                                                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                                            <span className="font-bold text-slate-800 block mb-1">Constraints:</span>
-                                                            <span className="font-mono text-slate-700">{activeProblem.constraints}</span>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                                        <span className="font-bold text-slate-800 block mb-1">Input Format:</span>
-                                                        <span className="text-slate-700">{activeProblem.input_format}</span>
-                                                    </div>
-
-                                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                                        <span className="font-bold text-slate-800 block mb-1">Output Format:</span>
-                                                        <span className="text-slate-700">{activeProblem.output_format}</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Public Test Cases */}
-                                                <div className="pt-2">
-                                                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Public Test Cases:</h4>
-                                                    {(activeProblem.public_test_cases || []).map((t, idx) => (
-                                                        <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono space-y-1 mb-2">
-                                                            <div><span className="text-slate-500">Input:</span> <span className="text-slate-900">{t.input}</span></div>
-                                                            <div><span className="text-emerald-700 font-bold">Expected:</span> <span className="text-slate-900">{t.expected_output}</span></div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            {/* Right Pane (~55% / 7 Cols): Monaco Editor & Output Terminal */}
-                                            <div className="min-w-0 lg:col-span-7 space-y-4">
-                                                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col">
-                                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                                                                {selectedLanguage === 'java' ? 'Main.java' : 'solution.py'}
-                                                            </span>
-                                                            <span className="text-[11px] text-slate-400 font-medium">
-                                                                {selectedLanguage === 'java' ? 'Java OpenJDK 17' : 'Python 3.11'}
-                                                            </span>
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleResetCode}
-                                                            className="min-h-[40px] px-2 text-xs font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-                                                        >
-                                                            <RotateCcw className="w-3.5 h-3.5" /> Reset Template
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Monaco Editor Component */}
-                                                    <div className="w-full h-[320px] sm:h-[380px] rounded-xl overflow-hidden border border-slate-200">
-                                                        <Editor
-                                                            height="100%"
-                                                            language={selectedLanguage === 'java' ? 'java' : 'python'}
-                                                            theme="vs-dark"
-                                                            value={curSol.code}
-                                                            onChange={(val) => handleCodeChange(probId, val || "")}
-                                                            options={{
-                                                                minimap: { enabled: false },
-                                                                fontSize: 13,
-                                                                lineNumbers: 'on',
-                                                                scrollBeyondLastLine: false,
-                                                                automaticLayout: true,
-                                                                tabSize: 4
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {/* Run Tests Action */}
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 mt-3 border-t border-slate-100">
-                                                        <span className="text-xs text-slate-500 font-medium">
-                                                            Isolated Sandboxed Runtime ({selectedLanguage === 'java' ? 'Judge0 Java' : 'Judge0 Python'})
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            disabled={isRunningCode}
-                                                            onClick={handleRunCode}
-                                                            className="min-h-[44px] px-5 py-2.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold flex items-center gap-2 border border-cyan-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs active:scale-95"
-                                                        >
-                                                            <Play className="w-3.5 h-3.5 text-cyan-600" />
-                                                            <span>{isRunningCode ? "Executing Sandbox..." : "Run Public Tests"}</span>
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Output Terminal */}
-                                                {codeOutput && (
-                                                    <motion.div
-                                                        initial={{ opacity: 0, y: 14 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                                                        className="bg-slate-900 border border-slate-800 rounded-2xl p-5 font-mono text-xs text-slate-200 space-y-2.5 shadow-sm max-h-72 overflow-y-auto"
-                                                    >
-                                                        <div className="flex items-center gap-2 text-slate-400 pb-2 border-b border-slate-800">
-                                                            <Terminal className="w-4 h-4 text-cyan-400" />
-                                                            <span className="text-slate-300 font-bold">Execution Output</span>
-                                                            <span className={`ml-auto font-bold px-2 py-0.5 rounded text-[11px] ${
-                                                                codeOutput.all_passed 
-                                                                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' 
-                                                                    : (codeOutput.error_type === 'Compilation Error'
-                                                                        ? 'bg-amber-950 text-amber-300 border border-amber-700'
-                                                                        : 'bg-red-950 text-red-400 border border-red-800')
-                                                            }`}>
-                                                                {codeOutput.error_type 
-                                                                    ? codeOutput.error_type.toUpperCase() 
-                                                                    : (codeOutput.all_passed ? "PASS (All Public Cases)" : "FAIL / OUTPUT MISMATCH")}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Prominent Compilation / Runtime Error Banner */}
-                                                        {codeOutput.error_type && (
-                                                            <div className={`p-2.5 rounded-xl border text-xs font-sans ${
-                                                                codeOutput.error_type === 'Compilation Error'
-                                                                    ? 'bg-amber-950/60 border-amber-700/60 text-amber-200'
-                                                                    : 'bg-red-950/60 border-red-700/60 text-red-200'
-                                                            }`}>
-                                                                <strong className="block mb-1">{codeOutput.error_type}:</strong>
-                                                                <pre className="font-mono text-[11px] whitespace-pre-wrap">{codeOutput.stderr || codeOutput.error || "Execution terminated with errors."}</pre>
-                                                            </div>
-                                                        )}
-
-                                                        {(codeOutput.test_results || []).map((tr, idx) => (
-                                                            <motion.div
-                                                                key={idx}
-                                                                initial={{ opacity: 0, x: -10 }}
-                                                                animate={{ opacity: 1, x: 0 }}
-                                                                transition={{ duration: 0.3, delay: 0.12 + idx * 0.08, ease: 'easeOut' }}
-                                                                className={`space-y-1 pt-1 pl-3 text-xs border-l-2 ${tr.passed ? 'border-emerald-500' : 'border-red-500'}`}
-                                                            >
-                                                                <div className="flex items-center gap-1.5 text-[11px] font-bold">
-                                                                    {tr.passed
-                                                                        ? <PopIn><CheckCircle className="w-3.5 h-3.5 text-emerald-400" /></PopIn>
-                                                                        : <PopIn><XCircle className="w-3.5 h-3.5 text-red-400" /></PopIn>}
-                                                                    <span className={tr.passed ? 'text-emerald-400' : 'text-red-400'}>Case {idx + 1}: {tr.passed ? 'Passed' : 'Failed'}</span>
-                                                                </div>
-                                                                <div className="text-slate-400">Input: {tr.input}</div>
-                                                                <div className="text-slate-300">Expected: {tr.expected_output}</div>
-                                                                <div className={tr.passed ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
-                                                                    Actual: {tr.actual_output || "<no output>"}
-                                                                </div>
-                                                                {tr.error && !codeOutput.error_type && <div className="text-red-400 font-medium">{tr.error}</div>}
-                                                            </motion.div>
-                                                        ))}
-                                                        {codeOutput.error && !codeOutput.error_type && (
-                                                            <div className="text-red-400 pt-1 font-medium">{codeOutput.error}</div>
-                                                        )}
-                                                    </motion.div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
                                 })()}
                             </div>
                         )}
@@ -2752,11 +2591,17 @@ export const AssessmentWorkspace = ({
                                                 </div>
                                             </div>
 
+                                            <p className="px-4 pt-2 text-[10px] leading-relaxed text-gray-500">
+                                                {captionsUnavailable
+                                                    ? 'Live captions are not available in this browser. Your answer is still recorded and transcribed when you finish.'
+                                                    : 'Captions appear as you speak and may be corrected once you finish your answer.'}
+                                            </p>
+
                                             <div
                                                 ref={voiceTranscriptScrollRef}
                                                 className="flex-1 overflow-y-auto px-4 py-3 space-y-3 max-h-[320px] scrollbar-thin scrollbar-thumb-gray-700"
                                             >
-                                                {voiceTranscript.length === 0 ? (
+                                                {voiceTranscript.length === 0 && !liveCaption && !aiCaption && voiceSpeakingState !== 'processing' ? (
                                                     <p className="text-xs text-gray-600 text-center mt-8">Transcript will appear here...</p>
                                                 ) : (
                                                     <AnimatePresence>
@@ -2783,6 +2628,12 @@ export const AssessmentWorkspace = ({
                                                             </motion.div>
                                                         ))}
                                                     </AnimatePresence>
+                                                )}
+
+                                                {/* The interviewer's words as they are spoken, then what the candidate says as they say it (replaced by the final transcript) */}
+                                                {aiCaption && <AiLiveCaption caption={aiCaption} />}
+                                                {(liveCaption || voiceSpeakingState === 'processing') && (
+                                                    <UserLiveCaption text={liveCaption} processing={voiceSpeakingState === 'processing'} />
                                                 )}
                                             </div>
                                         </div>

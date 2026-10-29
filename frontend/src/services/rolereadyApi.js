@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { buildVoiceTurnForm } from '../utils/voiceInterviewSession';
+import { readNdjson } from '../utils/ndjson';
 import API_URL from '../apiConfig';
 
 // Students authenticate with the HttpOnly session cookie (+ CSRF header) added by the auth client.
@@ -94,11 +95,12 @@ export const rolereadyApi = {
         return response.data;
     },
 
-    async runCodeTest(sessionUuid, problemId, code, language = 'python') {
+    async runCodeTest(sessionUuid, problemId, code, language = 'python', customInput = null) {
         const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/run-code`, {
             problem_id: problemId,
             code,
-            language
+            language,
+            custom_input: customInput
         }, {
             headers: getAuthHeaders()
         });
@@ -146,6 +148,33 @@ export const rolereadyApi = {
             headers: getAuthHeaders(true),
             timeout: 60000
         });
+        return response.data;
+    },
+
+    /**
+     * The same exchange as voiceTurn, delivered as events (transcript, audio chunks, done) so the first sentence can be spoken
+     * while the rest is still being produced. An HTTP refusal throws an error shaped like axios' (err.response.status / data.detail).
+     */
+    async *voiceTurnStream(sessionUuid, turn, { signal } = {}) {
+        const headers = { Accept: 'application/x-ndjson' };       // no Content-Type: the browser sets the multipart boundary itself
+        const invitationToken = localStorage.getItem('invitationToken');
+        if (invitationToken) headers['X-Invitation-Token'] = invitationToken;
+        const res = await fetch(`${API_URL}/api/roleready/session/${sessionUuid}/voice-turn-stream`, {
+            method: 'POST', body: buildVoiceTurnForm(turn), headers, signal,
+        });
+        if (!res.ok) {
+            let detail;
+            try { detail = (await res.json())?.detail; } catch { /* not JSON */ }
+            const err = new Error(typeof detail === 'string' ? detail : `Voice request failed (${res.status})`);
+            err.response = { status: res.status, data: { detail } };
+            throw err;
+        }
+        yield* readNdjson(res.body);
+    },
+
+    /** A single-use live-caption connection ({ url }): the microphone is streamed to it and the words come back as they are recognised. */
+    async voiceCaptionSession(sessionUuid) {
+        const response = await axios.post(`${API_URL}/api/roleready/session/${sessionUuid}/voice-caption-token`, null, { headers: getAuthHeaders(), timeout: 15000 });
         return response.data;
     },
 

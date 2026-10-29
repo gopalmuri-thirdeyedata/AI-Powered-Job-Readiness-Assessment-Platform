@@ -7,13 +7,20 @@ the questions and the job context) never leave the server. Nothing is provisione
 """
 import base64
 import os
+import random
+import time
 import re
-from typing import Any, Dict, List, Optional
+import threading
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Iterator, Dict, List, Optional
+from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
 
 from services import gemini_client
+from services.student_sandbox import SandboxGate
 
 load_dotenv()
 
@@ -54,8 +61,67 @@ def is_configured() -> bool:
     return bool(_api_key() and _voice_id())
 
 
+# The interviewer writes one to three short sentences, so a light model is both fast and steady (measured: gemini-2.5-flash varied
+# 2-5 s for the same reply, the lite models stayed near 1.8 s). Set GEMINI_VOICE_MODEL_NAME to change it; "default" uses GEMINI_MODEL_NAME.
+DEFAULT_VOICE_MODEL = "gemini-3.5-flash-lite"
+
+
+def _voice_model() -> Optional[str]:
+    configured = (os.getenv("GEMINI_VOICE_MODEL_NAME") or DEFAULT_VOICE_MODEL).strip()
+    return None if configured.lower() in ("", "default") else configured
+
+
 def _headers() -> Dict[str, str]:
     return {"xi-api-key": _api_key() or ""}
+
+
+_session = None
+_session_lock = threading.Lock()
+
+
+def _post(*args, **kwargs):
+    """POST through one shared session so the TLS connection to ElevenLabs is reused instead of re-opened on every call."""
+    global _session
+    with _session_lock:
+        if _session is None:
+            _session = requests.Session()
+        session = _session
+    return session.post(*args, **kwargs)
+
+
+# ElevenLabs allows only a few requests at the same instant per plan (Starter: 6 text-to-speech, 12 speech-to-text; Creator 10 / 20; Pro 20 / 40).
+# Beyond that it answers 429 and a student's voice turn fails. These lines make the surplus WAIT instead. They are per server worker, so set
+# ELEVENLABS_TTS_CONCURRENCY / ELEVENLABS_STT_CONCURRENCY to (plan limit / number of workers), rounded down (Starter with 4 workers: 1 and 3).
+def _voice_busy(message: str) -> "VoiceServiceError":
+    return VoiceServiceError("The voice service is busy right now. Please try again in a moment.", 503)
+
+
+def _concurrency_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, "").strip() or default))
+    except ValueError:
+        return default
+
+
+_tts_line = SandboxGate(_concurrency_env("ELEVENLABS_TTS_CONCURRENCY", 1), 12.0, 200, busy_factory=_voice_busy)
+_stt_line = SandboxGate(_concurrency_env("ELEVENLABS_STT_CONCURRENCY", 3), 12.0, 200, busy_factory=_voice_busy)
+
+
+def _post_in_line(line: SandboxGate, *args, **kwargs):
+    """POST after waiting for a turn. A 429 ("too many concurrent requests") is retried briefly, with a little jitter."""
+    response = None
+    for attempt in range(4):
+        with line.slot():
+            response = _post(*args, **kwargs)
+        if response.status_code != 429:
+            return response
+        time.sleep(0.4 * (attempt + 1) + random.random() * 0.3)
+    return response
+
+
+_AUDIO_CACHE_MAX = 64
+_audio_cache: "OrderedDict[str, bytes]" = OrderedDict()
+_audio_cache_lock = threading.Lock()
 
 
 # ------------------------------------------------------------------------------
@@ -249,8 +315,15 @@ def synthesize(text: str) -> bytes:
     spoken = re.sub(r"\s+", " ", str(text or "")).strip()[:MAX_SPOKEN_CHARS]
     if not spoken:
         raise VoiceServiceError("Nothing to say.", 400)
+    cache_key = f"{_voice_id()}|{os.getenv('ELEVENLABS_TTS_MODEL', 'eleven_flash_v2_5')}|{spoken}"
+    with _audio_cache_lock:
+        cached = _audio_cache.get(cache_key)
+        if cached is not None:
+            _audio_cache.move_to_end(cache_key)
+            return cached
     try:
-        response = requests.post(
+        response = _post_in_line(
+            _tts_line,
             f"{ELEVENLABS_BASE_URL}/text-to-speech/{_voice_id()}",
             params={"output_format": "mp3_44100_64"},
             headers={**_headers(), "Content-Type": "application/json"},
@@ -265,7 +338,61 @@ def synthesize(text: str) -> bytes:
         raise _provider_failed(f"text-to-speech ({type(exc).__name__})")
     if response.status_code != 200 or not response.content:
         raise _provider_failed("text-to-speech", response.status_code)
+    with _audio_cache_lock:
+        _audio_cache[cache_key] = response.content
+        while len(_audio_cache) > _AUDIO_CACHE_MAX:
+            _audio_cache.popitem(last=False)
     return response.content
+
+
+def prewarm_opening(voice_session: Dict[str, Any]) -> None:
+    """Synthesize the fixed opening line in the background so the interview starts speaking the moment the candidate connects."""
+    if os.getenv("ELEVENLABS_PREWARM", "true").strip().lower() not in ("1", "true", "yes") or not is_configured():
+        return
+
+    def _run():
+        try:
+            synthesize(voice_session["first_message"])
+        except Exception:
+            pass     # best effort: the opening turn synthesizes it normally if this did not finish
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+# ------------------------------------------------------------------------------
+# Live captions: the browser streams the microphone to ElevenLabs' realtime speech-to-text and shows the words as they are recognised.
+# The API key never leaves the server: the browser gets a single-use token (valid 15 minutes, consumed by one connection).
+# Captions are only for display; the answer that is scored is still transcribed here from the uploaded recording.
+# ------------------------------------------------------------------------------
+REALTIME_STT_URL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime"
+CAPTION_SAMPLE_RATE = 16000
+
+
+def realtime_caption_session() -> Dict[str, Any]:
+    """A ready-to-open websocket URL (with a single-use token) for live captions, plus the audio format the browser must send."""
+    if not is_configured():
+        raise VoiceServiceError("The voice service is not configured.", 503)
+    try:
+        response = _post(f"{ELEVENLABS_BASE_URL}/single-use-token/realtime_scribe", headers=_headers(), timeout=REQUEST_TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        raise _provider_failed(f"caption token ({type(exc).__name__})")
+    if response.status_code != 200:
+        raise _provider_failed("caption token", response.status_code)
+    try:
+        token = str((response.json() or {}).get("token") or "")
+    except ValueError:
+        token = ""
+    if not token:
+        raise _provider_failed("caption token (empty)")
+    query = urlencode({
+        "model_id": os.getenv("ELEVENLABS_REALTIME_STT_MODEL", "scribe_v2_realtime"),
+        "audio_format": f"pcm_{CAPTION_SAMPLE_RATE}",
+        "language_code": os.getenv("ELEVENLABS_STT_LANGUAGE", "en"),
+        "commit_strategy": "vad",
+        "vad_silence_threshold_secs": "1.0",
+        "token": token,
+    })
+    return {"url": f"{REALTIME_STT_URL}?{query}", "sample_rate": CAPTION_SAMPLE_RATE, "format": "pcm_s16le", "expires_in_seconds": 900}
 
 
 _NOISE_ONLY = re.compile(r"^[\s\(\[\*].*[\)\]\*]\s*$")      # "(background noise)", "[music]" - not speech
@@ -280,11 +407,12 @@ def transcribe(audio: bytes, content_type: str = AUDIO_WEBM) -> str:
     if len(audio) > MAX_AUDIO_BYTES:
         raise VoiceServiceError("That recording is too long. Please answer in shorter parts.", 413)
     try:
-        response = requests.post(
+        response = _post_in_line(
+            _stt_line,
             f"{ELEVENLABS_BASE_URL}/speech-to-text",
             headers=_headers(),
             data={
-                "model_id": os.getenv("ELEVENLABS_STT_MODEL", "scribe_v1"),
+                "model_id": os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2"),
                 "language_code": os.getenv("ELEVENLABS_STT_LANGUAGE", "en"),
                 "tag_audio_events": "false",
             },
@@ -322,11 +450,15 @@ def _clean_reply(text: str) -> str:
     return re.sub(r"\s+", " ", reply).strip()[:MAX_SPOKEN_CHARS]
 
 
-def next_reply(system_prompt: str, history: List[Dict[str, str]], user_text: str) -> str:
+def _reply_prompt(history: List[Dict[str, str]], user_text: str) -> str:
     transcript = "\n".join(f"{'Interviewer' if t['role'] == 'ai' else 'Candidate'}: {t['text']}" for t in history)
-    prompt = f"{transcript}\nCandidate: {user_text[:MAX_TURN_CHARS]}\n\nWrite the Interviewer's next spoken reply."
+    return f"{transcript}\nCandidate: {user_text[:MAX_TURN_CHARS]}\n\nWrite the Interviewer's next spoken reply."
+
+
+def next_reply(system_prompt: str, history: List[Dict[str, str]], user_text: str) -> str:
+    prompt = _reply_prompt(history, user_text)
     try:
-        reply = _clean_reply(gemini_client.call_gemini_text(prompt, system_prompt, temperature=0.7))
+        reply = _clean_reply(gemini_client.call_gemini_text(prompt, system_prompt, temperature=0.7, fast=True, model=_voice_model()))
     except gemini_client.GeminiUnavailableError:
         raise VoiceServiceError("The interviewer is unavailable right now. Please try again.")
     if not reply:
@@ -353,3 +485,85 @@ def run_turn(voice_session: Dict[str, Any], *, audio: Optional[bytes] = None, co
         return {"user_text": "", "reply_text": "", "audio_base64": None, "mime": AUDIO_MPEG}
     reply = next_reply(voice_session["system_prompt"], _clean_history(history), user_text)
     return {"user_text": user_text, "reply_text": reply, "audio_base64": _audio_b64(synthesize(reply)), "mime": AUDIO_MPEG}
+
+
+# ------------------------------------------------------------------------------
+# Streaming turn: the first sentence is spoken while the rest of the reply is still being written
+# ------------------------------------------------------------------------------
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+MIN_CHUNK_CHARS = 40          # a chunk shorter than this ("Great.") is joined to the next sentence so the voice does not stutter
+
+
+def _chunk_sentences(deltas: Iterator[str]) -> Iterator[str]:
+    """Turn a stream of text deltas into speakable chunks (whole sentences, at least MIN_CHUNK_CHARS long except the last)."""
+    buf, pending, spoken = "", "", 0
+    for delta in deltas:
+        buf += delta
+        pieces = _SENTENCE_END.split(buf)
+        buf = pieces.pop()                       # the last piece may still be growing
+        for piece in pieces:
+            pending = f"{pending} {piece}".strip()
+            if len(pending) >= MIN_CHUNK_CHARS:
+                chunk = _clean_reply(pending)
+                pending = ""
+                if chunk and spoken < MAX_SPOKEN_CHARS:
+                    spoken += len(chunk)
+                    yield chunk
+    tail = _clean_reply(f"{pending} {buf}".strip())
+    if tail and spoken < MAX_SPOKEN_CHARS:
+        yield tail[:MAX_SPOKEN_CHARS - spoken] if spoken else tail
+
+
+def _audio_event(index: int, text: str, audio: bytes) -> Dict[str, Any]:
+    return {"type": "audio", "index": index, "text": text, "audio_base64": _audio_b64(audio), "mime": AUDIO_MPEG}
+
+
+def run_turn_stream(voice_session: Dict[str, Any], *, audio: Optional[bytes] = None, content_type: str = AUDIO_WEBM,
+                    history: Any = None, opening: bool = False) -> Iterator[Dict[str, Any]]:
+    """
+    Same exchange as run_turn, delivered as events so playback can start early:
+      {"type": "transcript", "user_text"}  what the candidate said ("" = no speech: nothing else follows but "done")
+      {"type": "audio", "index", "text", "audio_base64", "mime"}  one spoken chunk, in order
+      {"type": "done", "reply_text"}  the whole reply (for the transcript)  |  {"type": "error", "message", "status"}
+    Speech for chunk N is synthesised while Gemini is still writing chunk N+1.
+    """
+    try:
+        if opening:
+            text = voice_session["first_message"]
+            yield {"type": "transcript", "user_text": ""}
+            yield _audio_event(0, text, synthesize(text))
+            yield {"type": "done", "reply_text": text}
+            return
+
+        user_text = transcribe(audio or b"", content_type)
+        yield {"type": "transcript", "user_text": user_text}
+        if not user_text:
+            yield {"type": "done", "reply_text": ""}
+            return
+
+        prompt = _reply_prompt(_clean_history(history), user_text)
+        reply_parts: List[str] = []
+        futures = []
+        emitted = 0
+        try:
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                try:
+                    for chunk in _chunk_sentences(gemini_client.stream_gemini_text(prompt, voice_session["system_prompt"], 0.7, fast=True, model=_voice_model())):
+                        reply_parts.append(chunk)
+                        futures.append(pool.submit(synthesize, chunk))
+                        while emitted < len(futures) and futures[emitted].done():       # speak whatever is already ready, in order
+                            yield _audio_event(emitted, reply_parts[emitted], futures[emitted].result())
+                            emitted += 1
+                except gemini_client.GeminiUnavailableError:
+                    raise VoiceServiceError("The interviewer is unavailable right now. Please try again.")
+                while emitted < len(futures):
+                    yield _audio_event(emitted, reply_parts[emitted], futures[emitted].result())
+                    emitted += 1
+        finally:
+            for f in futures:
+                f.cancel()
+        if not reply_parts:
+            raise VoiceServiceError("The interviewer is unavailable right now. Please try again.")
+        yield {"type": "done", "reply_text": " ".join(reply_parts)}
+    except VoiceServiceError as exc:
+        yield {"type": "error", "message": exc.public_message, "status": exc.status_code}

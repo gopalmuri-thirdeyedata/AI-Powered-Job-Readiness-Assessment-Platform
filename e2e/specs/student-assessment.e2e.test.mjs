@@ -34,7 +34,7 @@ async function finishAssessment(ui, student) {
   await U.answerAptitude(ui);
   await U.openCoding(ui);
   await U.setCode(ui, U.SOLUTIONS.sumPython);
-  await U.stubVapiRest(ui.page);
+  await U.stubVoiceApi(ui.page);
   await U.submitCodingToInterview(ui);
   await U.answerWrittenInterview(ui);
   await U.finishInterview(ui);

@@ -15,8 +15,8 @@ describe('RoleReady implementation plan - frontend requirements', () => {
         assert.ok(route.slice(0, 300).includes('<StudentDashboard />'));
     });
 
-    test('REQ-06: coding assessment editor supports multi-language execution including python', () => {
-        assert.ok(assessmentCode.includes('handleLanguageChange'));
+    test('REQ-06: coding assessment editor runs Python only (students and shared-link candidates)', () => {
+        assert.ok(!assessmentCode.includes('handleLanguageChange'));
         assert.ok(assessmentCode.includes("'python'"));
     });
 
@@ -49,7 +49,7 @@ describe('RoleReady implementation plan - frontend requirements', () => {
 describe('Student navigation destinations resolve to the intended modules', () => {
     const layoutCode = read('./src/layouts/StudentLayout.jsx');
     const expected = {
-        'skill-gap': 'StudentSkillGap', roadmap: 'StudentRoadmap', practice: 'StudentPractice',
+        'skill-gap': 'StudentSkillGap', roadmap: 'StudentRoadmap', practice: 'StudentPractice', coding: 'StudentCoding',
         interview: 'StudentMockInterview', simulation: 'StudentPlacementSimulation', projects: 'StudentProjects', resume: 'StudentResumeUpload', 'resume-formatter': 'StudentResumeFormatter', profile: 'StudentProfile',
     };
     const hubBlock = appCode.slice(appCode.indexOf('<Route path="/student/hub"'), appCode.indexOf('{/* College Placement'));
@@ -76,7 +76,7 @@ describe('Student navigation destinations resolve to the intended modules', () =
 
     test('every sidebar link is served by a route', () => {
         const navPaths = [...layoutCode.matchAll(/path: '(\/student\/[a-z-]+)'/g)].map(m => m[1]);
-        assert.strictEqual(navPaths.length, 10);
+        assert.strictEqual(navPaths.length, 11);
         for (const p of navPaths) {
             const slug = p.replace('/student/', '');
             assert.ok(slug === 'dashboard' || slug in expected, `${p} has no route`);

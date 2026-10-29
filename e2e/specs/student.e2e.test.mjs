@@ -126,7 +126,7 @@ describe('setup and the explicit start', () => {
 });
 
 describe('the full student journey', () => {
-  test('aptitude (persisted) -> coding (Python + Java, errors) -> interview -> report with the persisted scores', async () => {
+  test('aptitude (persisted) -> coding (Python only, function style, errors) -> interview -> report with the persisted scores', async () => {
     const { browser, ui, student } = await openStudent({ tag: 'journey' });
     try {
       const uuid = await beginAssessment(ui);
@@ -146,21 +146,35 @@ describe('the full student journey', () => {
 
       // ---- coding
       assert.match(await ui.text(), /Round 2: Practical Coding/);
-      await U.setCode(ui, U.STUDENT_SOLUTIONS.uniqueRunPython);
-      assert.match(await U.runPublicTests(ui), /PASS \(All Public Cases\)/);
+      // LeetCode structure: the student starts from `class Solution` with only the function, never the stdin / print plumbing
+      const starter = await ui.page.evaluate(() => window.monaco.editor.getModels()[0].getValue());
+      assert.match(starter, /class Solution/);
+      assert.match(starter, /def longest_unique_run\(self, tokens\)/);
+      assert.doesNotMatch(starter, /sys\.stdin|__main__|print\(/);
+      // exactly LeetCode's starter: the class and the signature, nothing else (no imports, comments or scaffolding)
+      assert.equal(starter, 'class Solution:\n    def longest_unique_run(self, tokens):\n        \n');
+      // ...inside the same LeetCode-style workspace as the Coding page: description + examples, editor, Testcase / Result console
+      assert.equal(await ui.page.getByTestId('leetcode-workspace').count(), 1, 'the LeetCode-style workspace is shown');
+      assert.match(await ui.text(), /Example 1/);
+      assert.match(await ui.text(), /Testcase/);
+      await U.setCodeExact(ui, U.STUDENT_SOLUTIONS.uniqueRunPython);
+      // the Testcase tab shows the example inputs read-only (like LeetCode): nothing to type
+      await ui.page.getByRole('tab', { name: 'Testcase' }).click();
+      assert.equal(await ui.page.getByLabel('Custom testcase').count(), 0, 'no free-text testcase box');
+      assert.match(await ui.text(), /Case 1/);
+      assert.match(await U.runSample(ui), /Sample tests passed/);
       await ui.page.getByRole('button', { name: 'Problem 2' }).click();
-      await ui.page.getByRole('button', { name: /Java 17/ }).click();
-      await U.setCode(ui, U.SOLUTIONS.javaCompileError);
-      assert.match(await U.runPublicTests(ui), /Compilation Error|COMPILE ERROR|error:/i);
-      await U.setCode(ui, U.STUDENT_SOLUTIONS.tagsJava);
-      assert.match(await U.runPublicTests(ui), /PASS \(All Public Cases\)/);
-      await ui.page.getByRole('button', { name: /Python 3\.11/ }).click();
-      await U.setCode(ui, U.SOLUTIONS.pythonRuntimeError);
-      assert.match(await U.runPublicTests(ui), /ZeroDivisionError|Runtime Error/i);
+      // students code in Python only: there is no Java option (recruitment candidates keep theirs)
+      assert.equal(await ui.page.getByRole('button', { name: /Java 17/ }).count(), 0, 'no Java option for students');
+      await U.setCodeExact(ui, U.STUDENT_SOLUTIONS.pythonSyntaxError);
+      assert.match(await U.runSample(ui), /SyntaxError|Error/i);
+      await U.setCodeExact(ui, U.SOLUTIONS.pythonRuntimeError);
+      assert.match(await U.runSample(ui), /ZeroDivisionError|Runtime Error/i);
       const executed = (await stack.info()).executions;
-      assert.ok(executed.includes('python') && executed.includes('java'), `both runtimes were used: ${executed}`);
-      // submit Python for problem 2 as well (a correct one), so the section is fully solved
-      await U.setCode(ui, U.STUDENT_SOLUTIONS.tagsPython);
+      assert.ok(executed.includes('python') && !executed.includes('java'), `only Python ran: ${executed}`);
+      // a correct solution for problem 2 as well, so the section is fully solved
+      await U.setCodeExact(ui, U.STUDENT_SOLUTIONS.tagsPython);
+      assert.match(await U.runSample(ui), /Sample tests passed/);
 
       // ---- interview (voice failure -> written fallback keeps the journey free of external calls)
       await U.stubVoiceApi(ui.page);

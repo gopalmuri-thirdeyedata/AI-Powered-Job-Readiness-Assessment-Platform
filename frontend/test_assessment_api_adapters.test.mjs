@@ -131,7 +131,7 @@ describe('recruitment adapter: the explicit start, in-memory lease and server-dr
         await started();
         globalThis.__axiosHandler = (call) => (call.url.includes('voice-init') ? { assistantId: 'a', questions: [] } : state());
         await api.submitAptitude({ A1: 'B' }, 5, [{ type: 'Tab switch', strike: 1 }]);
-        await api.runCode('C1', 'print(1)', 'java');
+        await api.runCode('C1', 'print(1)', 'python');
         await api.initVoice();
         await api.submitInterview([{ question_id: 'I1', response: 'r' }], 5, [], [{ role: 'user', text: 'r' }]);
         await api.saveDraft('coding', { solutions: {} }, [{ type: 'Blur' }]);
@@ -141,7 +141,7 @@ describe('recruitment adapter: the explicit start, in-memory lease and server-dr
         }
         const by = (suffix) => globalThis.__axiosCalls.find((c) => c.url.endsWith(suffix));
         assert.deepEqual(by('/submit-aptitude').body, { answers: { A1: 'B' }, violations: [{ type: 'Tab switch', strike: 1 }] });
-        assert.deepEqual(by('/run-code').body, { problem_id: 'C1', language: 'java', code: 'print(1)' });
+        assert.deepEqual(by('/run-code').body, { problem_id: 'C1', language: 'python', code: 'print(1)', custom_input: null });
         assert.deepEqual(by('/submit-interview').body.transcript, [{ role: 'user', text: 'r' }]);
         assert.deepEqual(by('/draft').body, { section: 'coding', payload: { solutions: {} }, violations: [{ type: 'Blur' }] });
     });

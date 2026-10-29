@@ -24,6 +24,8 @@ from services.readiness_service import calculate_placement_readiness, refresh_pr
 from services.skill_gap_service import TARGET_ROLES_CATALOG, analyze_skill_gap
 from services.roadmap_service import generate_or_update_roadmap, get_roadmap_details
 from services import student_link_results
+from services import judge0_service
+from services.rate_limiter import SlidingWindowLimiter
 from services.practice_service import get_topics_overview, get_sanitized_questions, evaluate_practice_submission
 from services.student_interview_service import (
     start_mock_interview,
@@ -51,6 +53,8 @@ router = APIRouter(
     prefix="/api/student",
     tags=["student"]
 )
+
+practice_submit_limiter = SlidingWindowLimiter(limit=12, window_seconds=60)      # one student cannot flood the code runner
 
 # Ensure upload directory exists
 STUDENT_MEDIA_DIR = Path("media/student_resumes")
@@ -1078,6 +1082,9 @@ def submit_practice_attempt_endpoint(
     Executes and scores practice submission (Judge0 coding execution or aptitude evaluation).
     Evaluates all test cases server-side without leaking hidden cases to client.
     """
+    if not practice_submit_limiter.allow(profile.id):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many submissions. Please wait a moment.",
+                            headers={"Retry-After": "10"})
     try:
         result = evaluate_practice_submission(
             profile=profile,
@@ -1089,6 +1096,9 @@ def submit_practice_attempt_endpoint(
         )
         refresh_profile_readiness(db, profile)
         return schemas.PracticeSubmissionResponse(**result)
+    except judge0_service.SandboxBusy:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="The code runner is busy right now. Please try again in a few seconds.",
+                            headers={"Retry-After": "3"})
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

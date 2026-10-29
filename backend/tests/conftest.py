@@ -57,6 +57,8 @@ class _ElevenLabsHttpStub:
             return self._Response(self.fail_with, {"detail": "upstream failure"})
         if url.endswith("/speech-to-text"):
             return self._Response(200, {"text": self.transcript})
+        if url.endswith("/single-use-token/realtime_scribe"):
+            return self._Response(200, {"token": "sutkn_test_token"})
         return self._Response(200, content=b"ID3-fake-mp3-bytes")
 
 
@@ -70,7 +72,11 @@ def elevenlabs_http(monkeypatch):
     from types import SimpleNamespace
     stub = _ElevenLabsHttpStub()
     # Replace the module's own `requests` name, never requests.post itself (that would break every other HTTP caller, e.g. Judge0)
-    monkeypatch.setattr(elevenlabs_service, "requests", SimpleNamespace(post=stub.post, RequestException=requests.RequestException))
+    monkeypatch.setattr(elevenlabs_service, "requests", SimpleNamespace(
+        post=stub.post, RequestException=requests.RequestException, Session=lambda: SimpleNamespace(post=stub.post)))
+    monkeypatch.setattr(elevenlabs_service, "_session", None)           # the shared connection must be rebuilt on the stub
+    elevenlabs_service._audio_cache.clear()                              # a cached line would skip the (recorded) provider call
+    monkeypatch.setenv("ELEVENLABS_PREWARM", "false")                    # no background thread racing the recorded calls
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-api-key-not-real")
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "test-voice-id")
     yield stub

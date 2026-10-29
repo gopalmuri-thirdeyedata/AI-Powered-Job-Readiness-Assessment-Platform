@@ -107,7 +107,8 @@ def test_candidate_receives_student_formatted_sections_without_secrets(db, env, 
     assert [o["key"] for o in q["options"]] == ["A", "B", "C", "D"] and "correct_key" not in q
     r = client.post(h.sess_url(s, "submit-aptitude"), headers=h.sh(s), json={"answers": h.correct_aptitude_answers(db, s["session_uuid"])})
     coding = r.json()["section"]["questions"][0]
-    assert set(coding["starter_code"]) == {"python", "java"} and coding["input_format"] and coding["output_format"]
+    assert set(coding["starter_code"]) == {"python"} and coding["input_format"] and coding["output_format"]       # Python only, like the students
+    assert coding["starter_code"]["python"].startswith("class Solution:") and "stdin" not in coding["starter_code"]["python"]
     assert all(set(t) >= {"input", "expected_output"} for t in coding["public_test_cases"])
     r = client.post(h.sess_url(s, "submit-coding"), headers=h.sh(s), json={"solutions": h.GOOD_SOLUTIONS})
     interview = r.json()["section"]["questions"]
@@ -176,7 +177,7 @@ def _turn(s, **form):
 
 
 def test_voice_turn_speaks_the_opening_then_answers_a_recorded_reply(db, env, elevenlabs_http, monkeypatch):
-    monkeypatch.setattr(gemini_client, "call_gemini_text", lambda prompt, system_prompt, temperature=0.1: "Thanks. What was the hardest part?")
+    monkeypatch.setattr(gemini_client, "call_gemini_text", lambda prompt, system_prompt, temperature=0.1, **kw: "Thanks. What was the hardest part?")
     s = _to_interview(db, env)
     assert _turn(s, data={"opening": "true"}).status_code == 409                         # not initialised yet
     assert client.post(h.sess_url(s, "voice-init"), headers=h.sh(s)).status_code == 200

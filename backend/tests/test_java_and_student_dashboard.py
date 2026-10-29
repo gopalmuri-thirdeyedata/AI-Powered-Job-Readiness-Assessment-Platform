@@ -7,7 +7,7 @@ from tests.test_roleready_pipeline import db_session, setup_test_data
 
 client = TestClient(app)
 
-def test_java_starter_and_language_support():
+def test_java_starter_and_language_support():      # the Java constants stay for the recruitment engine; the student path is Python only
     # 1. Verify Java starter code structure
     starter = roleready_service.JAVA_STARTER_DEFAULT
     assert "public class Main" in starter
@@ -15,12 +15,13 @@ def test_java_starter_and_language_support():
     assert "Scanner" in starter
 
     # 2. Verify language validation
-    assert roleready_service._require_supported_language("java") == "java"
     assert roleready_service._require_supported_language("python") == "python"
     assert roleready_service._require_supported_language("python3") == "python"
 
     with pytest.raises(Exception):
         roleready_service._require_supported_language("ruby")
+    with pytest.raises(Exception):                       # students are Python only (the recruitment engine still accepts Java)
+        roleready_service._require_supported_language("java")
 
     # 3. Verify Judge0 language ID mapping
     assert judge0_service.LANGUAGE_MAP["java"]["language_id"] == 62

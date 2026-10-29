@@ -188,18 +188,15 @@ def test_sandbox_outage_returns_503_without_score_penalty(db, env, monkeypatch):
     assert flow.get_rounds(db, row.id)["CODING"].status == "EVALUATED" and row.coding_score == 100.0
 
 
-def test_java_is_supported_like_the_student_platform(db, env, monkeypatch):
-    """Both languages the Student Platform supports are accepted; Java is routed to the sandbox as Java."""
-    calls = h.install_local_sandbox(monkeypatch)
+def test_candidates_code_in_python_only_like_the_students(db, env, monkeypatch):
+    """Java is refused for a run and for an explicit submission; the message says why."""
+    h.install_local_sandbox(monkeypatch)
     s = coding_session(db, env)
     r = run(s, language="java", code="public class Main { public static void main(String[] a) {} }")
-    assert r.status_code == 200 and r.json()["language"] == "java"
-    assert calls["languages"][-1] == "java"
+    assert r.status_code == 400 and "Python" in r.json()["detail"]
     sub = client.post(h.sess_url(s, "submit-coding"), headers=h.sh(s), json={"solutions": {
         "C1": {"language": "java", "code": "public class Main { public static void main(String[] a) {} }"}}})
-    assert sub.status_code == 200
-    problems = {p["id"]: p for p in h.session_row(db, s["session_uuid"]).final_report_data["sections"]["coding"]["details"]["problems"]}
-    assert problems["C1"]["language"] == "java"
+    assert sub.status_code == 400 and "Python" in sub.json()["detail"]
 
 
 def test_unsupported_language_and_oversized_code_rejected(db, env, monkeypatch):
@@ -218,21 +215,65 @@ def test_run_code_rate_limited_per_session(db, env, monkeypatch):
     assert codes[:5] == [200] * 5 and codes[5:] == [429, 429]
 
 
-def test_sandbox_concurrency_cap_returns_429(db, env, monkeypatch):
+def test_a_full_waiting_line_returns_429_and_a_free_line_serves_the_run(db, env, monkeypatch):
+    """Candidates wait their turn in the fair line; only a line that is full (or a wait that runs out) answers 'busy'."""
+    from services import student_sandbox
     h.install_local_sandbox(monkeypatch)
     s = coding_session(db, env)
-    held = []
-    for _ in range(judge0_service.SANDBOX_MAX_CONCURRENCY):
-        assert judge0_service._SANDBOX_SLOTS.acquire(blocking=False)
-        held.append(1)
-    try:
+    with monkeypatch.context() as patched:
+        patched.setattr(student_sandbox, "gate", student_sandbox.SandboxGate(1, 0.1, 0))      # no room to wait at all
         assert run(s).status_code == 429
-    finally:
-        for _ in held:
-            judge0_service._SANDBOX_SLOTS.release()
     assert run(s).status_code == 200
 
 
 def test_stdin_input_cap_enforced():
     res = judge0_service.execute_sandboxed("python", "print(1)", stdin="x" * (judge0_service.MAX_STDIN_BYTES + 1))
     assert res["classification"] == judge0_service.RUNTIME_ERROR and "64 KB" in res["output"]
+
+
+# ---- the shared link now works exactly like the student platform: LeetCode structure, custom input, same interview endpoints ----
+CLASS_SOLUTION = "class Solution:\n    def solve(self, a, b):\n        return a + b\n"
+
+
+def test_candidates_write_only_the_function_and_the_server_adds_the_driver(db, env, monkeypatch):
+    h.install_local_sandbox(monkeypatch)
+    s = coding_session(db, env)
+    started = client.post(h.sess_url(s, "start-coding"), headers=h.sh(s)).json()
+    problem = json.dumps(started)
+    assert "driver" not in problem and "__main__" not in problem                      # the harness never reaches the browser
+    body = run(s, code=CLASS_SOLUTION).json()
+    assert body["all_passed"] is True and all(t["passed"] for t in body["test_results"])
+    wrong = run(s, code="class Solution:\n    def solve(self, a, b):\n        return a - b\n").json()
+    assert wrong["all_passed"] is False
+
+
+def test_runtime_errors_report_the_candidates_own_line_numbers(db, env, monkeypatch):
+    h.install_local_sandbox(monkeypatch)
+    s = coding_session(db, env)
+    body = run(s, code="class Solution:\n    def solve(self, a, b):\n        return a // 0\n").json()
+    assert body["error_type"] == "Runtime Error"
+    assert "line 3" in json.dumps(body)                                                # the hidden import line is not counted
+
+
+def test_a_custom_input_is_run_next_to_the_samples_and_shown_as_custom(db, env, monkeypatch):
+    h.install_local_sandbox(monkeypatch)
+    s = coding_session(db, env)
+    r = client.post(h.sess_url(s, "run-code"), headers=h.sh(s), json={
+        "problem_id": "C1", "language": "python", "code": CLASS_SOLUTION, "custom_input": "20\n22\n"})
+    assert r.status_code == 200
+    body = r.json()
+    custom = [t for t in body["test_results"] if t.get("custom")]
+    assert len(custom) == 1 and custom[0]["actual_output"] == "42"                    # exactly like the student's own-input run
+    too_big = client.post(h.sess_url(s, "run-code"), headers=h.sh(s), json={
+        "problem_id": "C1", "language": "python", "code": CLASS_SOLUTION, "custom_input": "1" * 6000})
+    assert too_big.status_code == 400
+
+
+def test_the_interview_extras_need_an_active_interview_like_the_plain_turn(db, env, monkeypatch):
+    """Live-caption token and the streamed turn are gated exactly like /voice-turn: the interview must be the active section."""
+    s = coding_session(db, env)
+    token = client.post(h.sess_url(s, "voice-caption-token"), headers=h.sh(s))
+    assert token.status_code == 403
+    stream = client.post(h.sess_url(s, "voice-turn-stream"), headers=h.sh(s), data={"history": "[]", "opening": "true"})
+    assert stream.status_code == 403
+    assert client.post(h.sess_url(s, "voice-caption-token")).status_code in (401, 403, 422)       # and never without the capability

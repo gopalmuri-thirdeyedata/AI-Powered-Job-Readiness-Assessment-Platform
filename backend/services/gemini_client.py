@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import time
-from typing import Optional
+from typing import Iterator, Optional
 
 import httpx
 from dotenv import load_dotenv
@@ -24,6 +24,7 @@ load_dotenv()
 
 DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 REQUEST_TIMEOUT_SECONDS = 30
+FAST_MAX_OUTPUT_TOKENS = 256  # a spoken reply is one to three short sentences (<= 700 chars)
 RETRY_BACKOFF_SECONDS = (1,)  # 1 retry for transient errors during interactive assessment generation
 GEMINI_REST_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -182,16 +183,19 @@ def _generate_via_sdk(genai, api_key, prompt, system_prompt, temperature, json_m
         raise GeminiUnavailableError(_redact(str(e)))
 
 
-def _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode, timeout=REQUEST_TIMEOUT_SECONDS) -> str:
-    model_name = get_model_name()
+def _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode, timeout=REQUEST_TIMEOUT_SECONDS, fast=False, model=None) -> str:
+    model_name = model or get_model_name()
     generation_config = {
         "temperature": temperature,
         "responseMimeType": "application/json" if json_mode else "text/plain",
     }
     # For Gemini 2.5 models (e.g. gemini-2.5-flash), disable internal thinking for
     # structured JSON generation to eliminate multi-second reasoning latency.
-    if json_mode and "2.5" in model_name:
+    # `fast` does the same for short spoken replies, which gain nothing from reasoning.
+    if (json_mode or fast) and "2.5" in model_name:
         generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+    if fast:
+        generation_config["maxOutputTokens"] = FAST_MAX_OUTPUT_TOKENS
 
     body = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -227,7 +231,7 @@ def _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode, t
         raise GeminiUnavailableError("Gemini API returned an empty or blocked response" + (f" ({block})" if block else ""), kind=KIND_BLOCKED)
 
 
-def _generate(prompt, system_prompt, temperature, json_mode, timeout=REQUEST_TIMEOUT_SECONDS) -> str:
+def _generate(prompt, system_prompt, temperature, json_mode, timeout=REQUEST_TIMEOUT_SECONDS, fast=False, model=None) -> str:
     api_key = get_gemini_api_key()
     # The REST path disables Gemini 2.5's internal "thinking" (it adds seconds to every structured JSON
     # call: ~40% of the latency measured on interview scoring). The installed SDK cannot set that, so the
@@ -244,7 +248,7 @@ def _generate(prompt, system_prompt, temperature, json_mode, timeout=REQUEST_TIM
         try:
             if genai is not None:
                 return _generate_via_sdk(genai, api_key, prompt, system_prompt, temperature, json_mode, timeout)
-            return _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode, timeout)
+            return _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode, timeout, fast, model)
         except GeminiUnavailableError:
             raise
         except _TransientGeminiError as e:
@@ -261,11 +265,13 @@ def _generate(prompt, system_prompt, temperature, json_mode, timeout=REQUEST_TIM
 
 
 def call_gemini(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, json_mode: bool = True,
-                timeout: Optional[float] = None) -> dict:
+                timeout: Optional[float] = None, fast: bool = False, model: Optional[str] = None) -> dict:
     """
     Calls Gemini and returns a parsed JSON dict (json_mode) or {"text": ...}.
     Raises GeminiUnavailableError (with `.kind`) when no key is configured or the call fails; every failure is logged server side.
     `timeout` overrides the default 30s request timeout for unusually large generations.
+    `fast` is for short latency-sensitive replies (the voice interviewer): no thinking, capped output.
+    `model` overrides GEMINI_MODEL_NAME for this call; if that model is not available to the key, the call is repeated on the default model.
     """
     if is_mock_mode_enabled():
         from . import gemini_mock_fixtures
@@ -278,9 +284,15 @@ def call_gemini(prompt: str, system_prompt: str = "You are a helpful assistant."
 
     try:
         extra = {} if timeout is None else {"timeout": timeout}
+        if fast:
+            extra["fast"] = True
+        if model:
+            extra["model"] = model
         content = _generate(prompt, system_prompt, temperature, json_mode, **extra).strip()
     except GeminiUnavailableError as error:
         _log_failure(error)
+        if model and error.kind == KIND_MODEL:       # the preferred model is unknown to this key: use the configured default instead
+            return call_gemini(prompt, system_prompt, temperature, json_mode, timeout, fast)
         raise
     if json_mode:
         try:
@@ -292,9 +304,10 @@ def call_gemini(prompt: str, system_prompt: str = "You are a helpful assistant."
     return {"text": content}
 
 
-def call_gemini_text(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1) -> str:
+def call_gemini_text(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1, fast: bool = False,
+                     model: Optional[str] = None) -> str:
     """Calls Gemini and returns plain text response."""
-    result = call_gemini(prompt, system_prompt, temperature, json_mode=False)
+    result = call_gemini(prompt, system_prompt, temperature, json_mode=False, fast=fast, model=model)
     return result.get("text", "")
 
 
@@ -334,3 +347,55 @@ def call_gemini_grounded(prompt: str, system_prompt: str = "You are a helpful as
     except Exception as exc:  # network, timeout, malformed response: callers fall back to normal generation
         logger.warning("Gemini grounded search failed (%s): %s", type(exc).__name__, _redact(str(exc)))
         return empty
+
+
+def stream_gemini_text(prompt: str, system_prompt: str = "You are a helpful assistant.", temperature: float = 0.1,
+                       fast: bool = True, model: Optional[str] = None) -> Iterator[str]:
+    """
+    Yields the reply text as Gemini produces it, so the caller can start speaking the first sentence while the rest is still being written.
+    Mock mode, a missing key, or any failure before the first character falls back to the ordinary (retrying) call, so a caller
+    gets the same GeminiUnavailableError semantics as call_gemini_text. A failure after text has started simply ends the stream.
+    """
+    if is_mock_mode_enabled() or not has_gemini_key():
+        yield call_gemini_text(prompt, system_prompt, temperature, fast=fast, model=model)
+        return
+
+    model_name = model or get_model_name()
+    generation_config = {"temperature": temperature, "responseMimeType": "text/plain"}
+    if fast:
+        if "2.5" in model_name:
+            generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+        generation_config["maxOutputTokens"] = FAST_MAX_OUTPUT_TOKENS
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "generationConfig": generation_config,
+    }
+    url = GEMINI_REST_URL.format(model=model_name).replace(":generateContent", ":streamGenerateContent") + "?alt=sse"
+    produced = False
+    try:
+        with httpx.stream("POST", url, json=body, timeout=REQUEST_TIMEOUT_SECONDS,
+                          headers={"x-goog-api-key": get_gemini_api_key(), "Content-Type": "application/json"}) as resp:
+            if resp.status_code != 200:
+                resp.read()
+                raise _classify_http_error(resp.status_code, resp.text)
+            for line in resp.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    parts = json.loads(line[5:].strip())["candidates"][0]["content"]["parts"]
+                except (KeyError, IndexError, TypeError, ValueError):
+                    continue
+                chunk = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                if chunk:
+                    produced = True
+                    yield chunk
+    except (httpx.HTTPError, GeminiUnavailableError) as exc:
+        if produced:
+            logger.warning("Gemini stream ended early (%s)", type(exc).__name__)
+            return
+        logger.warning("Gemini stream failed before any text (%s); using the standard call", type(exc).__name__)
+        yield call_gemini_text(prompt, system_prompt, temperature, fast=fast, model=model)
+        return
+    if not produced:
+        yield call_gemini_text(prompt, system_prompt, temperature, fast=fast, model=model)

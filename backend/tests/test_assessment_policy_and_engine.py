@@ -70,7 +70,7 @@ def test_adapter_produces_the_student_round_formats(blueprint):
 
     code_client, code_keys = payloads["CODING"]
     assert [p["id"] for p in code_client] == ["C1", "C2"]
-    assert set(code_client[0]["starter_code"]) == {"python", "java"}
+    assert set(code_client[0]["starter_code"]) == {"python"}
     first = code_client[0]["public_test_cases"][0]
     assert first["input"] == "1\n2\n" and first["expected_output"] == "3"             # stdin text, not a JSON object
     assert code_keys["C1"]["comparison"] == "json" and len(code_keys["C1"]["hidden_test_cases"]) == 3
@@ -89,14 +89,20 @@ def test_adapter_orders_stdin_by_the_solve_signature_not_by_json_key_order(bluep
     assert case["input"] == "3\n10\n"                                                  # b first, as declared
 
 
-def test_python_starter_carries_the_stdin_harness_and_runs(blueprint):
-    starter = engine.adapt_blueprint(blueprint)["CODING"][0][0]["starter_code"]["python"]
-    assert "def solve(a, b)" in starter and "__main__" in starter and "json.dumps(solve(*_args))" in starter
-    code = starter.replace("    pass", "    return a + b")
+def test_python_starter_is_the_signature_only_and_the_server_keeps_the_stdin_harness(blueprint):
+    client_problems, keys = engine.adapt_blueprint(blueprint)["CODING"]
+    starter = client_problems[0]["starter_code"]["python"]
+    assert starter == "class Solution:\n    def solve(self, a, b):\n        \n"          # exactly LeetCode: nothing but the signature
+    driver = keys[client_problems[0]["id"]]["driver"]
+    assert "json.dumps(Solution().solve(*_args))" in driver and "__main__" in driver      # the harness is server-side only
+    assert "driver" not in json.dumps(client_problems)
+    from services import function_style
+    program = function_style.compose(starter.rstrip(" \n") + "\n        return a + b\n", driver)
     import subprocess, sys
-    out = subprocess.run([sys.executable, "-c", code], input="1\n2\n", capture_output=True, text=True, timeout=20).stdout
+    out = subprocess.run([sys.executable, "-c", program], input="1\n2\n", capture_output=True, text=True, timeout=20).stdout
     assert out.strip() == "3"
-    assert "Scanner" in engine.adapt_blueprint(blueprint)["CODING"][0][0]["starter_code"]["java"]
+    assert "java" not in client_problems[0]["starter_code"]
+    assert client_problems[0]["input_format"].startswith("Your function receives") and client_problems[0]["output_format"] == "Return the result."
 
 
 # ============================================================================== comparison

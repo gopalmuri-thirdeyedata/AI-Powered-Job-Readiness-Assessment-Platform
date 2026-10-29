@@ -321,7 +321,8 @@ def test_both_workflows_call_the_same_evaluators_and_languages():
     coding_problems, _keys = engine.adapt_blueprint(_blueprint())["CODING"]
     assert coding_problems
     for problem in coding_problems:
-        assert set(problem["starter_code"]) == {"python", "java"}                 # candidates get the same two languages
+        assert set(problem["starter_code"]) == {"python"}                         # candidates code in Python only, like the students
+        assert problem["starter_code"]["python"].startswith("class Solution:")    # the same LeetCode structure as the students
 
 
 def test_unsupported_languages_are_rejected_identically(db, env, db_session, setup_test_data, clk):

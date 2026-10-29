@@ -117,7 +117,7 @@ def test_coding_payload_is_python_and_java_only_with_one_public_sample_and_no_hi
     assert len(problems) == 2
     for p in problems:
         assert list(p["starter_code"].keys()) == ["python", "java"]
-        assert len(p["public_test_cases"]) == 1
+        assert len(p["public_test_cases"]) == 2
         assert "hidden_test_cases" not in p
     rnd = db_session.query(models.RoleReadyRoundAttempt).filter_by(session_id=session.id, round_type="CODING").first()
     for hidden in rnd.server_keys_payload.values():
@@ -148,7 +148,7 @@ def test_run_code_never_sends_hidden_expected_output(db_session, setup_test_data
     res = client.post(_url(session, "run-code"), headers=h, json={"problem_id": "1", "code": "print(1)", "language": "python"})
     assert res.status_code == 200
     body = res.json()
-    assert len(body["test_results"]) == 1  # public sample only
+    assert len(body["test_results"]) == 2  # the two examples
     rnd = db_session.query(models.RoleReadyRoundAttempt).filter_by(session_id=session.id, round_type="CODING").first()
     hidden_outputs = {t["expected_output"] for v in rnd.server_keys_payload.values() for t in v["hidden_test_cases"]}
     public_output = body["test_results"][0]["expected_output"]
@@ -426,7 +426,7 @@ def test_fallback_coding_problems_are_medium_python_and_java_only(role):
     for p in problems:
         assert p["difficulty"] == "Medium"
         assert list(p["starter_code"]) == ["python", "java"]
-        assert len(p["public_test_cases"]) == 1
+        assert len(p["public_test_cases"]) == 2
         assert 3 <= len(keys[p["id"]]["hidden_test_cases"]) <= 4
 
 

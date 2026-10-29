@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { buildVoiceTurnForm } from '../utils/voiceInterviewSession';
+import { readNdjson } from '../utils/ndjson';
 import API_URL from '../apiConfig';
 import { getAdminOrgId } from '../utils/authStorage';
 
@@ -77,8 +78,8 @@ export const candidateApi = {
     submitAptitude: async (s, answers, violations) =>
         (await axios.post(sessionUrl(s, 'submit-aptitude'), { answers, violations: violations ?? null }, { headers: sessionHeaders(s), timeout: 60000 })).data,
     startCoding: async (s) => (await axios.post(sessionUrl(s, 'start-coding'), {}, { headers: sessionHeaders(s) })).data,
-    runCode: async (s, problemId, code, language = 'python') =>
-        (await axios.post(sessionUrl(s, 'run-code'), { problem_id: problemId, language, code }, { headers: sessionHeaders(s), timeout: 60000 })).data,
+    runCode: async (s, problemId, code, language = 'python', customInput = null) =>
+        (await axios.post(sessionUrl(s, 'run-code'), { problem_id: problemId, language, code, custom_input: customInput }, { headers: sessionHeaders(s), timeout: 60000 })).data,
     submitCoding: async (s, solutions, violations) =>
         (await axios.post(sessionUrl(s, 'submit-coding'), { solutions, violations: violations ?? null }, { headers: sessionHeaders(s), timeout: 180000 })).data,
     startInterview: async (s) => (await axios.post(sessionUrl(s, 'start-interview'), {}, { headers: sessionHeaders(s) })).data,
@@ -86,6 +87,23 @@ export const candidateApi = {
     voiceTurn: async (s, turn) =>
         (await axios.post(sessionUrl(s, 'voice-turn'), buildVoiceTurnForm(turn),
             { headers: { ...sessionHeaders(s), 'Content-Type': 'multipart/form-data' }, timeout: 60000 })).data,
+    // The same exchange as voiceTurn as events (transcript, audio chunks, done); an HTTP refusal throws an axios-shaped error.
+    voiceTurnStream: async function* (s, turn, { signal } = {}) {
+        const headers = { Accept: 'application/x-ndjson' };       // no Content-Type: the browser sets the multipart boundary itself
+        if (s?.token) headers['X-Session-Token'] = s.token;
+        if (s?.lease) headers['X-Session-Lease'] = s.lease;
+        const res = await fetch(sessionUrl(s, 'voice-turn-stream'), { method: 'POST', body: buildVoiceTurnForm(turn), headers, signal });
+        if (!res.ok) {
+            let detail;
+            try { detail = (await res.json())?.detail; } catch { /* not JSON */ }
+            const err = new Error(typeof detail === 'string' ? detail : `Voice request failed (${res.status})`);
+            err.response = { status: res.status, data: { detail } };
+            throw err;
+        }
+        yield* readNdjson(res.body);
+    },
+    // A single-use live-caption connection ({ url }), exactly as for students
+    voiceCaptionSession: async (s) => (await axios.post(sessionUrl(s, 'voice-caption-token'), null, { headers: sessionHeaders(s), timeout: 15000 })).data,
     submitInterview: async (s, answers, transcript, violations) =>
         (await axios.post(sessionUrl(s, 'submit-interview'), { answers, transcript: transcript ?? [], violations: violations ?? null },
             { headers: sessionHeaders(s), timeout: 180000 })).data,

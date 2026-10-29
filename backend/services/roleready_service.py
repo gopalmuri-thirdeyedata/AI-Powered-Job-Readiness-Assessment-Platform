@@ -38,6 +38,9 @@ from services import web_question_research
 from services.readiness_service import refresh_profile_readiness
 from services import judge0_service
 from services import elevenlabs_service
+from services import function_style as function_style_module
+from services import student_sandbox
+from services import student_code_run
 from services.rate_limiter import SlidingWindowLimiter
 from services import assessment_clock as clock
 from services import assessment_engine as engine
@@ -649,6 +652,8 @@ def _build_coding_payload(problems: Any, count: int):
             return None
         pid = str(idx)
         starter = prob.get("starter_code") if isinstance(prob.get("starter_code"), dict) else {}
+        # LeetCode structure: the student sees `class Solution` with just the function; the stdin/print plumbing stays on the server.
+        function_style = function_style_module.to_function_style(starter.get("python"))
         client_safe.append({
             "id": pid,
             "title": prob.get("title", f"Coding Challenge {pid}"),
@@ -658,13 +663,13 @@ def _build_coding_payload(problems: Any, count: int):
             "output_format": prob.get("output_format", ""),
             "constraints": prob.get("constraints", ""),
             "starter_code": {
-                "python": starter.get("python") or PYTHON_STARTER_DEFAULT,
+                "python": function_style["starter"] if function_style else (starter.get("python") or PYTHON_STARTER_DEFAULT),
                 "java": starter.get("java") or JAVA_STARTER_DEFAULT
             },
-            "public_test_cases": public[:1],
+            "public_test_cases": (public[:1] + [{"input": hidden[0].get("input", ""), "expected_output": hidden[0]["expected_output"]}])[:2],   # two examples, like LeetCode
             **({"style_company": str(prob["style_company"])[:60]} if isinstance(prob.get("style_company"), str) else {}),
         })
-        server_keys[pid] = {"hidden_test_cases": hidden[:4]}
+        server_keys[pid] = {"hidden_test_cases": hidden[:4], **({"driver": function_style["driver"]} if function_style else {})}
     return client_safe, server_keys
 
 
@@ -1328,6 +1333,7 @@ PYTHON_ONLY_DETAIL = engine.UNSUPPORTED_LANGUAGE_DETAIL
 CODING_TEST_CONCURRENCY = engine.CODING_TEST_CONCURRENCY
 SUPPORTED_CODING_LANGUAGES = engine.SUPPORTED_LANGUAGES
 UNSUPPORTED_LANGUAGE_DETAIL = engine.UNSUPPORTED_LANGUAGE_DETAIL
+MAX_CUSTOM_INPUT_CHARS = 5000      # a student's own testcase for the Run button
 RUN_CODE_RATE_LIMIT = 5            # run-code requests per window, per student
 RUN_CODE_WINDOW_SECONDS = 60
 RUN_CODE_MAX_CONCURRENT = 2        # simultaneous sandbox executions per student
@@ -1475,11 +1481,17 @@ def _server_time_spent(rnd: RoleReadyRoundAttempt, fallback: int = 0) -> int:
     return max(0, int(fallback or 0))
 
 
+STUDENT_PYTHON_ONLY_DETAIL = "Only Python is supported for student coding assessments."
+
+
 def _require_supported_language(language: Optional[str]) -> str:
     try:
-        return engine.normalize_language(language)
+        lang = engine.normalize_language(language)
     except ValueError:
-        raise HTTPException(status_code=400, detail=UNSUPPORTED_LANGUAGE_DETAIL)
+        raise HTTPException(status_code=400, detail=STUDENT_PYTHON_ONLY_DETAIL)
+    if lang != "python":          # students code in Python only (the recruitment workflow keeps its own language rules)
+        raise HTTPException(status_code=400, detail=STUDENT_PYTHON_ONLY_DETAIL)
+    return lang
 
 
 _require_python = _require_supported_language
@@ -2066,16 +2078,19 @@ def run_coding_test(
     session: RoleReadySession,
     problem_id: str,
     code: str,
-    language: str = "python"
+    language: str = "python",
+    custom_input: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Ephemeral run against the public sample test case(s) via the Judge0 sandbox.
-    Supports Python and Java; no state is changed. Sandbox outage -> HTTP 503 (round stays open).
+    Ephemeral run against the public sample test case(s) via the Judge0 sandbox, plus the student's own testcase when given.
+    No state is changed. Sandbox outage -> HTTP 503 (round stays open).
     Rejected once the section (or the overall) deadline has passed: running code is never an arrival-window action.
     """
     selected_lang = _require_supported_language(language)
     if len((code or "").encode("utf-8")) > MAX_CODE_BYTES:
         raise HTTPException(status_code=400, detail="Code exceeds the 64 KB submission limit.")
+    if custom_input is not None and len(custom_input) > MAX_CUSTOM_INPUT_CHARS:
+        raise HTTPException(status_code=400, detail=f"Your testcase is too long (limit {MAX_CUSTOM_INPUT_CHARS} characters).")
 
     finalize_expired_round(db, session)
     coding_round = _get_round(db, session, "CODING", "Coding")
@@ -2098,9 +2113,14 @@ def run_coding_test(
         raise HTTPException(status_code=404, detail="Problem ID not found.")
 
     limiter_key = session.student_profile_id or session.id
+    driver = ((coding_round.server_keys_payload or {}).get(str(problem_id)) or {}).get("driver")
+    try:
+        db.rollback()          # everything needed is read: give the database connection back while the code waits for the sandbox and runs
+    except Exception:  # noqa: BLE001
+        pass
     _acquire_run_slot(limiter_key)
     try:
-        result = engine.run_sample_tests(problem, code, selected_lang)
+        result = student_code_run.run_samples(problem, code, selected_lang, driver=driver, custom_input=custom_input)
     except engine.SandboxUnavailable:
         raise _sandbox_unavailable()
     finally:
@@ -2113,7 +2133,8 @@ def _score_coding(db: Session, session: RoleReadySession, coding_round: RoleRead
                   time_spent_seconds: int, proctoring_violations: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
     """Evaluate against the hidden tests and persist the coding round (no state transition). Sandbox outage -> HTTP 503, nothing committed."""
     try:
-        result = engine.evaluate_coding(coding_round.questions_payload or [], coding_round.server_keys_payload or {}, solutions)
+        result = engine.evaluate_coding(coding_round.questions_payload or [], coding_round.server_keys_payload or {},
+                                        _with_drivers(coding_round, solutions), execute=student_sandbox.run)
     except engine.SandboxUnavailable:
         raise _sandbox_unavailable()
     _claim_round(db, coding_round)
@@ -2150,13 +2171,22 @@ _coding_eval_events: Dict[int, threading.Event] = {}
 _coding_eval_guard = threading.Lock()
 
 
+def _with_drivers(coding_round: RoleReadyRoundAttempt, solutions: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Adds each problem's server-side stdin/print driver around the student's code before it is run. Only the copy sent to the sandbox
+    is composed: the stored submission stays exactly what the student wrote. Problems without a driver (older sessions) run as written.
+    """
+    return function_style_module.compose_solutions(coding_round.server_keys_payload or {}, solutions)
+
+
 def _grade_coding_submission(coding_round: RoleReadyRoundAttempt, solutions: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
     """
     Runs every hidden test for the submitted code and returns the evaluation payload.
     Raises HTTP 503 (via _sandbox_unavailable) when the sandbox itself is down.
     """
     try:
-        return engine.evaluate_coding(coding_round.questions_payload or [], coding_round.server_keys_payload or {}, solutions)
+        return engine.evaluate_coding(coding_round.questions_payload or [], coding_round.server_keys_payload or {},
+                                      _with_drivers(coding_round, solutions), execute=student_sandbox.run)
     except engine.SandboxUnavailable:
         raise _sandbox_unavailable()
 
@@ -2348,7 +2378,8 @@ def submit_coding_round(
     session: RoleReadySession,
     solutions: Dict[str, Dict[str, str]], # { "1": {"code": "...", "language": "python"|"java"} }
     time_spent_seconds: int = 0,
-    proctoring_violations: Optional[List[Dict[str, Any]]] = None
+    proctoring_violations: Optional[List[Dict[str, Any]]] = None,
+    _auto: bool = False       # set by finalize_expired_round when the section timer closes the round from its draft
 ) -> Dict[str, Any]:
     """
     Saves the submission and unlocks the Interview round straight away (any score unlocks it, zero-rejection).
@@ -2356,6 +2387,16 @@ def submit_coding_round(
     the grade and otherwise answers status "evaluating", with the result attached to the final report later.
     """
     solutions = solutions or {}
+    if _auto:
+        # The timer closes the round from the saved draft. A draft in a language that is no longer accepted (for example Java, saved
+        # before students became Python-only) must not leave the round open: that solution is simply not graded.
+        def _accepted(sol):
+            try:
+                _require_supported_language((sol or {}).get("language"))
+                return True
+            except HTTPException:
+                return False
+        solutions = {pid: sol for pid, sol in solutions.items() if _accepted(sol)}
     for sol in solutions.values():  # validate before any state change
         _require_supported_language((sol or {}).get("language"))
         if len(((sol or {}).get("code") or "").encode("utf-8")) > MAX_CODE_BYTES:
@@ -2656,6 +2697,7 @@ def init_voice_interview_session(db: Session, session: RoleReadySession) -> Dict
             max_duration_seconds=max(1, _round_timing(int_round, session)["remaining_seconds"])
         )
         elevenlabs_service.store_voice_session(db, int_round, voice_session)
+        elevenlabs_service.prewarm_opening(voice_session)
         voice_config = elevenlabs_service.public_voice_config(voice_session)
     except Exception as e:
         db.rollback()
@@ -2676,9 +2718,8 @@ def init_voice_interview_session(db: Session, session: RoleReadySession) -> Dict
 voice_turn_limiter = SlidingWindowLimiter(limit=40, window_seconds=60)      # each turn calls two billable voice APIs and Gemini
 
 
-def voice_interview_turn(db: Session, session: RoleReadySession, audio: Optional[bytes], content_type: str,
-                         history: Any, opening: bool) -> Dict[str, Any]:
-    """One spoken exchange of the interview. Same gating as the interview section itself: unlocked, open, before the deadline."""
+def _voice_turn_session(db: Session, session: RoleReadySession) -> Dict[str, Any]:
+    """The gating every spoken exchange shares (plain and streaming): unlocked, open, before the deadline, within the rate limit."""
     finalize_expired_round(db, session)
     _assert_attempt_open(session)
     if session.current_state != RoleReadySessionState.INTERVIEW_IN_PROGRESS:
@@ -2692,10 +2733,44 @@ def voice_interview_turn(db: Session, session: RoleReadySession, audio: Optional
     voice_session = elevenlabs_service.load_voice_session(int_round)
     if voice_session is None:
         raise HTTPException(status_code=409, detail="The voice interview has not been initialised. Reload and try again.")
+    return voice_session
+
+
+def voice_interview_turn(db: Session, session: RoleReadySession, audio: Optional[bytes], content_type: str,
+                         history: Any, opening: bool) -> Dict[str, Any]:
+    """One spoken exchange of the interview. Same gating as the interview section itself: unlocked, open, before the deadline."""
+    voice_session = _voice_turn_session(db, session)
     try:
         return elevenlabs_service.run_turn(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
     except elevenlabs_service.VoiceServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.public_message)
+
+
+caption_token_limiter = SlidingWindowLimiter(limit=8, window_seconds=60)      # one token per connection; reconnects are rare
+
+
+def voice_caption_session(db: Session, session: RoleReadySession) -> Dict[str, Any]:
+    """The live-caption connection for the interview: same gating as a spoken turn (unlocked, open, before the deadline)."""
+    finalize_expired_round(db, session)
+    _assert_attempt_open(session)
+    if session.current_state != RoleReadySessionState.INTERVIEW_IN_PROGRESS:
+        raise HTTPException(status_code=403, detail="The interview is not in progress.")
+    if not caption_token_limiter.allow(session.id):
+        raise HTTPException(status_code=429, detail="Too many caption requests. Please wait a moment and try again.")
+    try:
+        return elevenlabs_service.realtime_caption_session()
+    except elevenlabs_service.VoiceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_message)
+
+
+def voice_interview_turn_stream(db: Session, session: RoleReadySession, audio: Optional[bytes], content_type: str,
+                                history: Any, opening: bool):
+    """
+    The same exchange as voice_interview_turn, as a stream of events so the first sentence can be spoken early. All gating runs
+    here, before the first byte, so a refused turn is an ordinary HTTP error; the returned generator never touches the database.
+    """
+    voice_session = _voice_turn_session(db, session)
+    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
 
 
 def _interview_context(session: RoleReadySession) -> Dict[str, str]:

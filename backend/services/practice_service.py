@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 import models
-from services import judge0_service
+from services import function_style, judge0_service, student_sandbox
 
 # ==============================================================================
 # CURATED STANDARD PRACTICE QUESTION CATALOG
@@ -23,10 +23,10 @@ SEED_PRACTICE_QUESTIONS = [
         "category": "CODING",
         "difficulty": "Easy",
         "title": "Two Sum Target Check",
-        "description": "Given an array of integers and a target number, return whether two numbers add up to the target.\n\nInput Format: First line contains comma-separated numbers. Second line contains the target integer.\nOutput Format: Print 'true' or 'false'.",
+        "description": "Given an array of integers `nums` and an integer `target`, return `True` if two different numbers in the array add up to the target, otherwise `False`.",
         "correct_answer": "true",
         "starter_code": {
-            "python": "import sys\n\ndef solution():\n    lines = sys.stdin.read().splitlines()\n    if not lines:\n        return\n    nums = [int(x.strip()) for x in lines[0].split(',') if x.strip()]\n    target = int(lines[1].strip())\n\n    # Your logic here: print 'true' if two numbers add up to target, otherwise 'false'\n\nif __name__ == '__main__':\n    solution()\n",
+            "python": "import sys\n\ndef has_two_sum(nums, target):\n    # Your logic here: return True if two numbers add up to target, otherwise False\n    pass\n\nif __name__ == '__main__':\n    lines = sys.stdin.read().splitlines()\n    nums = [int(x.strip()) for x in lines[0].split(',') if x.strip()]\n    target = int(lines[1].strip())\n    print(str(has_two_sum(nums, target)).lower())\n",
         },
         "test_cases": [
             {"input": "2,7,11,15\n9", "expected_output": "true", "is_hidden": False},
@@ -43,10 +43,10 @@ SEED_PRACTICE_QUESTIONS = [
         "category": "CODING",
         "difficulty": "Easy",
         "title": "Valid Palindrome Check",
-        "description": "Given a string, print 'true' if it is a palindrome (ignoring non-alphanumeric characters and case), otherwise 'false'.",
+        "description": "Given a string `s`, return `True` if it is a palindrome (ignoring non-alphanumeric characters and case), otherwise `False`.",
         "correct_answer": "true",
         "starter_code": {
-            "python": "import sys, re\n\ndef solution():\n    raw = sys.stdin.read().strip()\n    # Your logic here: print 'true' if raw is a palindrome (ignoring case and non-alphanumerics), else 'false'\n\nif __name__ == '__main__':\n    solution()\n",
+            "python": "import sys\n\ndef is_palindrome(s):\n    # Your logic here: return True if s is a palindrome (ignoring case and non-alphanumerics), else False\n    pass\n\nif __name__ == '__main__':\n    print(str(is_palindrome(sys.stdin.read().strip())).lower())\n",
         },
         "test_cases": [
             {"input": "A man, a plan, a canal: Panama", "expected_output": "true", "is_hidden": False},
@@ -63,10 +63,10 @@ SEED_PRACTICE_QUESTIONS = [
         "category": "CODING",
         "difficulty": "Medium",
         "title": "Climbing Stairs Ways",
-        "description": "You are climbing a staircase. It takes n steps to reach the top. Each time you can climb either 1 or 2 steps. Print in how many distinct ways you can climb to the top.",
+        "description": "You are climbing a staircase. It takes n steps to reach the top. Each time you can climb either 1 or 2 steps. Return in how many distinct ways you can climb to the top.",
         "correct_answer": "output",
         "starter_code": {
-            "python": "import sys\n\ndef solution():\n    lines = sys.stdin.read().splitlines()\n    if not lines:\n        return\n    n = int(lines[0].strip())\n    # Your logic here: print the number of distinct ways to climb n stairs (1 or 2 steps at a time)\n\nif __name__ == '__main__':\n    solution()\n"
+            "python": "import sys\n\ndef climb_stairs(n):\n    # Your logic here: return the number of distinct ways to climb n stairs (1 or 2 steps at a time)\n    pass\n\nif __name__ == '__main__':\n    print(climb_stairs(int(sys.stdin.read().split()[0])))\n"
         },
         "test_cases": [
             {"input": "2", "expected_output": "2", "is_hidden": False},
@@ -153,14 +153,17 @@ def ensure_practice_questions_seeded(db: Session) -> None:
 
     # Existing databases: refresh student-facing starter code of seeded coding questions so that
     # previously stored starters that exposed full solutions are replaced (no attempts are touched).
-    seeded = {q["title"]: q["starter_code"] for q in SEED_PRACTICE_QUESTIONS if q["category"] == "CODING"}
+    seeded = {q["title"]: q for q in SEED_PRACTICE_QUESTIONS if q["category"] == "CODING"}
     changed = False
     for row in db.query(models.StudentPracticeQuestion).filter(
         models.StudentPracticeQuestion.category == "CODING",
         models.StudentPracticeQuestion.title.in_(list(seeded))
     ).all():
-        if row.starter_code != seeded[row.title]:
-            row.starter_code = seeded[row.title]
+        if row.starter_code != seeded[row.title]["starter_code"]:
+            row.starter_code = seeded[row.title]["starter_code"]
+            changed = True
+        if row.description != seeded[row.title]["description"]:
+            row.description = seeded[row.title]["description"]
             changed = True
     if changed:
         db.commit()
@@ -205,6 +208,13 @@ def get_topics_overview(student_profile_id: int, db: Session) -> List[Dict[str, 
         })
 
     return result
+
+
+def _student_starter(starter_code):
+    """LeetCode structure: the student sees `class Solution` with only the function; the stdin/print driver stays on the server."""
+    python = (starter_code or {}).get("python")
+    converted = function_style.to_function_style(python)
+    return {**starter_code, "python": converted["starter"]} if converted else starter_code
 
 
 def get_sanitized_questions(
@@ -255,7 +265,7 @@ def get_sanitized_questions(
             "title": q.title,
             "description": q.description,
             "options": q.options,
-            "starter_code": q.starter_code,
+            "starter_code": _student_starter(q.starter_code),
             "public_test_cases": public_test_cases,
             "is_solved": q.id in solved_q_ids
         })
@@ -310,17 +320,15 @@ def evaluate_practice_submission(
 
         all_tests = question.test_cases or []
         total_tests = len(all_tests)
+        driver = (function_style.to_function_style((question.starter_code or {}).get("python")) or {}).get("driver")
+        program = function_style.compose(code, driver)
 
         # Run test cases against Judge0 sandbox
         for idx, tc in enumerate(all_tests):
             stdin = tc.get("input", "")
             expected = str(tc.get("expected_output", "")).strip()
 
-            exec_res = judge0_service.execute_code(
-                language_key="python",
-                code=code,
-                stdin=stdin
-            )
+            exec_res = student_sandbox.run("python", program, stdin)
 
             actual = str(exec_res.get("stdout", "")).strip()
             passed = judge0_service.outputs_match(exec_res.get("stdout", ""), expected)
@@ -336,7 +344,7 @@ def evaluate_practice_submission(
                     "expected_output": expected,
                     "actual_output": actual,
                     "passed": passed,
-                    "error": exec_res.get("stderr") or exec_res.get("error")
+                    "error": function_style.fix_line_numbers(exec_res.get("stderr") or exec_res.get("error"), function_style.prelude_line_count(driver))
                 })
 
         is_correct = (tests_passed == total_tests)

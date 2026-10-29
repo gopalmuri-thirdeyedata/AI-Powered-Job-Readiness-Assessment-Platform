@@ -449,6 +449,63 @@ class StudentPracticeAttempt(Base):
     question = relationship("StudentPracticeQuestion")
 
 
+class CodingProblem(Base):
+    """A LeetCode-style Python problem. `test_cases` (with the expected values) never leaves the server except for the examples."""
+    __tablename__ = "coding_problems"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(120), unique=True, index=True, nullable=False)
+    title = Column(String(255), nullable=False)
+    difficulty = Column(String(20), index=True, default="Medium", nullable=False)  # Easy, Medium, Hard
+    tags = Column(JSON, nullable=True)  # ["Array", "Hash Table"]
+    order_index = Column(Integer, default=0, nullable=False, index=True)
+    description = Column(Text, nullable=False)
+    constraints = Column(JSON, nullable=True)  # ["1 <= nums.length <= 10^4"]
+    examples = Column(JSON, nullable=True)  # [{"input": "nums = [..]", "output": "[0,1]", "explanation": "..."}]
+    hints = Column(JSON, nullable=True)
+    function_name = Column(String(80), nullable=False)
+    param_names = Column(JSON, nullable=False)  # ["nums", "target"]
+    starter_code = Column(Text, nullable=False)
+    compare_mode = Column(String(30), default="exact", nullable=False)  # exact | unordered | unordered_nested | float
+    param_types = Column(JSON, nullable=True)  # per parameter: "plain" | "list" (ListNode) | "tree" (TreeNode); None = all plain
+    return_type = Column(String(20), nullable=True)  # "plain" | "list" | "tree"
+    test_cases = Column(JSON, nullable=False)  # [{"args": [...], "expected": ..., "is_example": bool}]
+    solution_code = Column(Text, nullable=True)  # shown only after the student has solved the problem
+    solution_explanation = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CodingBookmark(Base):
+    __tablename__ = "coding_bookmarks"
+    __table_args__ = (UniqueConstraint("student_profile_id", "problem_id", name="uq_coding_bookmark"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
+    problem_id = Column(Integer, ForeignKey("coding_problems.id", ondelete="CASCADE"), index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CodingSubmission(Base):
+    __tablename__ = "coding_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_profile_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
+    problem_id = Column(Integer, ForeignKey("coding_problems.id", ondelete="CASCADE"), index=True, nullable=False)
+    code = Column(Text, nullable=False)
+    verdict = Column(String(40), nullable=False)  # ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, COMPILE_ERROR, OUTPUT_LIMIT_EXCEEDED
+    passed = Column(Integer, default=0, nullable=False)
+    total = Column(Integer, default=0, nullable=False)
+    runtime_ms = Column(Integer, nullable=True)
+    memory_kb = Column(Integer, nullable=True)
+    failed_case = Column(JSON, nullable=True)  # {"input": "...", "expected": "...", "actual": "...", "stdout": "..."}
+    error_text = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    student_profile = relationship("StudentProfile")
+    problem = relationship("CodingProblem")
+
+
 class StudentMockInterview(Base):
     __tablename__ = "student_mock_interviews"
 

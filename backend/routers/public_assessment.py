@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 import database
@@ -82,6 +83,7 @@ class RunCodeRequest(BaseModel):
     problem_id: str
     language: Optional[str] = "python"
     code: str = ""
+    custom_input: Optional[str] = None      # the candidate's own testcase (stdin text in the problem's input format)
 
 
 def _meta(job: models.JobDescription, org_name: Optional[str]) -> Dict[str, Any]:
@@ -264,7 +266,7 @@ def start_coding(session_uuid: str, headers=Depends(_session_headers), db: Sessi
 def run_code(session_uuid: str, body: RunCodeRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
     session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
-    return flow.run_code(db, session, body.problem_id, body.language, body.code)
+    return flow.run_code(db, session, body.problem_id, body.language, body.code, body.custom_input)
 
 
 @router.post("/session/{session_uuid}/submit-coding")
@@ -303,6 +305,33 @@ def voice_turn(session_uuid: str, audio: Optional[UploadFile] = File(None), hist
         raise HTTPException(status_code=400, detail="Invalid conversation history.")
     return flow.voice_turn(db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
                            parsed_history, opening)
+
+
+@router.post("/session/{session_uuid}/voice-caption-token")
+def voice_caption_token(session_uuid: str, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+    """A single-use live-caption connection: the browser streams the microphone and shows the words as they are recognised."""
+    token, lease = headers
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
+    return JSONResponse(content=flow.voice_caption_session(db, session), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/session/{session_uuid}/voice-turn-stream")
+def voice_turn_stream(session_uuid: str, audio: Optional[UploadFile] = File(None), history: str = Form("[]"), opening: bool = Form(False),
+                      headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+    """The same exchange as /voice-turn as newline-delimited JSON events, so the first sentence is spoken before the reply is finished."""
+    token, lease = headers
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
+    audio_bytes = audio.file.read(elevenlabs_service.MAX_AUDIO_BYTES + 1) if audio is not None else None
+    try:
+        parsed_history = json.loads(history or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation history.")
+    events = flow.voice_turn_stream(db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
+                                    parsed_history, opening)
+    return StreamingResponse(
+        (json.dumps(event, separators=(",", ":")) + "\n" for event in events),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no", "Content-Encoding": "identity"})
 
 
 @router.post("/session/{session_uuid}/submit-interview")

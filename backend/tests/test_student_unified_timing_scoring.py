@@ -232,11 +232,40 @@ def test_coding_section_expiry_scores_the_draft_through_the_sandbox(db_session, 
     client.post(url(s, "start-aptitude"), headers=h)
     client.post(url(s, "submit-aptitude"), headers=h, json={"answers": {}})
     problems = client.post(url(s, "start-coding"), headers=h).json()["problems"]
-    client.put(url(s, "draft"), headers=h, json={"section": "coding", "payload": {"solutions": {str(problems[0]["id"]): {"language": "java", "code": "class Main {}"}}}})
+    client.put(url(s, "draft"), headers=h, json={"section": "coding", "payload": {"solutions": {str(problems[0]["id"]): {"language": "python", "code": "print(1)"}}}})
     clk.advance(20 * 60 + 11)
     status = client.get(f"/api/roleready/session/{s.session_uuid}", headers=h).json()
     assert status["current_state"] == State.INTERVIEW_UNLOCKED
-    assert rounds(db_session, s)["CODING"].evaluation_payload["problems"][0]["language"] == "java"
+    assert rounds(db_session, s)["CODING"].evaluation_payload["problems"][0]["language"] == "python"
+
+
+def test_students_code_in_python_only(db_session, setup_test_data):
+    s = new_session(db_session, setup_test_data)
+    h = setup_test_data["auth_headers"]
+    client.post(url(s, "start-aptitude"), headers=h)
+    client.post(url(s, "submit-aptitude"), headers=h, json={"answers": {}})
+    problems = client.post(url(s, "start-coding"), headers=h).json()["problems"]
+    pid = problems[0]["id"]
+    run = client.post(url(s, "run-code"), headers=h, json={"problem_id": pid, "code": "class Main {}", "language": "java"})
+    assert run.status_code == 400 and "Python" in run.json()["detail"]
+    sub = client.post(url(s, "submit-coding"), headers=h, json={"solutions": {str(pid): {"language": "java", "code": "class Main {}"}}})
+    assert sub.status_code == 400 and "Python" in sub.json()["detail"]
+
+
+def test_an_old_java_draft_does_not_keep_an_expired_coding_round_open(db_session, setup_test_data, clk, monkeypatch):
+    """A draft saved in a language that is no longer accepted must not trap the student: the timer still closes the round."""
+    monkeypatch.setattr(judge0_service, "execute_code", _sandbox("never-matches"))
+    s = new_session(db_session, setup_test_data)
+    h = setup_test_data["auth_headers"]
+    client.post(url(s, "start-aptitude"), headers=h)
+    client.post(url(s, "submit-aptitude"), headers=h, json={"answers": {}})
+    problems = client.post(url(s, "start-coding"), headers=h).json()["problems"]
+    rnd = rounds(db_session, s)["CODING"]
+    rnd.submission_payload = {"_draft": {"solutions": {str(problems[0]["id"]): {"language": "java", "code": "class Main {}"}}}}
+    db_session.commit()
+    clk.advance(20 * 60 + 11)
+    status = client.get(f"/api/roleready/session/{s.session_uuid}", headers=h)
+    assert status.status_code == 200 and status.json()["current_state"] == State.INTERVIEW_UNLOCKED
 
 
 def test_overall_expiry_times_out_the_attempt_and_keeps_partial_results(db_session, setup_test_data, clk):
@@ -392,3 +421,20 @@ def test_in_flight_legacy_session_is_not_given_a_new_deadline(db_session, setup_
     status = client.get(f"/api/roleready/session/{s.session_uuid}", headers=h).json()
     assert status["current_state"] == State.CODING_IN_PROGRESS and status["overall_deadline_at"] is None
     assert reload(db_session, s).overall_deadline_at is None
+
+
+def test_an_expired_coding_section_is_closed_automatically_without_a_server_error(db_session, setup_test_data, clk, monkeypatch):
+    """The auto-close of coding used to call submit_coding_round(_auto=True), a parameter it did not accept: a 500 instead of a close."""
+    monkeypatch.setattr(judge0_service, "execute_code", _sandbox())
+    s = new_session(db_session, setup_test_data)
+    h = setup_test_data["auth_headers"]
+    client.post(url(s, "start-aptitude"), headers=h)
+    clk.advance(300)
+    assert client.post(url(s, "submit-aptitude"), headers=h, json={"answers": {}}).status_code == 200
+    clk.advance(60)
+    assert client.post(url(s, "start-coding"), headers=h).status_code == 200
+    clk.advance(20 * 60 + 11)                                            # past the 20 minutes and the 10-second arrival window
+    status = client.get(f"/api/roleready/session/{s.session_uuid}", headers=h)
+    assert status.status_code == 200
+    assert status.json()["current_state"] == State.INTERVIEW_UNLOCKED
+    assert rounds(db_session, s)["CODING"].status == "EVALUATED"          # closed from the (empty) draft; never left half open

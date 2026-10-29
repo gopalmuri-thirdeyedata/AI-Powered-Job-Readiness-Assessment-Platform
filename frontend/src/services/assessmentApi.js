@@ -20,11 +20,13 @@ export const createStudentAssessmentApi = (sessionUuid) => ({
     startAptitude: () => rolereadyApi.startAptitude(sessionUuid),
     submitAptitude: (answers, spent, violations) => rolereadyApi.submitAptitude(sessionUuid, answers, spent, violations),
     startCoding: () => rolereadyApi.startCoding(sessionUuid),
-    runCode: (problemId, code, language) => rolereadyApi.runCodeTest(sessionUuid, problemId, code, language),
+    runCode: (problemId, code, language, customInput) => rolereadyApi.runCodeTest(sessionUuid, problemId, code, language, customInput),
     submitCoding: (solutions, spent, violations) => rolereadyApi.submitCoding(sessionUuid, solutions, spent, violations),
     startInterview: () => rolereadyApi.startInterview(sessionUuid),
     initVoice: () => rolereadyApi.initVoiceSession(sessionUuid),
     voiceTurn: (turn) => rolereadyApi.voiceTurn(sessionUuid, turn),
+    voiceCaptionSession: () => rolereadyApi.voiceCaptionSession(sessionUuid),                 // student only; candidates use the browser's own captions
+    voiceTurnStream: (turn, options) => rolereadyApi.voiceTurnStream(sessionUuid, turn, options),     // student only; candidates use the plain turn
     submitInterview: (answers, spent, violations, transcript) => rolereadyApi.submitInterview(sessionUuid, answers, spent, violations, transcript),
     saveDraft: (section, payload) => rolereadyApi.saveDraft(sessionUuid, section, payload),
     terminate: (reason, violations, stage) => rolereadyApi.terminateSession(sessionUuid, reason, violations, stage),
@@ -169,9 +171,9 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
                 throw readable(err);
             }
         },
-        runCode: async (problemId, code, language) => {
+        runCode: async (problemId, code, language, customInput) => {
             try {
-                return await candidateApi.runCode(need(), problemId, code, language);
+                return await candidateApi.runCode(need(), problemId, code, language, customInput);
             } catch (err) {
                 throw readable(err);
             }
@@ -194,6 +196,8 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
             }
         },
         voiceTurn: (turn) => candidateApi.voiceTurn(need(), turn),
+        voiceCaptionSession: () => candidateApi.voiceCaptionSession(need()),
+        voiceTurnStream: (turn, options) => candidateApi.voiceTurnStream(need(), turn, options),
         submitInterview: (answers, _spent, violations, transcript) => submit(() => candidateApi.submitInterview(need(), answers, transcript, violations)),
 
         saveDraft: async (sectionKey, payload, violations) => {

@@ -9,11 +9,14 @@ import {
     Terminal,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Editor } from '@monaco-editor/react';
+import { EDITOR_OPTIONS, useIsDark } from '../../components/coding/workspaceParts';
 import studentApi from '../../services/studentApi';
 import { PageHero, EmptyState } from '../../components/student-ui/StudentMotion';
 import { EASE } from '../../components/home/primitives';
 
 const StudentPractice = () => {
+    const dark = useIsDark();
     const [topics, setTopics] = useState([]);
     const [selectedTopic, setSelectedTopic] = useState('All');
     const [selectedCategory, setSelectedCategory] = useState('ALL'); // 'ALL' | 'CODING' | 'APTITUDE'
@@ -353,14 +356,16 @@ const StudentPractice = () => {
                                     </div>
 
                                     {/* Editor Area */}
-                                    <textarea
-                                        value={code}
-                                        onChange={(e) => setCode(e.target.value)}
-                                        rows={12}
-                                        spellCheck={false}
-                                        className="w-full bg-slate-900 dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 rounded-xl p-4 font-mono text-sm text-emerald-400 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-y min-h-[220px] sm:min-h-[260px] overflow-x-auto"
-                                        placeholder="Write your solution here..."
-                                    />
+                                    <div className="w-full h-[300px] sm:h-[340px] rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700/80">
+                                        <Editor
+                                            height="100%"
+                                            language="python"
+                                            theme={dark ? 'vs-dark' : 'light'}
+                                            value={code}
+                                            onChange={(value) => setCode(value ?? '')}
+                                            options={EDITOR_OPTIONS}
+                                        />
+                                    </div>
 
                                     {/* Public Test Cases Preview */}
                                     {activeQuestion.public_test_cases?.length > 0 && (

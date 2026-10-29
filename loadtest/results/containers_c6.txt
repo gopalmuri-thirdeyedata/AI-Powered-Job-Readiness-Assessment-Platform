@@ -1,0 +1,4 @@
+hiringai_load-backend-1 Up 4 minutes (healthy)
+hiringai_load-code_runner-1 Up 26 minutes (healthy)
+hiringai_load-db-1 Up 26 minutes (healthy)
+hiringai_load-redis-1 Up 26 minutes (healthy)

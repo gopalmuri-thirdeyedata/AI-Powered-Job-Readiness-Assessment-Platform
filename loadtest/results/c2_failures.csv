@@ -1,0 +1,14 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""736bb33e-2e04-4338-89c1-d7b56dcc092e"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:31Z,2026-10-28T07:19:31Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""d0032e81-5965-4eec-8dc1-095ebc52bfe9"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:32Z,2026-10-28T07:19:32Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""7b9c210e-c676-4702-bd2b-eee39cb04cff"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:34Z,2026-10-28T07:19:34Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""80ca252d-b81f-4f9c-b265-bcbe83680ed9"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:33Z,2026-10-28T07:19:33Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""6d442585-f51b-488b-bcbb-1ed842ee4ce9"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:31Z,2026-10-28T07:19:31Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""81b45ef2-c4dc-4eb5-ab61-858a96763e9e"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:31Z,2026-10-28T07:19:31Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""c648fd48-db25-4a72-a685-35a07188f930"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:29Z,2026-10-28T07:19:29Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""056128c7-dbc7-428d-94a2-3d011c4c98ca"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:33Z,2026-10-28T07:19:33Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""9a83e03f-f47c-476a-bf0b-27dff481ad90"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:30Z,2026-10-28T07:19:30Z
+POST,6 run code (sandbox),"CatchResponseError('429 {""detail"":""The code runner is busy. Please retry in a few seconds.""}')",14,2026-10-28T07:18:59Z,2026-10-28T07:19:33Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""0fc8285e-357f-4095-9a3d-996818b43798"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:33Z,2026-10-28T07:19:33Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""8e10c4c1-4b95-43dd-858a-c28dbe0b4568"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:34Z,2026-10-28T07:19:34Z
+POST,7 submit coding,"CatchResponseError('503 {""detail"":{""session_uuid"":""789fe86e-5d59-43a1-a4fc-7b4800e6aa13"",""state"":""INTERVIEW_IN_PROGRESS"",""terminal"":false,""serve')",1,2026-10-28T07:19:34Z,2026-10-28T07:19:34Z

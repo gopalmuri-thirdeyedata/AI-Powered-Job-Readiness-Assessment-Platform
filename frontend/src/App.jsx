@@ -58,6 +58,8 @@ const StudentProfile = lazy(() => import('./pages/student/StudentProfile'));
 const StudentSkillGap = lazy(() => import('./pages/student/StudentSkillGap'));
 const StudentRoadmap = lazy(() => import('./pages/student/StudentRoadmap'));
 const StudentPractice = lazy(() => import('./pages/student/StudentPractice'));
+const StudentCoding = lazy(() => import('./pages/student/StudentCoding'));
+const StudentCodingProblem = lazy(() => import('./pages/student/StudentCodingProblem'));
 const StudentMockInterview = lazy(() => import('./pages/student/StudentMockInterview'));
 const StudentProjects = lazy(() => import('./pages/student/StudentProjects'));
 const StudentPlacementSimulation = lazy(() => import('./pages/student/StudentPlacementSimulation'));
@@ -154,6 +156,8 @@ function App() {
                             <Route path="skill-gap" element={<StudentSkillGap />} />
                             <Route path="roadmap" element={<StudentRoadmap />} />
                             <Route path="practice" element={<StudentPractice />} />
+                            <Route path="coding" element={<StudentCoding />} />
+                            <Route path="coding/:slug" element={<StudentCodingProblem />} />
                             <Route path="interview" element={<StudentMockInterview />} />
                             <Route path="simulation" element={<StudentPlacementSimulation />} />
                             <Route path="projects" element={<StudentProjects />} />
@@ -165,6 +169,8 @@ function App() {
                             <Route path="/student/skill-gap" element={<StudentSkillGap />} />
                             <Route path="/student/roadmap" element={<StudentRoadmap />} />
                             <Route path="/student/practice" element={<StudentPractice />} />
+                            <Route path="/student/coding" element={<StudentCoding />} />
+                            <Route path="/student/coding/:slug" element={<StudentCodingProblem />} />
                             <Route path="/student/interview" element={<StudentMockInterview />} />
                             <Route path="/student/simulation" element={<StudentPlacementSimulation />} />
                             <Route path="/student/projects" element={<StudentProjects />} />

@@ -32,7 +32,7 @@ from services import assessment_clock as clock
 from services import assessment_engine as engine
 from services import assessment_policy as policy
 from services import jd_blueprint_service as blueprints
-from services import judge0_service
+from services import function_style, judge0_service, student_code_run, student_sandbox
 from services import share_link_policy as link_policy
 from services import elevenlabs_service
 from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter
@@ -528,11 +528,16 @@ def start_section(db: Session, session: models.RoleReadySession, section: str) -
 # Code execution (public samples only) - the shared coding engine, behind the concurrency-capped sandbox
 # ==============================================================================
 def _sandboxed_execute(language: str, code: str, stdin: str = "") -> Dict[str, Any]:
-    """The platform's Judge0 adapter with the recruitment concurrency / input caps (raises SandboxBusy when saturated)."""
-    return judge0_service.execute_sandboxed(language, code, stdin)
+    """The platform's Judge0 adapter behind the fair waiting line (the same line the self-start assessment uses): when many candidates run code
+    at once they wait their turn; SandboxBusy is raised only when the line is full or the wait runs out."""
+    return student_sandbox.execute(language, code, stdin)
 
 
-def run_code(db: Session, session: models.RoleReadySession, problem_id: str, language: Optional[str], code: str) -> Dict[str, Any]:
+PYTHON_ONLY_DETAIL = "Only Python is supported."
+
+
+def run_code(db: Session, session: models.RoleReadySession, problem_id: str, language: Optional[str], code: str,
+             custom_input: Optional[str] = None) -> Dict[str, Any]:
     if session.current_state != STATE_FOR_SECTION["CODING"]:
         db.rollback()
         raise _http(403, "The coding section is not active.")
@@ -543,6 +548,7 @@ def run_code(db: Session, session: models.RoleReadySession, problem_id: str, lan
     rnd = get_rounds(db, session.id)["CODING"]
     problem = next((p for p in (rnd.questions_payload or []) if str(p.get("id")) == str(problem_id)), None)
     comparison = ((rnd.server_keys_payload or {}).get(str(problem_id)) or {}).get("comparison", "text")
+    driver = ((rnd.server_keys_payload or {}).get(str(problem_id)) or {}).get("driver")
     session_pk = session.id
     db.rollback()  # never hold a DB lock while the sandbox runs
     if problem is None:
@@ -551,14 +557,18 @@ def run_code(db: Session, session: models.RoleReadySession, problem_id: str, lan
         lang = engine.normalize_language(language)
     except ValueError as exc:
         raise _http(400, str(exc))
+    if lang != "python":
+        raise _http(400, PYTHON_ONLY_DETAIL)
     if len((code or "").encode("utf-8")) > engine.MAX_CODE_BYTES:
         raise _http(400, "Code exceeds the 64 KB submission limit.")
+    if custom_input is not None and len(custom_input) > 5000:
+        raise _http(400, "Your testcase is too long (limit 5000 characters).")
     if not run_code_limiter.allow(session_pk):
         raise _http(429, "Too many code runs. Please wait a moment.")
     if not run_code_gate.acquire(session_pk):
         raise _http(429, "A code run is already in progress.")
     try:
-        result = engine.run_sample_tests(problem, code, lang, execute=_sandboxed_execute, comparison=comparison)
+        result = student_code_run.run_samples(problem, code, lang, driver=driver, custom_input=custom_input, comparison=comparison)
     except engine.SandboxBusy:
         raise _http(429, "The code runner is busy. Please retry in a few seconds.")
     except engine.SandboxUnavailable:
@@ -615,6 +625,7 @@ def voice_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
         )
         fresh = db.query(models.RoleReadyRoundAttempt).filter(models.RoleReadyRoundAttempt.id == rnd_id).first()
         elevenlabs_service.store_voice_session(db, fresh, voice_session)     # the prompt stays on the server
+        elevenlabs_service.prewarm_opening(voice_session)
         voice_config = elevenlabs_service.public_voice_config(voice_session)
     except Exception as exc:  # never leak the provider error; the candidate is offered a retry
         db.rollback()
@@ -630,8 +641,8 @@ def voice_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
     }
 
 
-def voice_turn(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool) -> Dict[str, Any]:
-    """One spoken exchange of the interview. Same gating as voice_init: interview section active and before the deadline."""
+def _voice_turn_session(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
+    """The gating every spoken exchange shares (plain and streaming): interview section active, before the deadline, within the rate limit."""
     if session.current_state != STATE_FOR_SECTION["INTERVIEW"]:
         db.rollback()
         raise _http(403, "The AI Technical Interview section is not unlocked yet.")
@@ -646,8 +657,41 @@ def voice_turn(db: Session, session: models.RoleReadySession, audio, content_typ
     db.rollback()
     if voice_session is None:
         raise _http(409, "The voice interview has not been initialised. Reload and try again.")
+    return voice_session
+
+
+def voice_turn(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool) -> Dict[str, Any]:
+    """One spoken exchange of the interview. Same gating as voice_init: interview section active and before the deadline."""
+    voice_session = _voice_turn_session(db, session)
     try:
         return elevenlabs_service.run_turn(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+    except elevenlabs_service.VoiceServiceError as exc:
+        raise _http(exc.status_code, exc.public_message)
+
+
+def voice_turn_stream(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool):
+    """The same exchange as voice_turn, as a stream of events so the first sentence is spoken early (all gating runs before the first byte)."""
+    voice_session = _voice_turn_session(db, session)
+    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+
+
+caption_token_limiter = SlidingWindowLimiter(limit=8, window_seconds=60)      # one token per connection; reconnects are rare
+
+
+def voice_caption_session(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
+    """A single-use live-caption connection for the active interview (the API key stays on the server)."""
+    if session.current_state != STATE_FOR_SECTION["INTERVIEW"]:
+        db.rollback()
+        raise _http(403, "The AI Technical Interview section is not unlocked yet.")
+    if clock.now() >= applicable_deadline(session):
+        db.rollback()
+        raise _http(408, "Assessment round deadline reached. No further work permitted.")
+    if not caption_token_limiter.allow(session.id):
+        db.rollback()
+        raise _http(429, "Too many caption requests. Please wait a moment and try again.")
+    db.rollback()
+    try:
+        return elevenlabs_service.realtime_caption_session()
     except elevenlabs_service.VoiceServiceError as exc:
         raise _http(exc.status_code, exc.public_message)
 
@@ -675,7 +719,8 @@ def evaluate_round(db: Session, session: models.RoleReadySession, rnd: models.Ro
         return {"status": "EVALUATED", **engine.evaluate_aptitude(keys, submission.get("answers"))}
     if rnd.round_type == "CODING":
         try:
-            return {"status": "EVALUATED", **engine.evaluate_coding(rnd.questions_payload or [], keys, submission.get("solutions"),
+            return {"status": "EVALUATED", **engine.evaluate_coding(rnd.questions_payload or [], keys,
+                                                                     function_style.compose_solutions(keys, submission.get("solutions")),
                                                                      execute=_sandboxed_execute)}
         except engine.SandboxUnavailable:
             return {"status": "EVALUATION_PENDING", "score": None, "pending_reason": "Sandbox unavailable",
@@ -920,6 +965,10 @@ def close_section(db: Session, session_pk: int, section: str, payload: Optional[
 
 def submit_section(db: Session, session: models.RoleReadySession, section: str, payload: Optional[Dict[str, Any]],
                    violations: Any = None) -> Dict[str, Any]:
+    if section == "CODING" and isinstance((payload or {}).get("solutions"), dict):
+        for sol in payload["solutions"].values():        # an explicit submission is Python only (older drafts that close on the timer are still graded)
+            if isinstance(sol, dict) and (sol.get("language") or "python") not in ("python", "python3"):
+                raise _http(400, PYTHON_ONLY_DETAIL)
     pk = session.id
     db.rollback()
     return close_section(db, pk, section, payload, auto=False, violations=violations)

@@ -292,7 +292,7 @@ def test_practice_starters_are_skeletons_that_solve_nothing():
             continue
         assert list(q["starter_code"]) == ["python"]
         starter = q["starter_code"]["python"]
-        assert "def solution" in starter
+        assert "def " in starter and "__main__" in starter      # a function plus the server-side driver (services/function_style.py)
         passed = [tc["input"] for tc in q["test_cases"]
                   if judge0_service.outputs_match(_run_starter(starter, tc["input"]), tc["expected_output"])]
         assert passed == [], f"{q['title']}: starter already passes {len(passed)} test(s)"

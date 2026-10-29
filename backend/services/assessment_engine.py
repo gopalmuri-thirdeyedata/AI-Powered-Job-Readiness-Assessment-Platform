@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from services import coding_evaluation
 from services import interview_evaluation
+from services import function_style
 from services import judge0_service
 
 # ------------------------------------------------------------------------------
@@ -451,18 +452,28 @@ def adapt_blueprint(bp: Dict[str, Any]) -> Dict[str, Tuple[List[Dict[str, Any]],
                   for i, c in enumerate(p["public_test_cases"])]
         hidden = [{"id": f"{pid}-h{i + 1}", "input": _stdin_for(c["input"], params), "expected_output": _expected_text(c["expected"])}
                   for i, c in enumerate(p["hidden_test_cases"])]
+        if len(public) < 2 and hidden:                         # two examples, like LeetCode (this case also stays in the graded set)
+            public.append({**hidden[0], "id": f"{pid}-p{len(public) + 1}"})
         lines = len(params) or 1
         names = ", ".join(f"`{n}`" for n in params)
+        # LeetCode structure (Python only): the student sees `class Solution` with just the signature; the server keeps the input / output driver
+        starter = _python_starter(p, params)
+        parts = function_style.to_function_style(starter)
+        if parts:
+            input_format = (f"Your function receives the parameter(s): {names}." if names else "Your function takes no parameters.")
+            output_format = "Return the result."
+        else:
+            input_format = (f"Standard input has {lines} line(s); each line is the JSON-encoded value of a parameter"
+                            + (f", in this order: {names}." if names else "."))
+            output_format = "Print the JSON-encoded return value on a single line."
         code_client.append({
             "id": pid, "title": p["title"], "difficulty": p.get("difficulty", "Medium"), "description": p["description"],
-            "input_format": f"Standard input has {lines} line(s); each line is the JSON-encoded value of a parameter"
-                            + (f", in this order: {names}." if names else "."),
-            "output_format": "Print the JSON-encoded return value on a single line.",
+            "input_format": input_format, "output_format": output_format,
             "constraints": "",
-            "starter_code": {"python": _python_starter(p, params), "java": _java_starter(params)},
+            "starter_code": {"python": parts["starter"] if parts else starter},
             "public_test_cases": public,
         })
-        code_keys[pid] = {"hidden_test_cases": hidden, "comparison": "json"}
+        code_keys[pid] = {"hidden_test_cases": hidden, "comparison": "json", **({"driver": parts["driver"]} if parts else {})}
 
     int_client: List[Dict[str, Any]] = []
     int_questions: List[Dict[str, Any]] = []
