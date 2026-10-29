@@ -8,12 +8,14 @@ import {
     ClipboardList,
     Users,
     UserCog,
+    MonitorPlay,
     ChevronLeft,
     ChevronRight,
     X,
 } from 'lucide-react';
 import GlobalNavbar from '../components/GlobalNavbar';
 import { WORKFLOW_ROUTES } from '../components/admin/workflowRoutes';
+import { STUDENT_DEMO_BASE } from '../utils/studentDemo';
 
 // Fixed desktop widths: the sidebar only ever toggles between these two (collapse / expand), it is not resizable.
 const SIDEBAR_WIDTH_EXPANDED = 280;
@@ -100,6 +102,7 @@ const DashboardLayout = () => {
                 {groupHeading('Administration', isOpen)}
                 <div className="space-y-1">
                     <SidebarItem icon={UserCog} label="User Management" path={WORKFLOW_ROUTES.users} isOpen={isOpen} onClick={onItemClick} scope={scope} />
+                    <SidebarItem icon={MonitorPlay} label="Student Dashboard Demo" path={STUDENT_DEMO_BASE} isOpen={isOpen} onClick={onItemClick} scope={scope} />
                 </div>
             </div>
         </nav>

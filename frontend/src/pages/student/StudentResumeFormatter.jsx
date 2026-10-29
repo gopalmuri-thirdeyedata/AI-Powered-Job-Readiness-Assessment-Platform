@@ -8,6 +8,8 @@ import ResumeSourcePicker from '../../components/student-ui/ResumeSourcePicker';
 import ResumePreview from '../../components/student-ui/ResumePreview';
 import { TEMPLATES } from '../../utils/resumeTemplates';
 import { downloadResumeDocx, downloadResumePdf } from '../../utils/resumeExport';
+import { isStudentDemo } from '../../utils/studentDemo';
+import { DEMO_FORMATTED_RESUME } from '../../services/studentDemoData';
 
 const STORAGE_PREFIX = 'prepwin_resume_formatter';
 
@@ -31,13 +33,15 @@ const removeSaved = (key) => {
 
 const StudentResumeFormatter = () => {
     const { user, isLoaded: isUserLoaded } = useUser();
-    const storageKey = isUserLoaded && user?.id ? `${STORAGE_PREFIX}:${user.id}` : null;
+    // The demo opens with a sample resume already formatted, and never reads or writes the browser's saved resume
+    const demo = isStudentDemo();
+    const storageKey = !demo && isUserLoaded && user?.id ? `${STORAGE_PREFIX}:${user.id}` : null;
     const [savedResume, setSavedResume] = useState(null);
     const [isLoadingSaved, setIsLoadingSaved] = useState(true);
     const [source, setSource] = useState({ file: null, resumeId: null });
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState(null);
-    const [resumeData, setResumeData] = useState(null);
+    const [resumeData, setResumeData] = useState(() => (isStudentDemo() ? DEMO_FORMATTED_RESUME : null));
     const [selected, setSelected] = useState('classic');
     const [downloading, setDownloading] = useState(null);
     const [restoredMeta, setRestoredMeta] = useState(null); // {savedAt, sourceLabel} when showing an earlier result

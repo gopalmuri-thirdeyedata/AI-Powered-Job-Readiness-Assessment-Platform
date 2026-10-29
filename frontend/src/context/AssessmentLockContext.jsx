@@ -10,7 +10,7 @@ import { rolereadyApi } from '../services/rolereadyApi';
 //   locked   -> every "start assessment" button opens the contact-admin popup
 //   unlocked -> the same buttons open the assessment setup page
 // The answer is re-read on every press, so a grant or revoke takes effect without signing out or reloading.
-const AssessmentLockContext = createContext({
+export const AssessmentLockContext = createContext({
     promptContactAdmin: () => {},
     startAssessment: () => {},
     assessmentLocked: true,

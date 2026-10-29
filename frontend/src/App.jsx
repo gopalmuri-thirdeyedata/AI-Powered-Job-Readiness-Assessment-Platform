@@ -9,6 +9,7 @@ import CandidateLayout from './layouts/CandidateLayout';
 import StudentLayout from './layouts/StudentLayout';
 import CollegeLayout from './layouts/CollegeLayout';
 import AdminGuard from './components/AdminGuard';
+import StudentDemoLayout from './layouts/StudentDemoLayout';
 import RoleReadyAuthGuard from './components/RoleReadyAuthGuard';
 import Home from './pages/Home';
 
@@ -127,6 +128,23 @@ function App() {
                             <Route path="/analytics" element={<Navigate to="/admin/dashboard" replace />} />
                             <Route path="/settings" element={<Navigate to="/admin/dashboard" replace />} />
                             <Route path="/platform/organizations" element={<Navigate to="/admin/dashboard" replace />} />
+                        </Route>
+
+                        {/* Student Dashboard Demo: opened from the admin sidebar. The student pages run on sample data and make no API calls. */}
+                        <Route path="/admin/student-demo" element={<AdminGuard><StudentDemoLayout /></AdminGuard>}>
+                            <Route index element={<StudentDashboard />} />
+                            <Route path="skill-gap" element={<StudentSkillGap />} />
+                            <Route path="roadmap" element={<StudentRoadmap />} />
+                            <Route path="practice" element={<StudentPractice />} />
+                            <Route path="coding" element={<StudentCoding />} />
+                            <Route path="coding/:slug" element={<StudentCodingProblem />} />
+                            <Route path="interview" element={<StudentMockInterview />} />
+                            <Route path="simulation" element={<StudentPlacementSimulation />} />
+                            <Route path="projects" element={<StudentProjects />} />
+                            <Route path="resume" element={<StudentResumeUpload />} />
+                            <Route path="resume-formatter" element={<StudentResumeFormatter />} />
+                            <Route path="profile" element={<StudentProfile />} />
+                            <Route path="*" element={<Navigate to="/admin/student-demo" replace />} />
                         </Route>
 
                         {/* Candidate Portal Routes */}

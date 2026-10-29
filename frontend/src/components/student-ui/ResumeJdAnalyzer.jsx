@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Briefcase, Building2, CheckCircle2, RefreshCw, Sparkles, XCircle } from 'lucide-react';
 import studentApi from '../../services/studentApi';
+import { isStudentDemo } from '../../utils/studentDemo';
+import { DEMO_SAMPLE_JOB_DESCRIPTION, DEMO_JD_ANALYSIS } from '../../services/studentDemoData';
 import { Reveal } from '../home/primitives';
 import ResumeSourcePicker from './ResumeSourcePicker';
 
@@ -44,10 +46,11 @@ const BulletCard = ({ title, items, icon: Icon, accent }) => (
 
 const ResumeJdAnalyzer = ({ savedResume }) => {
     const [source, setSource] = useState({ file: null, resumeId: null });
-    const [jd, setJd] = useState('');
+    // The demo opens with a sample job description and its result already filled in, so the whole page can be explored
+    const [jd, setJd] = useState(() => (isStudentDemo() ? DEMO_SAMPLE_JOB_DESCRIPTION : ''));
     const [isRunning, setIsRunning] = useState(false);
     const [error, setError] = useState(null);
-    const [result, setResult] = useState(null);
+    const [result, setResult] = useState(() => (isStudentDemo() ? DEMO_JD_ANALYSIS : null));
 
     const jdLength = jd.trim().length;
     const hasSource = Boolean(source.file || source.resumeId);

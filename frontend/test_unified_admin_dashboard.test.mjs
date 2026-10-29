@@ -182,13 +182,14 @@ describe('Admin dashboard structure and requirements', () => {
         assert.ok(!navbarSrc.includes('>\n                        Admin Workspace'), 'no second "Admin Workspace" link next to the sidebar entry');
     });
 
-    test('8. sidebar: the four workflow stages plus the Administration > User Management entry, no legacy modules and no Organizations', () => {
+    test('8. sidebar: the four workflow stages plus the Administration > User Management and Student Dashboard Demo entries, no legacy modules and no Organizations', () => {
         assert.ok(layoutSrc.includes('PrepWin Assessment Suite'));
         const labels = [...layoutSrc.matchAll(/<SidebarItem icon=\{(\w+)\} label="([^"]+)" path=\{?([^\s}]+)\}?/g)].map((m) => [m[1], m[2], m[3]]);
-        assert.deepEqual(labels.map((l) => l[1]), ['Overview', 'Job Roles & Blueprints', 'Shared Links', 'Candidate Results', 'User Management']);
+        assert.deepEqual(labels.map((l) => l[1]), ['Overview', 'Job Roles & Blueprints', 'Shared Links', 'Candidate Results', 'User Management', 'Student Dashboard Demo']);
         assert.deepEqual(labels.slice(0, 4).map((l) => l[0]), ['LayoutDashboard', 'Briefcase', 'Link2', 'ClipboardList'], 'icons');
         assert.deepEqual(labels.slice(0, 4).map((l) => l[2]), ['WORKFLOW_ROUTES.overview', 'WORKFLOW_ROUTES.roles', 'WORKFLOW_ROUTES.links', 'WORKFLOW_ROUTES.results']);
         assert.deepEqual([labels[4][0], labels[4][2]], ['UserCog', 'WORKFLOW_ROUTES.users'], 'User Management lives under its own Administration heading');
+        assert.deepEqual([labels[5][0], labels[5][2]], ['MonitorPlay', 'STUDENT_DEMO_BASE'], 'the student dashboard demo sits under Administration, after User Management');
         assert.ok(layoutSrc.includes('Administration'));
         for (const gone of ['Recruitment Workspace', 'Candidate Results & Dossiers', 'Admin Workspace', 'Resume Screening', 'Screened Candidates', 'Assessment Rounds', 'Invitation Assessments', 'Recruitment Analytics',
             'Enterprise Settings', 'Talent Screening Suite', 'Platform & Settings', 'Platform &amp; Settings', 'tab=']) {
@@ -197,7 +198,7 @@ describe('Admin dashboard structure and requirements', () => {
         // each item is active only on its own route (Overview also on the /dashboard alias)
         assert.ok(layoutSrc.includes('location.pathname === path') && layoutSrc.includes("location.pathname === '/dashboard'"));
         for (const gone of ['Organizations', 'Building2', 'PLATFORM_ADMIN', '/platform/', '>Platform<']) assert.ok(!layoutSrc.includes(gone), `no platform / organizations navigation: ${gone}`);
-        assert.equal((layoutSrc.match(/<SidebarItem icon=/g) || []).length, 5, 'no role-specific extra entries');
+        assert.equal((layoutSrc.match(/<SidebarItem icon=/g) || []).length, 6, 'no role-specific extra entries');
         assert.ok(!layoutSrc.includes('Recruitment Pipeline'));
         assert.ok(!/Recruiter Login|HR Login|Org Admin Login|College Admin Login/i.test(layoutSrc + appSrc), 'only Student and Admin logins exist');
         const guarded = appSrc.slice(appSrc.indexOf('<AdminGuard><DashboardLayout />'), appSrc.indexOf('Candidate Portal Routes'));

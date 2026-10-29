@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import studentApi from '../services/studentApi';
 import { useAuth } from '../auth/useAuth';
 import { getStudentEmail } from '../utils/authStorage';
+import { isStudentDemo } from '../utils/studentDemo';
 
 const BASE_STORAGE_KEY = 'student_completed_assessment';
 const EVENT_NAME = 'student_task_status_changed';
@@ -21,6 +22,7 @@ const getStorageKey = (email = null) => {
  * Returns true if student has completed at least one assessment according to localStorage.
  */
 export const isStudentTaskCompletedSync = (email = null) => {
+    if (isStudentDemo()) return true;     // the demo student has completed assessments
     try {
         const key = getStorageKey(email);
         return localStorage.getItem(key) === 'true';
@@ -34,6 +36,7 @@ export const isStudentTaskCompletedSync = (email = null) => {
  * Updates localStorage and broadcasts event to all components.
  */
 export const markStudentTaskCompleted = (email = null) => {
+    if (isStudentDemo()) return;          // the demo never writes the real student's browser state
     try {
         const key = getStorageKey(email);
         localStorage.setItem(key, 'true');
@@ -49,6 +52,7 @@ export const markStudentTaskCompleted = (email = null) => {
  * Resets student completion status (e.g. upon sign out).
  */
 export const clearStudentTaskCompleted = (email = null) => {
+    if (isStudentDemo()) return;
     try {
         const key = getStorageKey(email);
         localStorage.removeItem(key);
@@ -78,6 +82,13 @@ export default function useStudentTaskStatus() {
 
     const refreshStatus = useCallback(async () => {
         if (!isAuthLoaded) return;
+
+        if (isStudentDemo()) {
+            setIsConfirmedNew(false);
+            setHasCompletedTask(true);
+            setIsLoading(false);
+            return;
+        }
 
         // No student session: nothing to ask the student endpoint (and hiring staff have no student task)
         if (!userEmail) {

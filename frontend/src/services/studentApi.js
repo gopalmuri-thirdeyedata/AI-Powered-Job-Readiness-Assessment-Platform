@@ -1,6 +1,8 @@
 import axios from 'axios';
 import API_URL from '../apiConfig';
 import { logout as endSession } from '../auth/authSession';
+import { isStudentDemo } from '../utils/studentDemo';
+import { demoStudentApi, demoUnavailable } from './studentDemoApi';
 
 /**
  * Headers for student API requests. Authentication is the HttpOnly session cookie plus the CSRF header, both added by the
@@ -18,7 +20,7 @@ const getAuthHeaders = (isMultipart = false) => {
     return headers;
 };
 
-export const studentApi = {
+const realStudentApi = {
     // Auth: students sign in through the single login (auth/authSession.js); there is no student sign-up.
     async logout() {
         await endSession();
@@ -408,5 +410,13 @@ export const studentApi = {
         return response.data;
     },
 };
+
+// On a Student Dashboard Demo route every call is answered from sample data and nothing reaches the network (see utils/studentDemo.js).
+export const studentApi = new Proxy(realStudentApi, {
+    get(target, name, receiver) {
+        if (typeof name === 'string' && isStudentDemo()) return demoStudentApi[name] || demoUnavailable(name);
+        return Reflect.get(target, name, receiver);
+    },
+});
 
 export default studentApi;

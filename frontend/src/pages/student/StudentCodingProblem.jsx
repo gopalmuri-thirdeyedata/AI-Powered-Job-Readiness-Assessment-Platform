@@ -12,6 +12,11 @@ import {
     DIFFICULTY_CLASSES, TONE_CLASSES, clearDraft, errorMessage, formatMemory, formatRuntime, isRunShortcut, isSubmitShortcut,
     loadDraft, pickInitialCode, saveDraft, statusLabel, verdictInfo,
 } from '../../utils/codingPlatform';
+import { STUDENT_DEMO_BASE, isStudentDemo } from '../../utils/studentDemo';
+
+// In the Student Dashboard Demo the page lives under the demo routes, and its drafts must not mix with a real student's drafts in this browser
+const problemPath = (slug) => `${isStudentDemo() ? STUDENT_DEMO_BASE : '/student'}/coding/${slug}`;
+const draftId = (slug) => (isStudentDemo() ? `demo:${slug}` : slug);
 
 const StudentCodingProblem = () => {
     const { slug } = useParams();
@@ -68,7 +73,7 @@ const StudentCodingProblem = () => {
         loadProblem()
             .then((res) => {
                 if (cancelled) return;
-                setCode(pickInitialCode({ draft: loadDraft(slug), lastCode: res.last_code, starter: res.starter_code }));
+                setCode(pickInitialCode({ draft: loadDraft(draftId(slug)), lastCode: res.last_code, starter: res.starter_code }));
                 loadSubmissions();
             })
             .catch((err) => { if (!cancelled) setLoadError(errorMessage(err, 'Could not load this problem.')); })
@@ -78,7 +83,7 @@ const StudentCodingProblem = () => {
 
     useEffect(() => {
         if (!problem) return undefined;
-        const t = setTimeout(() => saveDraft(slug, code), 400);
+        const t = setTimeout(() => saveDraft(draftId(slug), code), 400);
         return () => clearTimeout(t);
     }, [code, slug, problem]);
 
@@ -147,7 +152,7 @@ const StudentCodingProblem = () => {
     const resetCode = () => {
         if (!problem) return;
         if (window.confirm('Reset to the starter code? Your current code will be replaced.')) {
-            clearDraft(slug);
+            clearDraft(draftId(slug));
             setCode(problem.starter_code);
         }
     };
@@ -185,8 +190,8 @@ const StudentCodingProblem = () => {
                 {/* On a phone the actions take their own full-width row under the title; Run and Submit share it equally */}
                 <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
                 <div className="hidden sm:flex items-center gap-1">
-                    <button type="button" disabled={!problem.prev_slug} onClick={() => navigate(`/student/coding/${problem.prev_slug}`)} className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40" aria-label="Previous problem"><ChevronLeft className="w-4 h-4" /></button>
-                    <button type="button" disabled={!problem.next_slug} onClick={() => navigate(`/student/coding/${problem.next_slug}`)} className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40" aria-label="Next problem"><ChevronRight className="w-4 h-4" /></button>
+                    <button type="button" disabled={!problem.prev_slug} onClick={() => navigate(problemPath(problem.prev_slug))} className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40" aria-label="Previous problem"><ChevronLeft className="w-4 h-4" /></button>
+                    <button type="button" disabled={!problem.next_slug} onClick={() => navigate(problemPath(problem.next_slug))} className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40" aria-label="Next problem"><ChevronRight className="w-4 h-4" /></button>
                 </div>
                 <button type="button" onClick={handleBookmark} aria-pressed={!!problem.bookmarked} aria-label={problem.bookmarked ? 'Remove bookmark' : 'Bookmark this problem'} title="Bookmark"
                     className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-amber-500">

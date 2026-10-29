@@ -1,11 +1,13 @@
 import axios from 'axios';
 import API_URL from '../apiConfig';
+import { isStudentDemo } from '../utils/studentDemo';
+import { codingHandlers } from './demo/practiceCoding';
 
 // Authentication is the HttpOnly session cookie plus the CSRF header, both added by the auth client (auth/authSession.js).
 const BASE = `${API_URL}/api/student/coding`;
 const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
 
-export const codingApi = {
+const realCodingApi = {
     async getProblems({ difficulty, tag, status, q, bookmarked } = {}) {
         const params = {};
         if (bookmarked) params.bookmarked = true;
@@ -41,5 +43,16 @@ export const codingApi = {
         return (await axios.get(`${BASE}/submissions/${id}`, { headers })).data;
     },
 };
+
+// On a Student Dashboard Demo route every call is answered from sample data: no request, no code runner (see utils/studentDemo.js).
+export const codingApi = new Proxy(realCodingApi, {
+    get(target, name, receiver) {
+        if (typeof name !== 'string' || !isStudentDemo()) return Reflect.get(target, name, receiver);
+        const handler = codingHandlers[name];
+        return handler
+            ? (...args) => Promise.resolve(handler(...args)).then((v) => (v === undefined ? v : structuredClone(v)))
+            : () => Promise.reject(new Error(`${name} is not part of the demo`));
+    },
+});
 
 export default codingApi;

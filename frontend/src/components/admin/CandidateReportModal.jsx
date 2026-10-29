@@ -2,15 +2,160 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Copy, Download, Loader2, Printer, RefreshCw, RotateCcw, ShieldCheck, ThumbsDown, Trash2, X } from 'lucide-react';
 import ConfirmationModal from '../ConfirmationModal';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
+import { downloadCandidateDossierPdf } from '../../utils/candidateDossierPdf';
 import { StatusBadge, Toast, copyText, dangerGhostBtn, formatDate, formatDuration, formatScore, ghostBtn, ghostBtnSm, inputCls, primaryBtn, thCls } from './adminUi';
 
 const SECTION_LABELS = { aptitude: 'Aptitude', coding: 'Coding', interview: 'AI Technical Interview' };
 
-const PRINT_CSS = `@media print {
-  body * { visibility: hidden !important; }
-  .pw-print-root, .pw-print-root * { visibility: visible !important; }
-  .pw-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-height: none !important; overflow: visible !important; box-shadow: none !important; }
-  .pw-no-print { display: none !important; }
+const PRINT_CSS = `@page {
+  size: A4 portrait;
+  margin: 12mm 15mm;
+}
+@media print {
+  html, body {
+    background: rgb(255, 255, 255) !important;
+    color: rgb(15, 23, 42) !important;
+    font-size: 10pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  .pw-admin:has(.pw-print-root),
+  div[role="dialog"][aria-label="Candidate dossier"] {
+    position: static !important;
+    display: block !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: auto !important;
+  }
+  .pw-print-root, .pw-print-root * {
+    visibility: visible !important;
+  }
+  .pw-print-root {
+    position: static !important;
+    display: block !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: rgb(255, 255, 255) !important;
+    color: rgb(15, 23, 42) !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .pw-no-print, .pw-no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  .pw-print-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8pt;
+    margin-bottom: 12pt;
+    border-bottom: 2pt solid #5d8c2c;
+  }
+  .pw-print-root .sticky {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-bottom: none !important;
+  }
+  .pw-print-root details {
+    display: block !important;
+    border: 1pt solid rgb(203, 213, 225) !important;
+    background: rgb(255, 255, 255) !important;
+    border-radius: 4pt !important;
+    padding: 6pt 8pt !important;
+    margin-bottom: 8pt !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .pw-print-root details > summary {
+    font-size: 10.5pt !important;
+    font-weight: 700 !important;
+    color: rgb(15, 23, 42) !important;
+    cursor: default !important;
+    list-style: none !important;
+    padding-bottom: 3pt;
+    border-bottom: 1pt solid rgb(226, 232, 240);
+    margin-bottom: 6pt !important;
+  }
+  .pw-print-root details > summary::-webkit-details-marker {
+    display: none !important;
+  }
+  .pw-print-root details > * {
+    display: block !important;
+  }
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+    font-size: 8.5pt !important;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  th, td {
+    border: 1pt solid rgb(226, 232, 240) !important;
+    color: rgb(15, 23, 42) !important;
+    padding: 3.5pt 5pt !important;
+    font-size: 8.5pt !important;
+  }
+  th {
+    background-color: rgb(241, 245, 249) !important;
+    font-weight: 600 !important;
+  }
+  .pw-scroll-x {
+    overflow: visible !important;
+    border: none !important;
+  }
+  pre {
+    background-color: rgb(248, 250, 252) !important;
+    border: 1pt solid rgb(226, 232, 240) !important;
+    color: rgb(15, 23, 42) !important;
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    font-size: 7.5pt !important;
+    padding: 4pt !important;
+    border-radius: 3pt !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .pw-print-root * {
+    color: rgb(15, 23, 42);
+    background-color: transparent;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
 }`;
 
 const Score = ({ label, value, big }) => (
@@ -50,6 +195,18 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [onClose, confirm, justify]);
+
+    useEffect(() => {
+        const onBeforePrint = () => {
+            if (typeof document !== 'undefined') {
+                document.querySelectorAll('.pw-print-root details').forEach((el) => {
+                    el.setAttribute('open', 'true');
+                });
+            }
+        };
+        window.addEventListener('beforeprint', onBeforePrint);
+        return () => window.removeEventListener('beforeprint', onBeforePrint);
+    }, []);
 
     const act = async (name, fn, okMessage) => {
         setBusy(name);
@@ -96,6 +253,28 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
         if (res) load();
     };
 
+    const handlePrint = () => {
+        if (typeof document !== 'undefined') {
+            document.querySelectorAll('.pw-print-root details').forEach((el) => {
+                el.setAttribute('open', 'true');
+            });
+        }
+        window.print();
+    };
+
+    const exportPdf = async () => {
+        if (!data) return;
+        try {
+            setBusy('export');
+            await downloadCandidateDossierPdf(data);
+            setToast({ message: 'Candidate dossier PDF exported.' });
+        } catch (err) {
+            setToast({ type: 'error', message: errorMessage(err, 'Failed to export candidate dossier PDF.') });
+        } finally {
+            setBusy('');
+        }
+    };
+
     const exportJson = () => {
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -118,8 +297,13 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
                 <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-5 sm:px-6 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
                     <h2 className="pw-section-title">Candidate Dossier</h2>
                     <div className="pw-no-print flex items-center gap-2">
-                        {data && <button type="button" className={ghostBtnSm} onClick={() => window.print()}><Printer size={14} /> Print</button>}
-                        {data && <button type="button" className={ghostBtnSm} onClick={exportJson}><Download size={14} /> Export</button>}
+                        {data && <button type="button" className={ghostBtnSm} onClick={handlePrint}><Printer size={14} /> Print</button>}
+                        {data && (
+                            <button type="button" className={ghostBtnSm} disabled={busy === 'export'} onClick={exportPdf} aria-label="Export candidate dossier PDF">
+                                {busy === 'export' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                                <span>Export</span>
+                            </button>
+                        )}
                         <button type="button" onClick={onClose} className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" aria-label="Close dossier"><X size={18} /></button>
                     </div>
                 </div>
@@ -130,6 +314,21 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
 
                     {data && (
                         <>
+                            {/* Print-only official report header */}
+                            <div className="hidden print:flex pw-print-header items-center justify-between gap-4 pb-3 mb-4 border-b-2 border-[#5d8c2c]">
+                                <div className="flex items-center gap-2.5">
+                                    <img src="/logo_main.png" alt="PrepWin Logo" className="h-8 w-auto object-contain" />
+                                    <div>
+                                        <h1 className="text-base font-bold text-slate-900 leading-tight">PrepWin</h1>
+                                        <p className="text-[10px] text-slate-500 font-medium">Recruitment Assessment Intelligence</p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <h2 className="text-sm font-bold text-slate-900">Candidate Assessment Dossier</h2>
+                                    <p className="text-[10px] text-slate-500">Official Evaluation Report</p>
+                                </div>
+                            </div>
+
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <h3 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white break-words">{data.candidate.name}</h3>
