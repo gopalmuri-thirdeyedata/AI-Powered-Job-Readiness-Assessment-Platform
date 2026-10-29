@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { exitFullscreenSafely } from '../utils/exitFullscreen';
 
 /**
  * useAssessmentFullscreen
@@ -151,6 +152,22 @@ const useAssessmentFullscreen = ({
     }, [recoveryDuration, clearRecoveryTimer]);
 
     /**
+     * releaseFullscreen
+     * Called ONCE the assessment is over (final submission accepted, or the server closed the attempt). Enforcement is switched off first
+     * so the exit that follows is never mistaken for the candidate leaving (no recovery countdown, no violation), then the browser is
+     * asked to leave fullscreen. Fire and forget: it never rejects, and the caller does not wait for it.
+     */
+    const releaseFullscreen = useCallback(() => {
+        enabledRef.current = false;
+        isCompletedRef.current = true;
+        clearRecoveryTimer();
+        isRecoveryOpenRef.current = false;
+        setIsRecoveryOpen(false);
+        setIsGateOpen(false);
+        return exitFullscreenSafely();
+    }, [clearRecoveryTimer]);
+
+    /**
      * fullscreenchange event listener
      * Handles ESC key, browser button exits, or unexpected fullscreen drops
      */
@@ -231,6 +248,7 @@ const useAssessmentFullscreen = ({
         recoveryTimeLeft,
         error,
         enterFullscreen,
+        releaseFullscreen,
         returnToFullscreen: enterFullscreen,
         retryFullscreen: enterFullscreen
     };

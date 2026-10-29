@@ -287,6 +287,8 @@ const ProctorCameraFeed = ({
  *                      for the hiring team; a browser event alone never ends or invalidates an attempt)
  *   onFinished(outcome) called instead of routing to the student report
  *   onBackToInstructions  recruitment only: returns to the Exam Instructions page (the student-style rules card is never shown to candidates)
+ *   retestSection      'aptitude' | 'coding' | 'interview' | null. An administrator-assigned section retest: the sitting starts directly in
+ *                      that one section (the server unlocks nothing else) and finishes as soon as it is submitted.
  */
 export const AssessmentWorkspace = ({
     sessionUuid,
@@ -296,12 +298,17 @@ export const AssessmentWorkspace = ({
     proctoringPolicy = 'terminate',
     onFinished = null,
     onBackToInstructions = null,
+    retestSection = null,
 }) => {
     const navigate = useNavigate();
     const isRecruitment = mode === 'recruitment';
     const strikeLimit = proctoringPolicy === 'flag' ? null : MAX_MALPRACTICE_WARNINGS;
 
+    // Set below, once the fullscreen hook exists. finishAssessment is the ONLY place that leaves fullscreen: it runs when the assessment is
+    // over (final submission accepted, or the server closed / terminated the attempt), never after an intermediate section.
+    const releaseFullscreenRef = useRef(null);
     const finishAssessment = useCallback((outcome = 'completed') => {
+        releaseFullscreenRef.current?.();             // fire and forget: a refused exit must never block the completion page
         if (onFinished) onFinished(outcome);
         else navigate(`/assessment/${sessionUuid}/report`);
     }, [onFinished, navigate, sessionUuid]);
@@ -430,6 +437,7 @@ export const AssessmentWorkspace = ({
         recoveryTimeLeft,
         error: fullscreenError,
         enterFullscreen,
+        releaseFullscreen,
         returnToFullscreen
     } = useAssessmentFullscreen({
         enabled: currentStage !== 'instructions' && currentStage !== 'device_check' && !sessionData?.is_completed,
@@ -441,6 +449,8 @@ export const AssessmentWorkspace = ({
             handleAnyViolation("Fullscreen exit exceeded 10-second recovery limit");
         }
     });
+
+    releaseFullscreenRef.current = releaseFullscreen;
 
     // ── Tab-Switch and Window Blur Telemetry ──────────────────────────
     useEffect(() => {
@@ -802,6 +812,7 @@ export const AssessmentWorkspace = ({
             await holdAnimation(submitStartedAt);
             setSubmitDone(true);
             await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
+            if (retestSection) { finishAssessment('completed'); return; }   // a section retest ends with its one section
 
             // Unlock and navigate to Coding. The session refresh and the coding problems are
             // independent, so fetch them together instead of one after another.
@@ -910,6 +921,7 @@ export const AssessmentWorkspace = ({
             await holdAnimation(submitStartedAt);
             setSubmitDone(true);
             await new Promise((resolve) => setTimeout(resolve, DONE_FLASH_MS));
+            if (retestSection) { finishAssessment('completed'); return; }   // a section retest ends with its one section
             // Show a clear "submitted" confirmation with the per-problem results; the student then
             // continues to the interview (which is provisioned only when they do).
             setCodingSubmitResult(res || { results: [] });
@@ -1337,6 +1349,19 @@ export const AssessmentWorkspace = ({
             // Step 3: Initialize Aptitude round on server
             // (Recruitment: this is the explicit start. The attempt, its rules acknowledgement and the 60-minute deadline are created
             // by the server only now.)
+            if (retestSection) {
+                // Section retest: the server creates the sitting for the ONE assigned section only; the shared section loaders do the rest.
+                await api.startRetest();
+                const retestState = await api.getSession();
+                setSessionData(retestState);
+                syncTiming(retestState);
+                setCurrentStage(retestSection);
+                setTimeLeft(ROUND_DURATIONS[retestSection]);
+                if (retestSection === 'aptitude') await loadAptitude();
+                else if (retestSection === 'coding') await loadCoding();
+                else await loadInterview();
+                return;
+            }
             const started = await api.startAptitude();          // ONE start request: its response already carries the questions
             const updated = await api.getSession();
             setSessionData(updated);

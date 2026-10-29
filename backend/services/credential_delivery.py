@@ -20,7 +20,7 @@ import base64
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from html import escape
 from typing import Dict, Optional, Set, Tuple
@@ -172,6 +172,65 @@ def render_email(*, student_name: Optional[str], student_email: str, password: s
 <p style="margin:0;">Regards,<br>PrepWin Team</p>
 </td></tr></table></td></tr></table></body></html>"""
     return RenderedCredentials(subject=SUBJECT, html=html, text=text)
+
+
+# ------------------------------------------------------------------------------ login details for assignment e-mails
+PASSWORD_NOT_INCLUDED = ("Your password was set by your administrator and is not included in this e-mail. If you do not have it, "
+                         "ask your administrator to set a new password for you (\"Replace password\").")
+
+
+@dataclass(frozen=True)
+class LoginInfo:
+    """What a test / retest e-mail tells a student about logging in. `password` is set only when the assigned password is still retained."""
+    login_id: str
+    url: Optional[str]
+    password: Optional[str] = field(default=None, repr=False)     # never shown in a repr / log line
+
+
+def login_info(db: Session, user: Optional[models.User]) -> Optional[LoginInfo]:
+    """
+    The login details to add to an assignment e-mail for a STUDENT account (None for anything else, e.g. an accountless candidate).
+    Read-only: nothing is generated, reset, retained or deleted here. The password is included only if the encrypted, short-lived record
+    of the assigned password is still valid AND is still the account's current password (checked against the stored hash); otherwise
+    the e-mail carries the login ID, the login page and the existing way to get a new password (an administrator's Replace password).
+    A stored hash is never exposed.
+    """
+    if user is None or user.role != models.UserRole.STUDENT.value or not user.email:
+        return None
+    try:
+        url: Optional[str] = login_url()
+    except CredentialShareError:
+        url = None
+    password: Optional[str] = None
+    row = db.query(models.CredentialDelivery).filter(
+        models.CredentialDelivery.user_id == user.id, models.CredentialDelivery.expires_at > clock.naive_utc(clock.now())).first()
+    if row is not None:
+        candidate = _open(user.id, row.ciphertext)
+        if candidate is not None and utils.verify_password(candidate, user.hashed_password):
+            password = candidate
+    return LoginInfo(login_id=user.email, url=url, password=password)
+
+
+def login_text_lines(info: LoginInfo) -> list:
+    """Plain-text lines of the "Your login details" block (shared by the test and retest e-mails)."""
+    lines = ["Your login details:", f"- Login ID (your registered e-mail): {info.login_id}"]
+    lines.append(f"- Password: {info.password}" if info.password else f"- Password: {PASSWORD_NOT_INCLUDED}")
+    if info.url:
+        lines.append(f"- Student login page: {info.url}")
+    return lines
+
+
+def login_html(info: LoginInfo) -> str:
+    """The same block as an HTML table. Every value is escaped."""
+    rows = [("Login ID (your registered e-mail)", f'<span style="font-weight:bold;word-break:break-all;">{escape(info.login_id)}</span>')]
+    rows.append(("Password", f'<span style="font-family:Consolas,Menlo,monospace;font-weight:bold;word-break:break-all;">{escape(info.password)}</span>'
+                 if info.password else f'<span style="color:#475569;">{escape(PASSWORD_NOT_INCLUDED)}</span>'))
+    if info.url:
+        rows.append(("Student login page", f'<a href="{escape(info.url, quote=True)}" style="color:#4c7324;word-break:break-all;">{escape(info.url)}</a>'))
+    cells = "".join(f'<tr><td style="padding:8px 14px;font-size:14px;"><div style="color:#64748b;font-size:12px;">{escape(k)}</div><div>{v}</div></td></tr>' for k, v in rows)
+    return ('<p style="margin:0 0 8px 0;font-weight:bold;">Your login details</p>'
+            '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">'
+            f'{cells}</table>')
 
 
 # ------------------------------------------------------------------------------ sending

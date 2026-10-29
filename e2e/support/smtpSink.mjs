@@ -20,7 +20,7 @@ export const startSink = () => new Promise((resolve) => {
         if (inData) {
           const end = buf.indexOf('\r\n.\r\n');
           if (end < 0) break;
-          const raw = buf.slice(0, end);
+          const raw = buf.slice(0, end).replace(/(^|\r\n)\.\./g, '$1.');   // RFC 5321 4.5.2: undo the dot-stuffing a client applies to lines that start with '.'
           buf = buf.slice(end + 5);
           inData = false;
           messages.push({ from, rcpt: [...rcpt], data: /quoted-printable/i.test(raw) ? qpDecode(raw) : raw });

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 import database
 import models
 from routers.auth import get_current_user
+from services import retest_service
 from services import student_assessment_service as service
 from services.rate_limiter import SlidingWindowLimiter, client_ip
 
@@ -49,6 +50,13 @@ def student_access(share_token: str, request: Request, body: Optional[AccessRequ
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many requests. Please wait a minute and try again.",
                             headers={"Retry-After": "60"})
     return service.access(db, user, share_token, retake_token=body.retake_token if body else None)
+
+
+@router.get("/retests")
+def student_retests(user: models.User = Depends(get_current_user), db: Session = Depends(database.get_db)):
+    """The signed-in student's own open section retests (assigned by an administrator); nothing of anyone else's."""
+    service.require_student(user)
+    return {"retests": retest_service.list_for_student(db, user)}
 
 
 @router.get("/{share_token}/result")

@@ -40,7 +40,7 @@ def test_public_assessment_metadata_safe(env):
     r = client.get(f"/api/public/assessment/{env['token']}")
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"title", "role", "organization_name", "description_snippet", "sections", "total_duration_minutes", "rules"}
+    assert set(body) == {"title", "role", "company_name", "organization_name", "description_snippet", "sections", "total_duration_minutes", "rules"}
     assert body["total_duration_minutes"] == 60
     assert [s["minutes"] for s in body["sections"]] == [20, 20, 20]
     text = json.dumps(body).lower()

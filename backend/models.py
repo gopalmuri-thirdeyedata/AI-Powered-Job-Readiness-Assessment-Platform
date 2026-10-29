@@ -170,6 +170,9 @@ class JobDescription(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200))
     role = Column(String(200), nullable=True)
+    # The company the assessment is created for (optional, free text). A separate column on purpose: `role` is the role / team and keeps
+    # its meaning (blueprint role title, candidate-facing role); existing rows have NULL here and are never reinterpreted.
+    company_name = Column(String(200), nullable=True)
     description = Column(Text)
     required_skills = Column(JSON, nullable=True)
     preferred_skills = Column(JSON, nullable=True)
@@ -868,6 +871,75 @@ class CandidateRegistration(Base):
         UniqueConstraint("job_description_id", "email", name="uix_jd_candidate_reg_email"),
         Index("uix_jd_reg_norm_email", "job_description_id", text("(lower(trim(email)))"), unique=True),
     )
+
+
+class AssessmentRetest(Base):
+    """
+    An administrator-assigned retest of ONE section of an existing recruitment attempt, and the independent sitting that answers it.
+    It never replaces or duplicates the candidate's registration or assessment record: `session_id` points at the original attempt,
+    whose round row for `section` receives the retest's evaluation only after that evaluation succeeded (services.retest_service).
+    Everything else about the original attempt (the other sections, the registration, the lock on the original sitting) is untouched.
+    `active_key` ("<session_id>:<SECTION>" while the retest is open, NULL afterwards) carries a UNIQUE index: at most one open
+    retest per attempt and section, enforced by the database.
+    """
+    __tablename__ = "assessment_retests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    retest_uuid = Column(String(64), unique=True, index=True, nullable=False)
+    session_id = Column(Integer, ForeignKey("roleready_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    registration_id = Column(Integer, ForeignKey("candidate_registrations.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_description_id = Column(Integer, ForeignKey("job_descriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    section = Column(String(30), nullable=False)          # APTITUDE | CODING | INTERVIEW
+    # ASSIGNED | IN_PROGRESS | SUBMITTED | EVALUATION_PENDING | COMPLETED | ABANDONED | CANCELLED | EXPIRED
+    status = Column(String(30), default="ASSIGNED", nullable=False, index=True)
+    active_key = Column(String(80), unique=True, nullable=True)
+    reason = Column(Text, nullable=True)
+    assigned_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(PreciseDateTime, nullable=False)
+    expires_at = Column(PreciseDateTime, nullable=False)
+
+    # Only for retests of accountless registrations: hash of the single-use hand-over token (students authenticate with their account).
+    access_token_hash = Column(String(64), nullable=True)
+
+    # The sitting (same capability + volatile lease model as the original attempt)
+    capability_hash = Column(String(64), nullable=True)
+    lease_hash = Column(String(64), nullable=True)
+    last_heartbeat_at = Column(PreciseDateTime, nullable=True)
+    started_at = Column(PreciseDateTime, nullable=True)
+    section_deadline_at = Column(PreciseDateTime, nullable=True)
+    submitted_at = Column(PreciseDateTime, nullable=True)
+    evaluated_at = Column(PreciseDateTime, nullable=True)
+    completed_at = Column(PreciseDateTime, nullable=True)
+    time_spent_seconds = Column(Integer, default=0, nullable=False)
+
+    # Candidate notification (tracked separately from the assignment): PENDING -> SENT | FAILED. SENT = the SMTP server accepted the message.
+    notify_batch = Column(String(64), nullable=True, index=True)   # retests assigned together share ONE e-mail
+    email_status = Column(String(12), default="PENDING", nullable=False)
+    email_attempts = Column(Integer, default=0, nullable=False)
+    email_claimed_at = Column(PreciseDateTime, nullable=True)      # compare-and-set marker: one sender at a time
+    email_sent_at = Column(PreciseDateTime, nullable=True)
+    email_last_error = Column(String(255), nullable=True)          # short, credential-free
+    email_recipient = Column(String(150), nullable=True)           # the registered address the message went to
+
+    original_score = Column(Float, nullable=True)         # the section's effective score when the retest was assigned (percentage)
+    retest_score = Column(Float, nullable=True)           # the evaluated retest score (set when the evaluation succeeded)
+    previous_snapshot = Column(JSON, nullable=True)       # the replaced round's evidence, archived when the retest score was accepted
+
+    # Same shapes as roleready_round_attempts (so the shared evaluators read them unchanged)
+    questions_payload = Column(JSON, nullable=True)
+    server_keys_payload = Column(JSON, nullable=True)
+    submission_payload = Column(JSON, nullable=True)
+    evaluation_payload = Column(JSON, nullable=True)
+    proctoring_violations = Column(JSON, default=list, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    @property
+    def round_type(self) -> str:
+        """Lets the shared evaluators treat a retest sitting exactly like a round attempt."""
+        return self.section
 
 
 class AssessmentReview(Base):

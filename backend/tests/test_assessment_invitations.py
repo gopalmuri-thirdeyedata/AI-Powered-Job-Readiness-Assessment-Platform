@@ -609,3 +609,130 @@ def test_smtp_settings_defaults_and_sender_parsing():
     assert email_service.load_settings({"SMTP_HOST": "h", "SMTP_PORT": "465", "SMTP_USER": "u@x.test", "SMTP_PASSWORD": "p"}).security == "ssl"
     assert email_service.load_settings({"SMTP_HOST": "h", "SMTP_USER": "u@x.test", "SMTP_PASSWORD": "p"}).sender == "u@x.test"
     assert email_service.is_configured({}) is False
+
+
+# ------------------------------------------------------------------------------ login details in the invitation e-mail
+from services import credential_delivery
+
+STUDENT_PASSWORD = "password123"          # what make_student() hashes into the account
+LOGIN_URL = f"{FRONTEND}/student/login"
+
+
+def parts(msg):
+    return msg.get_body(preferencelist=("plain",)).get_content(), msg.get_body(preferencelist=("html",)).get_content()
+
+
+def retained(db, student, password=STUDENT_PASSWORD):
+    """What the admin's account creation / Replace password leaves behind: the assigned password, encrypted and short-lived."""
+    assert credential_delivery.retain(db, student, password, actor_id=None) is True
+    db.commit()
+
+
+def credential_rows(db, student):
+    db.expire_all()
+    return db.query(models.CredentialDelivery).filter_by(user_id=student.id).count()
+
+
+def test_invitation_carries_the_login_details_and_the_assigned_password_when_it_is_still_retained(db, tenants, smtp, monkeypatch, caplog):
+    a = tenants["a"]
+    student = make_student(db, tenants, a["org"], "Maya Patel")
+    retained(db, student)
+    job = published(a, monkeypatch)
+    hash_before = db.query(models.User.hashed_password).filter_by(id=student.id).scalar()
+
+    with caplog.at_level(logging.DEBUG):
+        r = send(a, job["id"], [student.id])
+    assert r.status_code == 200 and r.json()["summary"] == {"sent": 1, "failed": 0, "skipped": 0}
+    (to_addr, msg), = smtp.sent
+    text, html = parts(msg)
+    link = f"{FRONTEND}/assessment/join/{job['share_token']}"
+    for part in (text, html):
+        assert student.email in part and STUDENT_PASSWORD in part and LOGIN_URL in part, "login ID, password and login page"
+        assert "Maya Patel" in part and "Backend Engineer" in part and link in part, "name, assessment and link are still there"
+        assert "Login ID" in part and "one attempt" in part and "expires on" in part, "existing duration / expiry information is kept"
+    assert 'href="' + LOGIN_URL + '"' in html
+    assert text.index(link) < text.index(STUDENT_PASSWORD) < text.index("Before you begin"), "the login block sits between the link and the existing guidance"
+
+    # nothing secret leaks outside the message body: not the URL, not the API response, not the logs
+    assert STUDENT_PASSWORD not in link and STUDENT_PASSWORD not in r.text and STUDENT_PASSWORD not in caplog.text
+    assert "$2b$" not in text and "$2b$" not in html and hash_before not in text, "no password hash"
+    # the account is exactly as it was; the temporary retained copy was consumed (as after the Share button)
+    db.expire_all()
+    assert db.query(models.User.hashed_password).filter_by(id=student.id).scalar() == hash_before
+    assert credential_rows(db, student) == 0
+
+
+def test_without_a_retained_password_the_invitation_gives_the_login_id_and_how_to_get_a_new_password(db, tenants, smtp, monkeypatch):
+    a = tenants["a"]
+    student = make_student(db, tenants, a["org"], "Old Account")           # nothing retained: the stored password is only a hash
+    job = published(a, monkeypatch)
+    hash_before = db.query(models.User.hashed_password).filter_by(id=student.id).scalar()
+    assert send(a, job["id"], [student.id]).json()["summary"]["sent"] == 1
+    text, html = parts(smtp.sent[0][1])
+    for part in (text, html):
+        assert student.email in part and LOGIN_URL in part and "Login ID" in part
+        assert "not included in this e-mail" in part and "Replace password" in part, "the existing way to get a password"
+        assert STUDENT_PASSWORD not in part and "$2b$" not in part
+    assert f"{FRONTEND}/assessment/join/{job['share_token']}" in text
+    db.expire_all()
+    assert db.query(models.User.hashed_password).filter_by(id=student.id).scalar() == hash_before, "no password was generated or reset"
+    assert credential_rows(db, student) == 0
+
+
+def test_a_retained_password_that_is_no_longer_the_accounts_password_is_never_sent(db, tenants, smtp, monkeypatch):
+    a = tenants["a"]
+    student = make_student(db, tenants, a["org"], "Changed Password")
+    retained(db, student, password="an-old-assigned-pw")                   # the record is for a password the account no longer has
+    job = published(a, monkeypatch)
+    assert send(a, job["id"], [student.id]).json()["summary"]["sent"] == 1
+    text, html = parts(smtp.sent[0][1])
+    assert "an-old-assigned-pw" not in text + html and STUDENT_PASSWORD not in text + html
+    assert "not included in this e-mail" in text
+
+
+def test_an_expired_retained_password_is_not_used(db, tenants, smtp, monkeypatch):
+    a = tenants["a"]
+    student = make_student(db, tenants, a["org"], "Expired Record")
+    retained(db, student)
+    row = db.query(models.CredentialDelivery).filter_by(user_id=student.id).one()
+    row.expires_at = assessment_clock.naive_utc(assessment_clock.now() - timedelta(minutes=1))
+    db.commit()
+    job = published(a, monkeypatch)
+    assert send(a, job["id"], [student.id]).json()["summary"]["sent"] == 1
+    assert STUDENT_PASSWORD not in "".join(parts(smtp.sent[0][1]))
+
+
+def test_a_failed_invitation_keeps_the_retained_password_and_the_retry_includes_it(db, tenants, smtp, monkeypatch):
+    a = tenants["a"]
+    student = make_student(db, tenants, a["org"], "Retry Student")
+    retained(db, student)
+    job = published(a, monkeypatch)
+    smtp.refuse.add(student.email)
+    assert send(a, job["id"], [student.id]).json()["summary"] == {"sent": 0, "failed": 1, "skipped": 0}
+    assert smtp.sent == [] and credential_rows(db, student) == 1, "nothing was delivered, so nothing was consumed"
+    smtp.refuse.clear()
+    assert send(a, job["id"], [student.id]).json()["summary"] == {"sent": 1, "failed": 0, "skipped": 0}
+    assert STUDENT_PASSWORD in parts(smtp.sent[0][1])[0] and credential_rows(db, student) == 0
+
+
+def test_each_student_gets_only_their_own_login_details(db, tenants, smtp, monkeypatch):
+    a = tenants["a"]
+    one, two = make_student(db, tenants, a["org"], "First Student"), make_student(db, tenants, a["org"], "Second Student")
+    retained(db, one)                                                       # only the first has a retained password
+    job = published(a, monkeypatch)
+    assert send(a, job["id"], [one.id, two.id]).json()["summary"]["sent"] == 2
+    mails = {addr: parts(msg)[0] for addr, msg in smtp.sent}
+    assert one.email in mails[one.email] and STUDENT_PASSWORD in mails[one.email] and two.email not in mails[one.email]
+    assert two.email in mails[two.email] and STUDENT_PASSWORD not in mails[two.email] and one.email not in mails[two.email]
+
+
+def test_the_template_without_login_details_is_unchanged(db):
+    """render_invitation() called the old way (no `login`) produces the original message: the new block is purely additive."""
+    rendered = invitations.render_invitation(job_title="Backend Engineer", recipient_name="Maya", organization_name="Acme",
+                                             link_url="https://x.test/assessment/join/T", expires_at=None)
+    assert "login details" not in rendered.text.lower() and "login details" not in rendered.html.lower()
+    with_login = invitations.render_invitation(job_title="Backend Engineer", recipient_name="Maya", organization_name="Acme",
+                                               link_url="https://x.test/assessment/join/T", expires_at=None,
+                                               login=credential_delivery.LoginInfo(login_id="m@x.test", url="https://x.test/student/login"))
+    assert "Your login details" in with_login.text and with_login.text.replace("Your login details:", "").count("Before you begin") == 1
+    assert repr(credential_delivery.LoginInfo(login_id="m@x.test", url=None, password="Secret-pw")).count("Secret-pw") == 0, "a repr / log line never shows the password"

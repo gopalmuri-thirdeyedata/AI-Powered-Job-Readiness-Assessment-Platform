@@ -86,11 +86,29 @@ class RunCodeRequest(BaseModel):
     custom_input: Optional[str] = None      # the candidate's own testcase (stdin text in the problem's input format)
 
 
+DESCRIPTION_PREVIEW_CHARS = 3000
+
+
+def _description_preview(raw: Optional[str]) -> str:
+    """The job description for the opening page. Line breaks are KEPT (the page renders Markdown headings and lists from them);
+    whitespace inside a line and runs of blank lines are collapsed, and a long text is cut at a line boundary."""
+    lines = [" ".join(line.split()) for line in (raw or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    text = "\n".join(lines)
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    text = text.strip()
+    if len(text) <= DESCRIPTION_PREVIEW_CHARS:
+        return text
+    cut = text[:DESCRIPTION_PREVIEW_CHARS]
+    return (cut[:cut.rfind("\n")] if "\n" in cut else cut).rstrip() + "\n..."
+
+
 def _meta(job: models.JobDescription, org_name: Optional[str]) -> Dict[str, Any]:
-    snippet = " ".join((job.description or "").split())[:280]
+    snippet = _description_preview(job.description)
     return {
         "title": job.title,
         "role": job.role,
+        "company_name": job.company_name or None,
         "organization_name": org_name,
         "description_snippet": snippet,
         "sections": SECTIONS,

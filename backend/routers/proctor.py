@@ -31,6 +31,7 @@ import utils
 from routers.auth import cookie_session_user
 from services import assessment_flow_service as flow
 from services import local_auth
+from services import retest_service
 from services.proctor_service import (InvalidFrame, MAX_BASE64_CHARS, analyze_frame, decode_frame, get_model_status, get_public_status)
 from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter, client_ip
 
@@ -99,7 +100,10 @@ def resolve_principal(db: Session, authorization: Optional[str], x_invitation_to
         try:
             return ("recruitment", flow.authorize_proctoring(db, x_session_id, x_session_token)), None
         except HTTPException as exc:
-            return None, (exc.status_code, "Not authorized.")
+            try:   # a section-retest sitting holds its own capability (same header names)
+                return ("retest", retest_service.authorize_proctoring(db, x_session_id, x_session_token)), None
+            except HTTPException:
+                return None, (exc.status_code, "Not authorized.")
     if x_invitation_token:                                                 # student invitation sitting
         inv = db.query(models.CandidateInvitation).filter(models.CandidateInvitation.invitation_token == x_invitation_token).first()
         ok = inv is not None and inv.expires_at is not None and inv.expires_at >= datetime.utcnow()

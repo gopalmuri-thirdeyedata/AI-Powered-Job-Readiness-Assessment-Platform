@@ -17,7 +17,7 @@ load_dotenv()
 
 import models, database, utils
 from routers import auth, assessments, resume, dashboard, settings, interview, proctor, platform, organization, student, college, roleready
-from routers import job_assessments, public_assessment, admin_results, users, student_assessment, student_coding
+from routers import job_assessments, public_assessment, public_retest, admin_results, users, student_assessment, student_coding
 
 # Validate JWT secret configuration on startup (fails safely in production if secret is weak/default)
 utils.validate_jwt_secret()
@@ -204,6 +204,13 @@ try:
 except Exception as _exc:  # never block startup; the schema guard below / the migration script report it
     print(f"[Startup Note] share-link expiry column check: {_exc}")
 
+# Optional company name on a job role: one nullable ADD COLUMN, idempotent (existing rows keep NULL and are never reinterpreted).
+try:
+    import migrate_job_company_name
+    migrate_job_company_name.apply(database.engine)
+except Exception as _exc:  # never block startup; `python migrate_job_company_name.py` reports the same problem
+    print(f"[Startup Note] job company name column check: {_exc}")
+
 # E-mail invitation tracking table (new table only; create_all covers a fresh database, this covers an existing one).
 try:
     import migrate_assessment_invitations
@@ -231,6 +238,13 @@ try:
     migrate_credential_delivery.apply(database.engine)
 except Exception as _exc:  # never block startup; `python migrate_credential_delivery.py` reports the same problem
     print(f"[Startup Note] credential delivery table check: {_exc}")
+
+# Section retests: new assessment_retests table only (create_all covers a fresh database, this covers an existing one). Idempotent.
+try:
+    import migrate_assessment_retests
+    migrate_assessment_retests.apply(database.engine)
+except Exception as _exc:  # never block startup; `python migrate_assessment_retests.py` reports the same problem
+    print(f"[Startup Note] assessment retests table check: {_exc}")
 
 # Local-auth columns (users.full_name/phone/created_at/last_login_at) and the auth_sessions table: nullable ADD COLUMNs, idempotent.
 try:
@@ -472,6 +486,7 @@ app.include_router(college.router)
 app.include_router(roleready.router)
 app.include_router(job_assessments.router)
 app.include_router(public_assessment.router)
+app.include_router(public_retest.router)
 app.include_router(admin_results.router)
 app.include_router(student_assessment.router)
 

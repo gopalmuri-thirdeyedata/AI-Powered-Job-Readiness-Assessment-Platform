@@ -108,8 +108,8 @@ describe('Job description input behaviour', () => {
         assert.ok(rolesSrc.includes('<JobDescriptionInput'));
         assert.ok(rolesSrc.includes('minChars={MIN_JD_CHARS}') && rolesSrc.includes('const MIN_JD_CHARS = 50'));
         assert.ok(rolesSrc.includes('if (form.description.trim().length < MIN_JD_CHARS)'), 'minimum-length validation is unchanged');
-        assert.ok(rolesSrc.includes('adminApi.createRole({ title: form.title.trim(), role: form.role.trim() || undefined, description: form.description.trim() })'), 'submits the final (edited) description');
-        for (const kept of ['Job title', 'Role / team (optional)', 'New Job Role', 'Create job role']) assert.ok(rolesSrc.includes(kept), kept);
+        assert.ok(rolesSrc.includes('adminApi.createRole({ title: form.title.trim(), company_name: form.companyName.trim() || undefined, description: form.description.trim() })'), 'submits the final (edited) description');
+        for (const kept of ['Job title', 'Company Name (optional)', 'New Job Role', 'Create job role']) assert.ok(rolesSrc.includes(kept), kept);
         assert.ok(rolesSrc.includes('key={formKey}'), 'the upload state is cleared after a role is created');
     });
 });

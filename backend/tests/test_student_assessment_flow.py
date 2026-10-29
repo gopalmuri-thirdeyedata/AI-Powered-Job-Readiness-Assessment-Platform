@@ -141,7 +141,7 @@ def test_student_signs_in_and_gets_access_without_retyping_anything(db, world):
     assert body["status"] == "READY" and body["student"] == {"name": "Liam Chen", "email": user.email}
     assert body["registration_token"] and body["assessment"]["sections"] and body["assessment"]["rules"]
     # only the public metadata: sections, limits and rules. No question payload, answer key or section content
-    assert set(body["assessment"]) == {"title", "role", "organization_name", "description_snippet", "sections", "total_duration_minutes", "rules"}
+    assert set(body["assessment"]) == {"title", "role", "company_name", "organization_name", "description_snippet", "sections", "total_duration_minutes", "rules"}
     assert "correct_key" not in json.dumps(body) and all(set(s) == {"key", "label", "minutes"} for s in body["assessment"]["sections"])
 
     db.expire_all()

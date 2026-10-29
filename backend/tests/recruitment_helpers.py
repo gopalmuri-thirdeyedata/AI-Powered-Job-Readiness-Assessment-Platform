@@ -153,6 +153,7 @@ def cleanup_orgs(db, org_ids):
     if not org_ids:
         return
     sess_ids = [r[0] for r in db.query(models.RoleReadySession.id).filter(models.RoleReadySession.organization_id.in_(org_ids))]
+    db.query(models.AssessmentRetest).filter(models.AssessmentRetest.organization_id.in_(org_ids)).delete(synchronize_session=False)
     if sess_ids:
         db.query(models.RoleReadyRoundAttempt).filter(models.RoleReadyRoundAttempt.session_id.in_(sess_ids)).delete(synchronize_session=False)
         db.query(models.RoleReadySession).filter(models.RoleReadySession.id.in_(sess_ids)).delete(synchronize_session=False)

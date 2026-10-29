@@ -11,7 +11,7 @@
 // Student  -> /api/roleready/session/*   (student JWT or invitation token; services/rolereadyApi.js)
 // Candidate-> /api/public/assessment/*   (share link -> registration capability -> session capability + in-memory lease)
 import rolereadyApi from './rolereadyApi';
-import { candidateApi } from './recruitmentApi';
+import { candidateApi, retestApi } from './recruitmentApi';
 import { clearRegistration, hasAcknowledged, loadRegistration, saveSession, setLease } from './assessmentSession';
 
 export const createStudentAssessmentApi = (sessionUuid) => ({
@@ -207,5 +207,167 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
         // Recruitment never terminates an attempt on a browser-side proctoring event (policy 'flag'); events are saved with the drafts.
         terminate: async () => ({ status: 'ignored' }),
         isTerminalState: (state) => TERMINAL.has(state),
+    };
+};
+
+/**
+ * Section-retest adapter: the same workspace interface, bound to ONE assigned section of an existing attempt.
+ *   retestUuid / retestToken   the assignment and (accountless candidates only) its single-use hand-over token
+ *   section                    'aptitude' | 'coding' | 'interview' (as the server reported it; the server never trusts what the browser sends)
+ *   acknowledged               the rules were accepted on the entry page; the server refuses to start without it
+ * No registration, name, e-mail or phone is involved: the signed-in student's session (or the hand-over token) is the credential.
+ */
+export const createRetestAssessmentApi = ({ retestUuid, retestToken = null, section, meta = {}, acknowledged = false, onSession = null, onTerminalState = null }) => {
+    let session = null;
+    let startPromise = null;
+    let lastState = null;
+
+    const need = () => {
+        if (!session) throw readable({ response: { status: 409, data: { detail: 'The retest has not started yet.' } } });
+        return session;
+    };
+    const timing = (state) => ({
+        remaining_seconds: state?.section?.remaining_seconds,
+        overall_remaining_seconds: state?.overall_remaining_seconds,
+        deadline_at: state?.section?.deadline_at,
+        started_at: state?.section?.started_at,
+        server_time: state?.server_time,
+        time_limit_minutes: 20,
+    });
+    const remember = (state) => {
+        lastState = state;
+        if (state?.terminal && onTerminalState) onTerminalState(state);
+        return state;
+    };
+    const mapSession = (state) => ({
+        session_uuid: session?.uuid ?? null,
+        current_state: state.state,
+        target_role: meta.role || meta.title,
+        target_company: meta.organization_name,
+        is_completed: !!state.terminal,
+        coding_unlocked: section === 'coding' && !state.terminal,
+        interview_unlocked: section === 'interview' && !state.terminal,
+        message: state.message,
+        ...timing(state),
+    });
+    // A section the server already closed (408 deadline) resolves with the state it reports.
+    const submit = async (body) => {
+        try {
+            return remember(await retestApi.submit(need(), body));
+        } catch (err) {
+            const status = err?.response?.status;
+            const detail = err?.response?.data?.detail;
+            if ((status === 408 || status === 503) && detail && typeof detail === 'object' && detail.state) {
+                remember(detail);
+                return { ...detail, status: 'success' };
+            }
+            throw readable(err);
+        }
+    };
+    const assigned = (state, key) => {
+        if (!state?.section || state.section.key !== key) {
+            throw readable({ response: { status: 409, data: { detail: state?.message || `The ${key} section is not assigned to you.` } } });
+        }
+        return state;
+    };
+
+    return {
+        kind: 'recruitment',
+        section,
+        // credential for /api/proctor/analyze-frame: the retest sitting's capability (same header names as the attempt's)
+        proctorHeaders: () => (session ? { 'X-Session-Id': session.uuid, 'X-Session-Token': session.token } : {}),
+        getHandle: () => session,
+        getLastState: () => lastState,
+
+        getSession: async () => {
+            if (!session) {
+                return { session_uuid: null, current_state: 'NOT_STARTED', is_completed: false, coding_unlocked: false, interview_unlocked: false,
+                         target_role: meta.role || meta.title, target_company: meta.organization_name };
+            }
+            try {
+                return mapSession(remember(await retestApi.state(session)));
+            } catch (err) {
+                throw readable(err);
+            }
+        },
+
+        // The explicit start (device check -> Start): creates the sitting on the server, which starts this section's 20 minute clock.
+        startRetest: async () => {
+            if (!session) {
+                if (!startPromise) {   // one in-flight start at a time; a second click can never create a second sitting
+                    startPromise = (async () => {
+                        let res;
+                        try {
+                            res = await retestApi.start(retestUuid, retestToken, acknowledged);
+                        } catch (err) {
+                            throw readable(err);
+                        }
+                        session = { uuid: res.retest_uuid, token: res.session_token, lease: res.session_lease };
+                        setLease(session.lease);                                  // volatile lease: in-memory ONLY
+                        remember(res.state);
+                        if (onSession) onSession(session);
+                        return res.state;
+                    })().finally(() => { startPromise = null; });
+                }
+                return assigned(await startPromise, section);
+            }
+            return assigned(remember(await retestApi.state(session)), section);
+        },
+
+        // The shared section loaders call these; the server only ever unlocks the assigned section.
+        startAptitude: async () => {
+            try {
+                const state = assigned(remember(await retestApi.startSection(need(), 'aptitude')), 'aptitude');
+                return { session_uuid: session.uuid, current_state: state.state, questions: state.section.questions, ...timing(state) };
+            } catch (err) {
+                throw readable(err);
+            }
+        },
+        submitAptitude: (answers, _spent, violations) => submit({ answers, violations: violations ?? null }),
+
+        startCoding: async () => {
+            try {
+                const state = assigned(remember(await retestApi.startSection(need(), 'coding')), 'coding');
+                return { session_uuid: session.uuid, current_state: state.state, problems: state.section.questions, ...timing(state) };
+            } catch (err) {
+                throw readable(err);
+            }
+        },
+        runCode: async (problemId, code, language, customInput) => {
+            try {
+                return await retestApi.runCode(need(), problemId, code, language, customInput);
+            } catch (err) {
+                throw readable(err);
+            }
+        },
+        submitCoding: (solutions, _spent, violations) => submit({ solutions, violations: violations ?? null }),
+
+        startInterview: async () => {
+            try {
+                const state = assigned(remember(await retestApi.startSection(need(), 'interview')), 'interview');
+                return { session_uuid: session.uuid, current_state: state.state, questions: state.section.questions, ...timing(state) };
+            } catch (err) {
+                throw readable(err);
+            }
+        },
+        initVoice: async () => {
+            try {
+                return await retestApi.voiceInit(need());
+            } catch (err) {
+                throw readable(err);
+            }
+        },
+        voiceTurn: (turn) => retestApi.voiceTurn(need(), turn),
+        voiceCaptionSession: () => retestApi.voiceCaptionSession(need()),
+        voiceTurnStream: (turn, options) => retestApi.voiceTurnStream(need(), turn, options),
+        submitInterview: (answers, _spent, violations, transcript) => submit({ answers, transcript: transcript ?? [], violations: violations ?? null }),
+
+        saveDraft: async (sectionKey, payload, violations) => {
+            if (!session) return { saved: false };
+            return retestApi.saveDraft(session, sectionKey, payload, violations);
+        },
+        // Like the attempt: a browser-side proctoring event never ends a retest (events are saved with the drafts).
+        terminate: async () => ({ status: 'ignored' }),
+        isTerminalState: (state) => TERMINAL.has(state) || ['SUBMITTED', 'CANCELLED', 'EXPIRED'].includes(state),
     };
 };

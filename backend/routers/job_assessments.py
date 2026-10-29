@@ -38,6 +38,7 @@ SECTIONS = [
 class JobRoleCreate(BaseModel):
     title: str = Field(..., min_length=2, max_length=200)
     role: Optional[str] = Field(None, max_length=200)
+    company_name: Optional[str] = Field(None, max_length=200)          # optional: never required
     description: str = Field(..., min_length=1, max_length=20000)
     required_skills: Optional[List[str]] = None
 
@@ -49,6 +50,7 @@ class InvitationRequest(BaseModel):
 class JobRoleUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=2, max_length=200)
     role: Optional[str] = Field(None, max_length=200)
+    company_name: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = Field(None, min_length=1, max_length=20000)
     required_skills: Optional[List[str]] = None
 
@@ -97,6 +99,7 @@ def serialize_role(job: models.JobDescription, include_blueprint: bool = False, 
         "id": job.id,
         "title": job.title,
         "role": job.role,
+        "company_name": job.company_name or None,
         "description": job.description,
         "required_skills": job.required_skills or [],
         "status": job.status or "DRAFT",
@@ -175,6 +178,7 @@ def create_job_role(payload: JobRoleCreate, db: Session = Depends(database.get_d
     job = models.JobDescription(
         title=payload.title.strip(),
         role=(payload.role or payload.title).strip(),
+        company_name=(payload.company_name or "").strip() or None,
         description=payload.description.strip(),
         required_skills=payload.required_skills,
         organization_id=tenant_context.tenant_id,
@@ -220,6 +224,8 @@ def update_job_role(role_id: int, payload: JobRoleUpdate, db: Session = Depends(
     for key in ("title", "role", "description"):
         if key in data and data[key] is not None:
             setattr(job, key, data[key].strip())
+    if "company_name" in data:                      # empty / blank clears it; it is never required
+        job.company_name = (data["company_name"] or "").strip() or None
     if "required_skills" in data:
         job.required_skills = data["required_skills"]
     _audit(db, tenant_context, "JOB_ROLE_UPDATED", job.title)

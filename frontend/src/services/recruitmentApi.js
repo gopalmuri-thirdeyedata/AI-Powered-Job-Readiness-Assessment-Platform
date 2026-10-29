@@ -44,6 +44,13 @@ export const adminApi = {
     authorizeRetake: (id, justification) => adminPost(`/api/admin/recruitment/candidates/${id}/authorize-retake`, { justification }),
     rejectReview: (id, justification) => adminPost(`/api/admin/recruitment/candidates/${id}/reject-review`, { justification }),
     retryEvaluation: (id) => adminPost(`/api/admin/recruitment/candidates/${id}/retry-evaluation`, {}, 120000),
+    // Section retests: the dialog's data (candidate, effective score per section, open retests, history) and the assignment itself
+    retestOverview: (id) => adminGet(`/api/admin/recruitment/candidates/${id}/retests`),
+    assignRetests: (id, sections, reason) => adminPost(`/api/admin/recruitment/candidates/${id}/retests`, { sections, reason: reason || null }),
+    // retry a FAILED candidate e-mail (never creates another assignment; a SENT e-mail is not re-sent)
+    resendRetestEmail: (retestUuid) => adminPost(`/api/admin/recruitment/retests/${retestUuid}/resend-email`, {}, 60000),
+    cancelRetest: (retestUuid) => adminPost(`/api/admin/recruitment/retests/${retestUuid}/cancel`),
+    retryRetestEvaluation: (retestUuid) => adminPost(`/api/admin/recruitment/retests/${retestUuid}/retry-evaluation`, {}, 120000),
 };
 
 // ------------------------------------------------------------------------------
@@ -111,6 +118,48 @@ export const candidateApi = {
 };
 
 // ------------------------------------------------------------------------------
+// Section retest (candidate side). Credentials are the ones the candidate already has: a signed-in student's session cookie, or (accountless
+// registrations only) the single-use hand-over token from the administrator's link. Nothing is typed again and no section or score is sent:
+// the server grades exactly the section that was assigned.
+// ------------------------------------------------------------------------------
+const RETEST = `${API_URL}/api/public/retest`;
+const retestAuth = (token) => (token ? { ...jsonHeaders, 'X-Retest-Token': token } : { ...jsonHeaders });
+const retestUrl = (s, path) => `${RETEST}/${s.uuid}/${path}`;
+
+export const retestApi = {
+    info: async (retestUuid, token) => (await axios.get(`${RETEST}/${retestUuid}`, { headers: retestAuth(token) })).data,
+    start: async (retestUuid, token, acknowledged = false) =>
+        (await axios.post(`${RETEST}/${retestUuid}/start`, { acknowledged: acknowledged === true }, { headers: retestAuth(token) })).data,
+    state: async (s) => (await axios.get(retestUrl(s, 'state'), { headers: sessionHeaders(s) })).data,
+    heartbeat: async (s) => (await axios.post(retestUrl(s, 'heartbeat'), {}, { headers: sessionHeaders(s), timeout: 10000 })).data,
+    saveDraft: async (s, section, payload, violations) =>
+        (await axios.put(retestUrl(s, 'draft'), { section, payload, violations: violations ?? null }, { headers: sessionHeaders(s) })).data,
+    startSection: async (s, section) => (await axios.post(retestUrl(s, `start-section/${section}`), {}, { headers: sessionHeaders(s) })).data,
+    runCode: async (s, problemId, code, language = 'python', customInput = null) =>
+        (await axios.post(retestUrl(s, 'run-code'), { problem_id: problemId, language, code, custom_input: customInput }, { headers: sessionHeaders(s), timeout: 60000 })).data,
+    submit: async (s, body) => (await axios.post(retestUrl(s, 'submit'), body, { headers: sessionHeaders(s), timeout: 180000 })).data,
+    voiceInit: async (s) => (await axios.post(retestUrl(s, 'voice-init'), {}, { headers: sessionHeaders(s), timeout: 60000 })).data,
+    voiceTurn: async (s, turn) =>
+        (await axios.post(retestUrl(s, 'voice-turn'), buildVoiceTurnForm(turn),
+            { headers: { ...sessionHeaders(s), 'Content-Type': 'multipart/form-data' }, timeout: 60000 })).data,
+    voiceTurnStream: async function* (s, turn, { signal } = {}) {
+        const headers = { Accept: 'application/x-ndjson' };
+        if (s?.token) headers['X-Session-Token'] = s.token;
+        if (s?.lease) headers['X-Session-Lease'] = s.lease;
+        const res = await fetch(retestUrl(s, 'voice-turn-stream'), { method: 'POST', body: buildVoiceTurnForm(turn), headers, signal });
+        if (!res.ok) {
+            let detail;
+            try { detail = (await res.json())?.detail; } catch { /* not JSON */ }
+            const err = new Error(typeof detail === 'string' ? detail : `Voice request failed (${res.status})`);
+            err.response = { status: res.status, data: { detail } };
+            throw err;
+        }
+        yield* readNdjson(res.body);
+    },
+    voiceCaptionSession: async (s) => (await axios.post(retestUrl(s, 'voice-caption-token'), null, { headers: sessionHeaders(s), timeout: 15000 })).data,
+};
+
+// ------------------------------------------------------------------------------
 // Invited-student API (the signed-in student's own session cookie + CSRF header, added by the auth client).
 // Identity and role are never sent: the server takes them from the account.
 // ------------------------------------------------------------------------------
@@ -123,6 +172,8 @@ export const studentAssessmentApi = {
     // retakeToken (optional): the single-use token of an administrator-authorised retake link; the server binds it to this account
     access: (shareToken, retakeToken) => studentPost(`/${shareToken}/access`, retakeToken ? { retake_token: retakeToken } : {}),
     result: (shareToken) => studentGet(`/${shareToken}/result`),
+    // the signed-in student's own open section retests ({ retests: [{ retest_uuid, section, label, job_title, expires_at }] })
+    retests: () => studentGet('/retests'),
     submitReview: (sessionUuid, review) => studentPost(`/attempts/${sessionUuid}/review`, { review }),
     // the server releases the report only to the owner of a completed, evaluated attempt whose review is saved
     getReport: (sessionUuid) => studentGet(`/attempts/${sessionUuid}/report`),

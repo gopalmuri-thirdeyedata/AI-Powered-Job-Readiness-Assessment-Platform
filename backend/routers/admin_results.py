@@ -20,6 +20,7 @@ from routers.auth import TenantContext, require_admin_user, require_organization
 from services import assessment_clock as clock
 from services import assessment_flow_service as flow
 from services import assessment_sweeper_service as sweeper
+from services import retest_service as retests
 from services import share_link_policy as link_policy
 
 router = APIRouter(prefix="/api/admin/recruitment", tags=["admin-recruitment"])
@@ -171,7 +172,7 @@ def candidate_dossier(reg_id: int, db: Session = Depends(database.get_db), ctx: 
     out: Dict[str, Any] = {
         "candidate": {"id": reg.id, "name": reg.name, "email": reg.email, "phone": reg.phone,
                       "registered_at": _iso(reg.created_at), "contact_verified": False},
-        "job_role": {"id": job.id, "title": job.title} if job else None,
+        "job_role": {"id": job.id, "title": job.title, "company_name": job.company_name or None} if job else None,
         "status": roster_status(session),
         "session": None,
         "report": None,
@@ -203,6 +204,11 @@ def candidate_dossier(reg_id: int, db: Session = Depends(database.get_db), ctx: 
         "last_heartbeat_at": _iso(session.last_heartbeat_at), "incident_reference_id": session.incident_reference_id,
     }
     out["report"] = report
+    for r in retests.list_for_session(db, session.id):
+        retests.settle(db, r.id)
+    db.expire_all()
+    # History only: the effective (current) scores are `report` above; a retest's own numbers are labelled as past attempts.
+    out["retests"] = [retests.history_view(db, r) for r in retests.list_for_session(db, session.id)]
     out["timeline"] = [{"section": n.lower(), "status": rounds[n].status, "started_at": _iso(rounds[n].started_at),
                         "submitted_at": _iso(rounds[n].submitted_at), "time_spent_seconds": rounds[n].time_spent_seconds}
                        for n in flow.SECTION_ORDER if n in rounds]
@@ -212,6 +218,51 @@ def candidate_dossier(reg_id: int, db: Session = Depends(database.get_db), ctx: 
         "can_retry_evaluation": can_retry,
     })
     return out
+
+
+# ------------------------------------------------------------------ section retests
+class RetestAssignRequest(BaseModel):
+    sections: List[str] = Field(default_factory=list, max_length=3)
+    reason: Optional[str] = Field(None, max_length=1000)
+
+
+def _get_retest(db: Session, ctx: TenantContext, retest_uuid: str) -> models.AssessmentRetest:
+    row = db.query(models.AssessmentRetest).filter(models.AssessmentRetest.retest_uuid == retest_uuid[:64],
+                                                   models.AssessmentRetest.organization_id == ctx.tenant_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Retest not found.")
+    return row
+
+
+@router.get("/candidates/{reg_id}/retests")
+def candidate_retests(reg_id: int, db: Session = Depends(database.get_db), ctx: TenantContext = Depends(require_admin_user)):
+    """The Retest dialog: candidate, role, the effective score of each section, open retests and the retest history."""
+    reg = _get_registration(db, ctx, reg_id)
+    job = db.query(JD).filter(JD.id == reg.job_description_id).first()
+    return retests.overview(db, reg, _session_for(db, reg), job.title if job else None)
+
+
+@router.post("/candidates/{reg_id}/retests", status_code=status.HTTP_201_CREATED)
+def assign_retests(reg_id: int, body: RetestAssignRequest, db: Session = Depends(database.get_db),
+                   ctx: TenantContext = Depends(require_admin_user)):
+    reg = _get_registration(db, ctx, reg_id)
+    return retests.assign(db, admin_user_id=ctx.user.id, reg=reg, sections=body.sections, reason=body.reason)
+
+
+@router.post("/retests/{retest_uuid}/cancel")
+def cancel_retest(retest_uuid: str, db: Session = Depends(database.get_db), ctx: TenantContext = Depends(require_admin_user)):
+    return retests.cancel(db, _get_retest(db, ctx, retest_uuid), ctx.user.id)
+
+
+@router.post("/retests/{retest_uuid}/resend-email")
+def resend_retest_email(retest_uuid: str, db: Session = Depends(database.get_db), ctx: TenantContext = Depends(require_admin_user)):
+    """Retry a FAILED candidate e-mail (never creates another assignment, never re-sends a SENT e-mail)."""
+    return retests.resend_notification(db, _get_retest(db, ctx, retest_uuid), ctx.user.id)
+
+
+@router.post("/retests/{retest_uuid}/retry-evaluation")
+def retry_retest_evaluation(retest_uuid: str, db: Session = Depends(database.get_db), ctx: TenantContext = Depends(require_admin_user)):
+    return retests.retry_evaluation(db, _get_retest(db, ctx, retest_uuid))
 
 
 @router.post("/registrations/{reg_id}/revoke")

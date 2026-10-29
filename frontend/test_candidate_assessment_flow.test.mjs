@@ -117,17 +117,22 @@ describe('Candidate shared-link flow: registration -> Exam Instructions -> devic
         assert.ok(!instructionsSrc.includes('setLease('), 'no lease before an explicit start');
     });
 
-    test('6c. the instructions page renders the server-written Rules of Assessment (grouped), not a hard-coded list', async () => {
-        const mod = await loadModule('src/pages/candidate/ExamInstructions.jsx');
-        assert.ok(!instructionsSrc.includes('instructionsFor'), 'the old hard-coded list is gone: one source of truth (the server)');
-        assert.ok(instructionsSrc.includes('normalizeRules(meta.rules)') && instructionsSrc.includes('Maximum overall duration'));
-        const groups = mod.normalizeRules([{ key: 'timing', title: 'Timing', items: [{ text: 'Hard limit.', important: true }, 'Plain.'] }]);
-        assert.deepEqual(groups, [{ key: 'timing', title: 'Timing', items: [{ text: 'Hard limit.', important: true }, { text: 'Plain.', important: false }] }]);
-        assert.equal(mod.normalizeRules(['a', 'b'])[0].items.length, 2, 'a flat list from an older server still renders');
-        assert.deepEqual(mod.normalizeRules(undefined), []);
-        const html = renderToStaticMarkup(React.createElement(mod.RuleGroups, { groups }));
-        assert.match(html, /<h3[^>]*>Timing<\/h3>/);
-        assert.match(html, /border-amber-500 font-semibold[^>]*>Hard limit\./, 'important rules are visually distinct');
+    test('6c. the instructions page shows five one-sentence rules built from the assessment\'s own configuration, not the long server rule texts', async () => {
+        const brief = await loadModule('src/components/candidate/AssessmentBrief.jsx');
+        assert.ok(!instructionsSrc.includes('instructionsFor'), 'the old hard-coded list is gone');
+        assert.ok(instructionsSrc.includes('fullAssessmentRules({ sections, totalMinutes: total })') && instructionsSrc.includes('Maximum overall duration'));
+        assert.ok(!instructionsSrc.includes('meta.rules') && !instructionsSrc.includes('normalizeRules') && !instructionsSrc.includes('<details'), 'the 31 long rules are not rendered, hidden or collapsed');
+        const rules = brief.fullAssessmentRules({ sections: [{ minutes: 20 }, { minutes: 20 }, { minutes: 20 }], totalMinutes: 60 });
+        assert.deepEqual(rules.map((r) => [r.title, r.text]), [
+            ['One Attempt', 'You cannot restart after starting.'],
+            ['Time Limit', 'Each section has 20 minutes; the full assessment is limited to 60 minutes.'],
+            ['No Pausing', 'The timer continues running once started.'],
+            ['Final Submission', 'Submitted sections cannot be reopened.'],
+            ['Stay on Screen', 'Avoid refreshing, closing the tab, or switching windows.'],
+        ]);
+        // the minutes follow the configuration: a different limit is shown as configured; mixed limits never claim one number
+        assert.equal(brief.fullAssessmentRules({ sections: [{ minutes: 15 }, { minutes: 15 }, { minutes: 15 }], totalMinutes: 45 })[1].text, 'Each section has 15 minutes; the full assessment is limited to 45 minutes.');
+        assert.equal(brief.fullAssessmentRules({ sections: [{ minutes: 10 }, { minutes: 20 }], totalMinutes: 30 })[1].text, 'Each section is timed; the full assessment is limited to 30 minutes.');
     });
 
     test('6d. the instructions page loads first (no Start button yet) and its route is public', async () => {
@@ -311,7 +316,8 @@ describe('Candidate API client and runner behaviour', () => {
     });
 
     test('16. light and dark themes with PrepWin brand tokens', () => {
-        for (const src of [entrySrc, instructionsSrc, pageSrc, modalSrc]) {
+        const briefSrc = read('src/components/candidate/AssessmentBrief.jsx');       // the instructions page's surfaces live in the shared parts
+        for (const src of [entrySrc, instructionsSrc + briefSrc, pageSrc, modalSrc]) {
             assert.ok(src.includes('#5d8c2c'));
             assert.ok(src.includes('dark:bg-slate-9'));
             assert.ok(src.includes('dark:text-'));

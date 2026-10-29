@@ -26,6 +26,7 @@ import models
 import utils
 from services import assessment_clock as clock
 from services import assessment_flow_service as flow
+from services import retest_service
 from services import review_policy
 
 logger = logging.getLogger("prepwin.student_assessment")
@@ -206,7 +207,8 @@ def access(db: Session, user: models.User, share_token: str, retake_token: Optio
             # a pre-existing accountless registration for this e-mail was already used: single attempt, nothing to hand over
             raise _http(409, "An assessment attempt has already been initiated for this email.")
         session = _session_of(db, reg)
-        return {"status": "ATTEMPTED", "student": me, "attempt": attempt_summary(db, session) if session else None}
+        return {"status": "ATTEMPTED", "student": me, "attempt": attempt_summary(db, session) if session else None,
+                "retests": retest_service.list_for_student(db, user)}
 
     token = secrets.token_urlsafe(32)
     try:
@@ -250,7 +252,7 @@ def result_for_link(db: Session, user: models.User, share_token: str) -> Dict[st
     if session is None:
         raise _http(404, "No assessment attempt was found for your account.")
     return {"assessment": {"title": job.title, "role": job.role}, "student": {"name": display_name(db, user), "email": user.email},
-            "attempt": attempt_summary(db, session)}
+            "attempt": attempt_summary(db, session), "retests": retest_service.list_for_student(db, user)}
 
 
 # ------------------------------------------------------------------------------ 2. review

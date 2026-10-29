@@ -134,7 +134,7 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
                                 <div>
                                     <h3 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white break-words">{data.candidate.name}</h3>
                                     <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5 break-words">{data.candidate.email} · {data.candidate.phone}</p>
-                                    <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400 mt-1">{data.job_role?.title} · Registered {formatDate(data.candidate.registered_at)} · Contact details are self-reported and unverified</p>
+                                    <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400 mt-1">{data.job_role?.title}{data.job_role?.company_name ? ` · ${data.job_role.company_name}` : ''} · Registered {formatDate(data.candidate.registered_at)} · Contact details are self-reported and unverified</p>
                                 </div>
                                 <StatusBadge status={data.status} />
                             </div>
@@ -240,6 +240,32 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
                                 </>
                             ) : (
                                 <p className="text-sm text-slate-600 dark:text-slate-400">This candidate has registered but has not started the assessment.</p>
+                            )}
+
+                            {(data.retests || []).length > 0 && (
+                                <div>
+                                    <h4 className="pw-card-title mb-1">Retest history</h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Past retest attempts, for audit. The scores above are the current effective results; a completed retest's score is already included there.</p>
+                                    <div className="pw-scroll-x rounded-lg border border-slate-200 dark:border-slate-800">
+                                        <table className="w-full text-sm min-w-[40rem]">
+                                            <thead className="bg-slate-50 dark:bg-slate-950/50"><tr><th className={thCls}>Section</th><th className={thCls}>Status</th><th className={thCls}>Previous score</th><th className={thCls}>Retest score</th><th className={thCls}>Assigned</th><th className={thCls}>Completed</th><th className={thCls}>Email</th><th className={thCls}>Reason</th></tr></thead>
+                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                {data.retests.map((r) => (
+                                                    <tr key={r.retest_uuid}>
+                                                        <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-200">{r.label}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] text-slate-600 dark:text-slate-400">{String(r.status).replace(/_/g, ' ').toLowerCase()}{r.accepted_as_effective_score ? ' · current score' : ''}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate-600 dark:text-slate-400">{formatScore(r.original_score)}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate-600 dark:text-slate-400">{formatScore(r.retest_score)}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] text-slate-600 dark:text-slate-400 whitespace-nowrap">{formatDate(r.assigned_at)}{r.assigned_by ? ` · ${r.assigned_by}` : ''}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] text-slate-600 dark:text-slate-400 whitespace-nowrap">{formatDate(r.completed_at)}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] text-slate-600 dark:text-slate-400 whitespace-nowrap" title={r.email?.error || undefined}>{r.email ? String(r.email.status).toLowerCase() : '—'}</td>
+                                                        <td className="px-4 py-2.5 text-[13px] text-slate-600 dark:text-slate-400">{r.reason || '—'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             )}
 
                             {retakeLink && (

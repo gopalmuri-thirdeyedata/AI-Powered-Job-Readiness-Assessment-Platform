@@ -162,7 +162,7 @@ describe('Invited-student workflow (UI)', () => {
         assert.ok(timer.includes('setSecondsLeft((s) => s - 1)'));
         assert.ok(timer.includes("navigate(DASHBOARD_PATH, { replace: true })") && timer.includes('started && secondsLeft <= 0'));
         // 'started' is set only after the PDF hand-off resolved; the failure path sets 'error' and never touches the timer
-        const download = src.slice(src.indexOf('const startDownload'), src.indexOf('return (\n        <CandidateShell>'));
+        const download = src.slice(src.indexOf('const startDownload'), src.indexOf('return (\n        <CandidateShell'));
         assert.ok(download.indexOf('await downloadStudentReport(report)') < download.indexOf("phase: 'started'"));
         assert.ok(download.includes("phase: 'error'") && !/catch[\s\S]*navigate\(/.test(download), 'no redirect when the download fails');
         assert.ok(!src.includes('/admin'), 'never the admin dashboard');

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Eye, Search, RefreshCw, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, RotateCcw, Search, RefreshCw, Users } from 'lucide-react';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
 import CandidateReportModal from './CandidateReportModal';
+import RetestModal from './RetestModal';
 import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, StatusBadge, STATUS_META, cardCls, formatDate, formatScore, ghostBtn, ghostBtnSm, iconBtn, inputCls, primaryBtn, tableWrapCls, tbodyCls, tdCls, theadCls, thCls, trCls } from './adminUi';
 
 const STATUS_OPTIONS = ['COMPLETED', 'INCOMPLETE', 'IN_PROGRESS', 'REGISTERED', 'TIMED_OUT', 'ABANDONED', 'EVALUATION_PENDING', 'INFRASTRUCTURE_FAILURE', 'MANUAL_REVIEW_REQUIRED'];
@@ -24,6 +25,7 @@ const CandidateResultsTable = ({ refreshKey = 0, onChanged, onNavigate }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [openId, setOpenId] = useState(null);
+    const [retestId, setRetestId] = useState(null);
     const reqRef = useRef(0);
 
     useEffect(() => {
@@ -75,6 +77,8 @@ const CandidateResultsTable = ({ refreshKey = 0, onChanged, onNavigate }) => {
         : <span className="inline-flex min-w-[3.5rem] justify-center rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[13px] text-slate-900 dark:text-white">{formatScore(r.overall_score)}</span>);
     const reviewTag = (r) => r.needs_review && <span className="text-[10px] font-semibold tracking-wide text-orange-600 dark:text-orange-400">REVIEW</span>;
     const dossierBtn = (r) => <button type="button" className={ghostBtnSm} onClick={() => setOpenId(r.id)} aria-label={`Open dossier for ${r.name}`}><Eye size={14} /> Dossier</button>;
+    const retestBtn = (r) => <button type="button" className={ghostBtnSm} onClick={() => setRetestId(r.id)} aria-label={`Assign retest for ${r.name}`}><RotateCcw size={14} /> Retest</button>;
+    const actions = (r) => <div className="inline-flex items-center justify-end gap-2">{dossierBtn(r)}{retestBtn(r)}</div>;
     const scoreCls = 'tabular-nums text-slate-600 dark:text-slate-300';
     const selectCls = `${inputCls} w-full lg:!w-auto lg:max-w-[14rem]`;
 
@@ -135,7 +139,7 @@ const CandidateResultsTable = ({ refreshKey = 0, onChanged, onNavigate }) => {
                                     <td className={`${tdCls} !px-3 text-right ${scoreCls}`}>{formatScore(r.interview_score)}</td>
                                     <td className={`${tdCls} !px-3 text-right tabular-nums font-semibold text-slate-900 dark:text-white`}>{overall(r)}</td>
                                     <td className={`${tdCls} !px-3 text-[13px] leading-5 text-slate-500 dark:text-slate-400 max-w-[7rem]`}>{formatDate(r.registered_at)}</td>
-                                    <td className={`${tdCls} !px-3 text-right sticky right-0 z-[1] bg-white dark:bg-[var(--pw-surface)] group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors`}>{dossierBtn(r)}</td>
+                                    <td className={`${tdCls} !px-3 text-right sticky right-0 z-[1] bg-white dark:bg-[var(--pw-surface)] group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors`}>{actions(r)}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -163,7 +167,7 @@ const CandidateResultsTable = ({ refreshKey = 0, onChanged, onNavigate }) => {
                         </dl>
                         <div className="flex items-center justify-between gap-3">
                             <span className="text-xs text-slate-500 dark:text-slate-400">{formatDate(r.registered_at)}</span>
-                            {dossierBtn(r)}
+                            {actions(r)}
                         </div>
                     </li>
                 ))}
@@ -179,6 +183,10 @@ const CandidateResultsTable = ({ refreshKey = 0, onChanged, onNavigate }) => {
                     <button type="button" className={iconBtn} disabled={page >= pages || loading} onClick={() => setPage((p) => p + 1)} aria-label="Next page"><ChevronRight size={14} /></button>
                 </div>
             </div>}
+
+            {retestId !== null && (
+                <RetestModal candidateId={retestId} onClose={() => setRetestId(null)} onAssigned={() => { load(); if (onChanged) onChanged(); }} />
+            )}
 
             {openId !== null && (
                 <CandidateReportModal candidateId={openId} onClose={() => setOpenId(null)} onChanged={() => { load(); if (onChanged) onChanged(); }} />

@@ -66,7 +66,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
     const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
-    const [form, setForm] = useState({ title: '', role: '', description: '' });
+    const [form, setForm] = useState({ title: '', companyName: '', description: '' });
     const [formError, setFormError] = useState('');
     const [creating, setCreating] = useState(false);
     const [formKey, setFormKey] = useState(0); // remounts the description input (clears an uploaded file) after a role is created
@@ -104,8 +104,8 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
         if (form.description.trim().length < MIN_JD_CHARS) return setFormError(`The job description needs at least ${MIN_JD_CHARS} characters of substantive detail.`);
         setCreating(true);
         try {
-            await adminApi.createRole({ title: form.title.trim(), role: form.role.trim() || undefined, description: form.description.trim() });
-            setForm({ title: '', role: '', description: '' });
+            await adminApi.createRole({ title: form.title.trim(), company_name: form.companyName.trim() || undefined, description: form.description.trim() });
+            setForm({ title: '', companyName: '', description: '' });
             setFormKey((k) => k + 1);
             setFormOpen(false);
             setToast({ message: 'Job role created. Create its assessment blueprint next.' });
@@ -206,8 +206,8 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
                 <div className="grid sm:grid-cols-2 gap-4">
                     <label className="block"><span className={labelCls}>Job title</span>
                         <input className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={200} placeholder="e.g. Senior Backend Engineer" /></label>
-                    <label className="block"><span className={labelCls}>Role / team (optional)</span>
-                        <input className={inputCls} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} maxLength={200} placeholder="e.g. Platform Engineering" /></label>
+                    <label className="block"><span className={labelCls}>Company Name (optional)</span>
+                        <input className={inputCls} value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} maxLength={200} placeholder="e.g. Google, Microsoft, Infosys" /></label>
                 </div>
                 <JobDescriptionInput key={formKey} value={form.description} onChange={(description) => setForm((f) => ({ ...f, description }))} minChars={MIN_JD_CHARS} />
                 {formError && <p className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">{formError}</p>}
@@ -234,6 +234,7 @@ const JobRoleManager = ({ onChanged, onNavigate }) => {
                                         <StatusBadge status={isLinkExpired(role) ? 'EXPIRED' : role.status} />
                                     </div>
                                     <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-2 flex-wrap">
+                                        {role.company_name && <span className="font-semibold text-slate-700 dark:text-slate-300 break-words">{role.company_name}</span>}
                                         {hasValidBlueprint && <SourceBadge source={role.blueprint.source} />}
                                         <span>{hasValidBlueprint
                                             ? `Blueprint v${role.blueprint.version} · ${role.blueprint.aptitude_count} aptitude · ${role.blueprint.coding_count} coding · ${role.blueprint.interview_count} interview`

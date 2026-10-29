@@ -90,6 +90,7 @@ const SharedLinkManager = ({ refreshKey = 0, onChanged, onNavigate }) => {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-x-3 gap-y-1.5 min-w-0 flex-wrap">
                                 <h3 className="pw-card-title text-[17px] truncate max-w-full">{role.title}</h3>
+                                {role.company_name && <span className="text-[13px] font-medium text-slate-600 dark:text-slate-300 truncate max-w-full">{role.company_name}</span>}
                                 <StatusBadge status={role.status} />
                                 <span className="inline-flex items-center gap-1 text-[13px] text-slate-500 dark:text-slate-400"><Users size={13} aria-hidden="true" />{role.registration_count ?? 0} registered</span>
                             </div>

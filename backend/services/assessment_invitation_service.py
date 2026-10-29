@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 import models
 from services import assessment_clock as clock
 from services import assessment_policy as policy
-from services import email_service
+from services import credential_delivery, email_service
 from services import jd_blueprint_service as blueprint
 from services import share_link_policy as link_policy
 
@@ -65,7 +65,7 @@ def _instructions() -> List[str]:
 
 
 def render_invitation(*, job_title: str, recipient_name: Optional[str], organization_name: Optional[str],
-                      link_url: str, expires_at) -> RenderedInvitation:
+                      link_url: str, expires_at, login: Optional[credential_delivery.LoginInfo] = None) -> RenderedInvitation:
     """Professional HTML e-mail with a plain-text alternative. Every dynamic value is escaped in the HTML."""
     title = " ".join((job_title or "Assessment").split())
     name = " ".join((recipient_name or "").split())
@@ -81,6 +81,7 @@ def render_invitation(*, job_title: str, recipient_name: Optional[str], organiza
         greeting, "", intro, "",
         "Start the assessment here:", link_url, "",
         expiry, "",
+        *(credential_delivery.login_text_lines(login) + [""] if login else []),
         "Before you begin:", *[f"- {s}" for s in steps], "",
         "If the link does not open, copy it into your browser's address bar.",
         "If you were not expecting this invitation, you can ignore this e-mail.",
@@ -103,6 +104,7 @@ def render_invitation(*, job_title: str, recipient_name: Optional[str], organiza
 <a href="{safe_url}" style="display:inline-block;padding:12px 26px;color:#ffffff;font-weight:bold;font-size:15px;text-decoration:none;">Start the assessment</a>
 </td></tr></table>
 <p style="margin:0 0 18px 0;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:14px;">{escape(expiry)}</p>
+{credential_delivery.login_html(login) if login else ""}
 <p style="margin:0 0 8px 0;font-weight:bold;">Before you begin</p>
 <ul style="margin:0 0 18px 0;padding-left:20px;font-size:14px;">{items}</ul>
 <p style="margin:0 0 6px 0;font-size:13px;color:#475569;">If the button does not work, copy this link into your browser:</p>
@@ -222,8 +224,9 @@ def send_invitations(db: Session, *, job: models.JobDescription, students: List[
             results.append({**base, "status": "failed", "reason": row.last_error, "attempts": row.attempts})
             continue
 
+        login = credential_delivery.login_info(db, student)      # read-only: login ID, login page, and the password only if still retained
         rendered = render_invitation(job_title=job.title, recipient_name=name, organization_name=organization_name,
-                                     link_url=link_url, expires_at=job.share_link_expires_at)
+                                     link_url=link_url, expires_at=job.share_link_expires_at, login=login)
         try:
             email_service.send(settings, student.email, rendered.subject, rendered.html, rendered.text, to_name=name)
         except email_service.EmailSystemError as exc:
@@ -239,6 +242,9 @@ def send_invitations(db: Session, *, job: models.JobDescription, students: List[
             results.append({**base, "status": "failed", "reason": row.last_error, "attempts": row.attempts})
         else:
             _finish(db, row, SENT, None, clock.now())
+            if login is not None and login.password:
+                credential_delivery.discard(db, student.id)    # the mail server accepted it: the temporary retained copy is gone, as after Share
+                db.commit()
             results.append({**base, "status": "sent", "reason": None, "attempts": row.attempts})
     return results
 
