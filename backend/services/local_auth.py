@@ -90,12 +90,11 @@ def password_policy_errors(password: Optional[str], email: Optional[str] = None)
         errors.append(f"Password must be at most {PASSWORD_MAX_BYTES} bytes long.")
     if pw and pw != pw.strip():
         errors.append("Password must not start or end with whitespace.")
-    if not re.search(r"[a-z]", pw):
-        errors.append("Password must contain a lowercase letter.")
-    if not re.search(r"[A-Z]", pw):
-        errors.append("Password must contain an uppercase letter.")
-    if not re.search(r"[0-9]", pw):
-        errors.append("Password must contain a digit.")
+    # Length is what protects a password, so the old "must contain an upper-case letter AND a digit" is relaxed to "mix at least two kinds of
+    # character" (lower-case, upper-case, digit, symbol). A name plus a symbol ("firstname@college") is accepted; one kind alone ("abcdefghij") is not.
+    kinds = sum(bool(re.search(pattern, pw)) for pattern in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]"))
+    if pw and kinds < 2:
+        errors.append("Password must mix at least two kinds of characters (lowercase, uppercase, digits, symbols).")
     lowered = pw.lower()
     if lowered in _COMMON_PASSWORDS:
         errors.append("Password is too common.")

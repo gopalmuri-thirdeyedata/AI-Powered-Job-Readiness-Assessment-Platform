@@ -387,7 +387,7 @@ def test_required_fields_are_validated(db, field):
     {"role": "SUPERUSER"}, {"role": "PLATFORM_ADMIN"}, {"role": "CANDIDATE"}, {"role": ""},
     {"email": "not-an-email"}, {"email": "a@b"},
     {"phone": "abc"}, {"phone": "123"},
-    {"password": "short1A"}, {"password": "alllowercase123"}, {"password": "ALLUPPERCASE123"}, {"password": "NoDigitsHereAtAll"},
+    {"password": "short1A"}, {"password": "alllowercaseonly"}, {"password": "ALLUPPERCASEONLY"}, {"password": "12345678901234"},   # one kind of character only
     {"password": "x" * 80 + "A1"},
 ])
 def test_invalid_input_is_rejected_and_leaves_no_records(db, override):
@@ -399,6 +399,14 @@ def test_invalid_input_is_rejected_and_leaves_no_records(db, override):
     assert body["password"] not in res.text                               # validation errors never echo the password
     db.expire_all()
     assert db.query(models.User).count() == before
+
+
+def test_a_name_plus_a_symbol_is_an_acceptable_password_but_one_kind_of_character_is_not():
+    """The policy asks for length and at least two kinds of character; 'firstname@college' style initial passwords are fine."""
+    assert local_auth.password_policy_errors("seema@klsvdit", "srb@klsvdit.edu.in") == []
+    assert local_auth.password_policy_errors("Welcome2026Abc", "x@y.com") == []
+    for weak in ("alllowercaseonly", "ALLUPPERCASEONLY", "12345678901234", "short@1", "password123"):
+        assert local_auth.password_policy_errors(weak, "x@y.com"), weak
 
 
 def test_duplicate_email_is_rejected_case_insensitively(db):

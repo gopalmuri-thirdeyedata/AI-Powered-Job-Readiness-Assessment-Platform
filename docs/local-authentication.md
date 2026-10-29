@@ -65,7 +65,7 @@ e-mail confirmation must match the stored address. One transaction (`services/st
 * SQLite does not enforce foreign keys here, so the cleanup is explicit and ordered; a table that references users / student profiles without a policy
   makes the delete fail closed (409) and `tests/test_student_deletion.py` fails.
 
-Password policy: 10-72 bytes, upper + lower case + digit, no leading/trailing space, not a common password, not containing the email name.
+Password policy: 10-72 bytes, at least two kinds of characters (lower case, upper case, digit, symbol), no leading/trailing space, not a common password, not containing the email name. (Until 2026-10-30 it required upper + lower case + a digit; it was relaxed so that `firstname@college` style initial passwords are accepted.)
 
 ## Sharing a student's credentials (User Management -> Share)
 
