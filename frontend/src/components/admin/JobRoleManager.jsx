@@ -8,7 +8,6 @@ import { EmptyState, ErrorBanner, LoadingRow, PanelIntro, StatusBadge, Toast, ca
 const MIN_JD_CHARS = 50;
 
 const SOURCE_BADGES = {
-    gemini: { label: 'Gemini', cls: 'bg-[#5d8c2c]/15 text-[#4c7324] border-[#5d8c2c]/30 dark:bg-emerald-950/40 dark:text-[#9fd05a] dark:border-emerald-800/60' },
     offline_fixture: { label: 'Offline test data', cls: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700' },
 };
 

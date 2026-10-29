@@ -158,8 +158,8 @@ describe('Job Roles & Blueprints: Gemini is the only way to create a blueprint (
         assert.ok(rolesSrc2.includes('genErrors[role.id]') && rolesSrc2.includes('role="alert"'));
     });
 
-    test('14. blueprint provenance badges: only Gemini and offline test data are recognised (an unknown or legacy source shows nothing)', () => {
-        assert.ok(rolesSrc2.includes("gemini: { label: 'Gemini'") && rolesSrc2.includes("offline_fixture: { label: 'Offline test data'"));
+    test('14. blueprint provenance badges: Gemini badge is not shown; offline test data is recognised (an unknown or legacy source shows nothing)', () => {
+        assert.ok(!rolesSrc2.includes("label: 'Gemini'") && rolesSrc2.includes("offline_fixture: { label: 'Offline test data'"));
         assert.ok(rolesSrc2.includes('return meta ? <span') && rolesSrc2.includes(': null;'));
     });
 });
