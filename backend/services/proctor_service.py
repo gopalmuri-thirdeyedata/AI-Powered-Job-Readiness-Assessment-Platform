@@ -76,6 +76,8 @@ STRONG_FACE_SCORE = 0.80              # ...and this confident, and big enough, c
 STRONG_FACE_MIN_WIDTH = 0.07          # fraction of the frame width: small, distant detections never make a second person
 BIG_PERSON_MIN_AREA = 0.10            # fraction of the frame: a person this large (and separate from the other) counts toward "more than one"
 SAME_PERSON_IOU = 0.50
+PRESENT_MIN_CONFIDENCE = 0.50       # a lone person detection below this and smaller than PRESENT_MIN_AREA does not count as someone being there
+PRESENT_MIN_AREA = 0.04
 
 # ── Request limits (the endpoint is reachable by candidates, so every input is bounded) ─────────────────────────────────
 MAX_BASE64_CHARS = 1_500_000          # request field size; a 640x480 JPEG at quality 0.6 is ~40k characters
@@ -375,7 +377,10 @@ def decide(person_boxes, faces):
     for conf, box in sorted(person_boxes, key=lambda p: -p[0]):
         if (box[2] - box[0]) * (box[3] - box[1]) >= BIG_PERSON_MIN_AREA and all(_iou(box, other) < SAME_PERSON_IOU for _, other in big):
             big.append((conf, box))
-    present = bool(faces) or bool(person_boxes)
+    # A person only counts as "someone is there" when YOLO is fairly sure or the box is body-sized: a small low-confidence blob (a chair, a poster,
+    # a coat) must not hide an empty seat.
+    solid = [(c, b) for c, b in person_boxes if c >= PRESENT_MIN_CONFIDENCE or (b[2] - b[0]) * (b[3] - b[1]) >= PRESENT_MIN_AREA]
+    present = bool(faces) or bool(solid)
     people = max(len(strong), len(big), 1 if present else 0)
     violations = []
     if not present:

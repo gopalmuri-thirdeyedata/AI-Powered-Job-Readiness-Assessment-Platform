@@ -681,7 +681,10 @@ export const AssessmentWorkspace = ({
 
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { width: { ideal: 640 }, height: { ideal: 480 } },
-                audio: true
+                // This stream stays open for the whole sitting only for the camera; its microphone is just the permission check. With the
+                // browser defaults it would run echo cancellation / noise suppression / automatic gain next to the interview's own microphone
+                // and make the speaker volume pump up and down, so all three are off here.
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
             });
 
             streamRef.current = stream;

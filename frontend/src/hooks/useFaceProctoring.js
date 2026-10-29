@@ -5,7 +5,7 @@ import API_URL from '../apiConfig';
  * useFaceProctoring
  * Real-time background proctoring: YOLOv8n objects + a face detector (via FastAPI backend, ONNX Runtime).
  *
- * Checks camera frame every 3000ms:
+ * Checks camera frame every 2000ms:
  * - No face and no person in frame (after 3 consecutive checks = 9s) → triggers violation
  * - Multiple persons in frame (>= 2)                      → immediate violation
  * - Mobile phone detected (class 'cell phone', conf >= 0.45) → immediate violation
@@ -75,9 +75,9 @@ const useFaceProctoring = ({
     // 640x480: phones and faces are small, and 320x240 left too little to find them (the server analyses frames up to 640 wide as sent)
     const FRAME_WIDTH = 640;
     const FRAME_HEIGHT = 480;
-    const CHECK_INTERVAL_MS = 3000;
+    const CHECK_INTERVAL_MS = 2000;
     const FRAME_TIMEOUT_MS = 30000; // gives up on a stuck request so detection can carry on
-    const NO_PERSON_THRESHOLD = 3; // 3 consecutive checks (~9s)
+    const NO_PERSON_THRESHOLD = 3; // 3 net missed checks (~6s)
     const VIOLATION_COOLDOWN_MS = 8000; // 8s cooldown per specific violation reason
 
     // ── Debounced violation trigger with cooldown ─────────────────────────────
@@ -262,7 +262,7 @@ const useFaceProctoring = ({
                 setSuspectLabel(null);
             }
 
-            // ── Temporal No-Person Check (3 consecutive frames = ~9s) ──
+            // ── Temporal No-Person Check (3 net missed frames = ~6s) ──
             if (violations.includes('no_person')) {
                 noPersonCountRef.current += 1;
                 setDetectionStatus('not_detected');
@@ -273,11 +273,11 @@ const useFaceProctoring = ({
                     triggerViolation('Face not visible in camera');
                 }
             } else if (count >= 2) {
-                noPersonCountRef.current = 0;
+                noPersonCountRef.current = Math.max(0, noPersonCountRef.current - 1);      // one lucky frame must not erase a real absence
                 setDetectionStatus('multiple');
                 if (onDetectionRef.current) onDetectionRef.current('multiple');
             } else {
-                noPersonCountRef.current = 0;
+                noPersonCountRef.current = Math.max(0, noPersonCountRef.current - 1);
                 setDetectionStatus('detected');
                 if (onDetectionRef.current) onDetectionRef.current('detected');
             }

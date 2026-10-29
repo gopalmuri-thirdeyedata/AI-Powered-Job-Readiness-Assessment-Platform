@@ -252,6 +252,12 @@ Return ONE JSON object with exactly these keys:
       "evaluation_criteria": [4 short rubric dimensions], "expected_technical_concepts": [str]}} ]
 }}
 Rule: every aptitude question has exactly one correct option; all content must be grounded in the job description's technical scope.
+INTERVIEW QUESTION DIFFICULTY (important): the interview is a SPOKEN, 10-minute screening conversation, so every interview question must be simple and
+foundational: a core concept or everyday practice that the job description names, asked in one short sentence that a junior candidate can answer in
+one or two minutes out loud (for example "What is the difference between X and Y, and when would you use each?" or "How would you check why a page
+or query is slow?"). One idea per question: no multi-part questions, no system design, no architecture at scale, no trick questions, nothing that
+needs a whiteboard, code or formulas. Stay strictly inside the skills in the job description and match its level (assume Junior unless the job
+description clearly asks for more).
 """
 
 

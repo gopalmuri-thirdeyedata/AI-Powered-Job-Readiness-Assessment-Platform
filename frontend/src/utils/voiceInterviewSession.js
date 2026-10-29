@@ -258,7 +258,7 @@ export class VoiceInterviewSession {
     // ── Microphone ───────────────────────────────────────────────────────────────
     async openMic() {
         this.stream?.getTracks().forEach((t) => t.stop());
-        const constraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+        const constraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };      // automatic gain makes the volume pump up and down
         if (this.audioDeviceId) constraints.deviceId = { exact: this.audioDeviceId };
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
         this.stream.getAudioTracks().forEach((t) => { t.enabled = !this.muted; });
