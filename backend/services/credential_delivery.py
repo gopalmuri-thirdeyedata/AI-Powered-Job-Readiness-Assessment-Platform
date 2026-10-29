@@ -41,9 +41,13 @@ logger = logging.getLogger("prepwin.credentials")
 DEFAULT_TTL_MINUTES = 120
 CLAIM_STALE = timedelta(minutes=2)          # a claim older than this belongs to a request that died mid-send
 SUBJECT = "Your PrepWin Student Login Credentials"
+ADMIN_SUBJECT = "Your PrepWin Admin Login Credentials"
+# Share e-mails Student and Admin accounts. Only a Super Admin can manage an Admin (users.MANAGEABLE_ROLES), so only a Super Admin can share an
+# Admin's credentials. A Super Admin's own credentials are never e-mailed.
+SHAREABLE_ROLES = (models.UserRole.STUDENT.value, models.UserRole.ADMIN.value)
 
 NOT_AVAILABLE = ("PASSWORD_NOT_AVAILABLE",
-                 "This student's password cannot be recovered or shown, so it cannot be e-mailed from here. "
+                 "This account's password cannot be recovered or shown, so it cannot be e-mailed from here. "
                  "Use Replace password to set a new one, then click Share.")
 
 
@@ -98,7 +102,7 @@ def retain(db: Session, user: models.User, password: str, actor_id: Optional[int
     Keeps `password` (encrypted, short-lived) so it can be shared. The caller commits, in the same transaction that set the password.
     Returns False, keeping nothing, when retention is disabled or e-mail could not be sent anyway.
     """
-    if user.role != models.UserRole.STUDENT.value:
+    if user.role not in SHAREABLE_ROLES:
         return False
     discard(db, user.id)                       # a newer password always replaces the previous record
     if ttl().total_seconds() <= 0 or not email_service.is_configured():
@@ -121,13 +125,13 @@ def ready_user_ids(db: Session, user_ids) -> Set[int]:
 
 
 # ------------------------------------------------------------------------------ e-mail
-def login_url() -> str:
+def login_url(role: Optional[str] = None) -> str:
     base = (os.getenv("FRONTEND_URL", "http://localhost:5173") or "").rstrip("/")
     host = base.split("://", 1)[-1].split("/", 1)[0].split(":")[0]
     if utils.is_production() and (not base or host in ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")):
         raise CredentialShareError(503, "FRONTEND_URL_NOT_CONFIGURED",
                                    "The public application URL (FRONTEND_URL) is not configured for production, so the login link would not work.")
-    return f"{base}/student/login"
+    return f"{base}/{'admin' if role == models.UserRole.ADMIN.value else 'student'}/login"
 
 
 RECOMMENDED_SITES_HEADING = "Recommended Websites"
@@ -144,50 +148,53 @@ class RenderedCredentials:
     text: str
 
 
-def render_email(*, student_name: Optional[str], student_email: str, password: str, url: str) -> RenderedCredentials:
-    """HTML + plain-text credentials e-mail. Every dynamic value is escaped in the HTML; nothing is left as a placeholder."""
-    name = " ".join((student_name or "").split()) or "Student"
-    steps = ["Open the PrepWin Student Login page.", "Enter your registered email address.",
-             "Enter the password provided in this email.", "Click Login to access your student account."]
-    text = "\n".join([
-        f"Hello {name},", "", "Your PrepWin student account is ready.", "", "Your login details are:", "",
-        f"Login Email: {student_email}", f"Password: {password}", f"Student Login: {url}", "",
-        "How to log in", *[f"{i}. {s}" for i, s in enumerate(steps, 1)], "",
-        "Keep your login credentials private.", "",
-        RECOMMENDED_SITES_HEADING, "", RECOMMENDED_SITES_INTRO, "",
-        *[f"- {site}: {site_url}" for site, site_url in RECOMMENDED_SITES], "",
-        RECOMMENDED_SITES_OUTRO, "", "Regards,", "PrepWin Team"])
+def render_email(*, student_name: Optional[str], student_email: str, password: str, url: str, role: str = "STUDENT") -> RenderedCredentials:
+    """HTML + plain-text credentials e-mail for a Student (default) or an Admin. Every dynamic value is escaped in the HTML; nothing is left as a placeholder."""
+    admin = role == models.UserRole.ADMIN.value
+    noun, label = ("admin", "Admin") if admin else ("student", "Student")
+    subject = ADMIN_SUBJECT if admin else SUBJECT
+    name = " ".join((student_name or "").split()) or label
+    steps = [f"Open the PrepWin {label} Login page.", "Enter your registered email address.",
+             "Enter the password provided in this email.", f"Click Login to access your {noun} account."]
+    text_lines = [f"Hello {name},", "", f"Your PrepWin {noun} account is ready.", "", "Your login details are:", "",
+                  f"Login Email: {student_email}", f"Password: {password}", f"{label} Login: {url}", "",
+                  "How to log in", *[f"{i}. {s}" for i, s in enumerate(steps, 1)], "",
+                  "Keep your login credentials private.", ""]
+    text_lines += [RECOMMENDED_SITES_HEADING, "", RECOMMENDED_SITES_INTRO, "",         # the learning links are in every credentials e-mail (students and admins)
+                   *[f"- {site}: {site_url}" for site, site_url in RECOMMENDED_SITES], "", RECOMMENDED_SITES_OUTRO, ""]
+    text = "\n".join([*text_lines, "Regards,", "PrepWin Team"])
     items = "".join(f'<li style="margin:0 0 6px 0;">{escape(s)}</li>' for s in steps)
     sites = "".join(f'<li style="margin:0 0 6px 0;">{escape(site)}: <a href="{escape(site_url, quote=True)}" style="color:#4c7324;word-break:break-all;">{escape(site_url)}</a></li>'
                     for site, site_url in RECOMMENDED_SITES)
+    sites_html = f"""<p style="margin:0 0 8px 0;font-weight:bold;">{escape(RECOMMENDED_SITES_HEADING)}</p>
+<p style="margin:0 0 8px 0;font-size:14px;">{escape(RECOMMENDED_SITES_INTRO)}</p>
+<ul style="margin:0 0 12px 0;padding-left:20px;font-size:14px;">{sites}</ul>
+<p style="margin:0 0 18px 0;font-size:14px;">{escape(RECOMMENDED_SITES_OUTRO)}</p>
+"""
     html = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(SUBJECT)}</title></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(subject)}</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 12px;"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
 <tr><td style="background:#4c7324;padding:20px 28px;color:#ffffff;font-size:20px;font-weight:bold;">PrepWin</td></tr>
 <tr><td style="padding:28px;font-size:15px;line-height:1.55;">
 <p style="margin:0 0 14px 0;">Hello {escape(name)},</p>
-<p style="margin:0 0 14px 0;">Your PrepWin student account is ready.</p>
+<p style="margin:0 0 14px 0;">Your PrepWin {noun} account is ready.</p>
 <p style="margin:0 0 8px 0;font-weight:bold;">Your login details are:</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
 <tr><td style="padding:12px 16px;font-size:14px;"><div style="color:#64748b;font-size:12px;">Login Email</div><div style="font-weight:bold;word-break:break-all;">{escape(student_email)}</div></td></tr>
 <tr><td style="padding:0 16px 12px 16px;font-size:14px;"><div style="color:#64748b;font-size:12px;">Password</div><div style="font-family:Consolas,Menlo,monospace;font-weight:bold;font-size:16px;word-break:break-all;">{escape(password)}</div></td></tr>
 </table>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px 0;"><tr><td style="background:#5d8c2c;border-radius:8px;">
-<a href="{escape(url, quote=True)}" style="display:inline-block;padding:12px 26px;color:#ffffff;font-weight:bold;font-size:15px;text-decoration:none;">Open PrepWin Student Login</a>
+<a href="{escape(url, quote=True)}" style="display:inline-block;padding:12px 26px;color:#ffffff;font-weight:bold;font-size:15px;text-decoration:none;">Open PrepWin {label} Login</a>
 </td></tr></table>
-<p style="margin:0 0 6px 0;font-size:13px;color:#475569;">Student Login: <a href="{escape(url, quote=True)}" style="color:#4c7324;">{escape(url)}</a></p>
+<p style="margin:0 0 6px 0;font-size:13px;color:#475569;">{label} Login: <a href="{escape(url, quote=True)}" style="color:#4c7324;">{escape(url)}</a></p>
 <p style="margin:18px 0 8px 0;font-weight:bold;">How to log in</p>
 <ol style="margin:0 0 18px 0;padding-left:20px;font-size:14px;">{items}</ol>
 <p style="margin:0 0 18px 0;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:14px;">Keep your login credentials private.</p>
-<p style="margin:0 0 8px 0;font-weight:bold;">{escape(RECOMMENDED_SITES_HEADING)}</p>
-<p style="margin:0 0 8px 0;font-size:14px;">{escape(RECOMMENDED_SITES_INTRO)}</p>
-<ul style="margin:0 0 12px 0;padding-left:20px;font-size:14px;">{sites}</ul>
-<p style="margin:0 0 18px 0;font-size:14px;">{escape(RECOMMENDED_SITES_OUTRO)}</p>
-<p style="margin:0;">Regards,<br>PrepWin Team</p>
+{sites_html}<p style="margin:0;">Regards,<br>PrepWin Team</p>
 </td></tr></table></td></tr></table></body></html>"""
-    return RenderedCredentials(subject=SUBJECT, html=html, text=text)
+    return RenderedCredentials(subject=subject, html=html, text=text)
 
 
 # ------------------------------------------------------------------------------ login details for assignment e-mails
@@ -258,7 +265,7 @@ def _audit(db: Session, actor_id: int, org_id: Optional[int], user: models.User,
 
 def send_credentials(db: Session, *, user: models.User, actor_id: int, org_id: Optional[int]) -> Dict[str, str]:
     """
-    Sends the retained credentials of `user` (an active STUDENT of the caller's organization; checked by the router).
+    Sends the retained credentials of `user` (an active STUDENT or ADMIN of the caller's organization; checked by the router).
     Raises CredentialShareError for every refusal / failure, with a message that is safe to show. The account is never modified.
     """
     purge_expired(db)
@@ -267,7 +274,7 @@ def send_credentials(db: Session, *, user: models.User, actor_id: int, org_id: O
         settings = email_service.load_settings()          # missing / invalid SMTP: nothing claimed, the record stays
     except email_service.EmailNotConfigured as exc:
         raise CredentialShareError(503, "EMAIL_NOT_CONFIGURED", str(exc))
-    url = login_url()
+    url = login_url(user.role)
 
     row = db.query(models.CredentialDelivery).filter(models.CredentialDelivery.user_id == user.id).first()
     if row is None:
@@ -292,7 +299,7 @@ def send_credentials(db: Session, *, user: models.User, actor_id: int, org_id: O
         db.commit()
         raise CredentialShareError(409, *NOT_AVAILABLE)
 
-    rendered = render_email(student_name=user.full_name, student_email=user.email, password=password, url=url)
+    rendered = render_email(student_name=user.full_name, student_email=user.email, password=password, url=url, role=user.role)
     failure: Optional[Tuple[int, str, str, str]] = None
     try:
         email_service.send(settings, user.email, rendered.subject, rendered.html, rendered.text, to_name=user.full_name)

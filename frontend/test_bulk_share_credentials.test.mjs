@@ -40,21 +40,21 @@ describe('User Management: Bulk Share Credentials (UI)', () => {
         assert.ok(call.timeout >= 60000, 'sufficient timeout for batch processing');
     });
 
-    test('Checkboxes are rendered only for eligible students, never for Admin or Super Admin', () => {
+    test('Checkboxes are rendered only for eligible accounts (students; admins for a Super Admin), never for Super Admin rows', () => {
         // Row checkbox condition
-        assert.ok(PAGE.includes("const isEligibleStudent = canManage && u.role === 'STUDENT';"));
+        assert.ok(PAGE.includes("const canShare = canManage && (u.role === 'STUDENT' || (u.role === 'ADMIN' && manageableRoles(me?.role).includes('ADMIN'))); const isEligibleStudent = canShare;"));
         assert.ok(PAGE.includes('{isEligibleStudent ? ('));
         assert.ok(PAGE.includes('id={`select-user-${u.id}`}') || PAGE.includes('id={`select-student-${u.id}}'));
 
-        // Displayed eligible filter checks role === 'STUDENT'
-        assert.ok(PAGE.includes("u.role === 'STUDENT'") && PAGE.includes('displayedEligible'));
+        // Displayed eligible filter: students, and admins the signed-in user may manage
+        assert.ok(PAGE.includes("(u.role === 'STUDENT' || u.role === 'ADMIN')") && PAGE.includes('displayedEligible'));
     });
 
     test('Select-all checkbox targets currently displayed eligible students with count display', () => {
         assert.ok(PAGE.includes('id="select-all-students"'));
         assert.ok(PAGE.includes('aria-label="Select all eligible students on this page"'));
         assert.ok(PAGE.includes('el.indeterminate = !allSelected && someSelected;'));
-        assert.ok(PAGE.includes('selectedIds.length === 1 ? \'student\' : \'students\'} selected'));
+        assert.ok(PAGE.includes('selectedIds.length === 1 ? \'account\' : \'accounts\'} selected'));
         assert.ok(PAGE.includes('Clear selection'));
     });
 
@@ -82,8 +82,8 @@ describe('User Management: Bulk Share Credentials (UI)', () => {
     });
 
     test('Preserves individual Share button and does not include any notifications subsystem', () => {
-        assert.ok(PAGE.includes("canManage && u.role === 'STUDENT' && ("));
-        assert.ok(PAGE.includes("title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? \"E-mail this student's login details\" : 'Set a new password with Replace password first'}"));
+        assert.ok(PAGE.includes('{canShare && ('));
+        assert.ok(PAGE.includes("title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? \"E-mail this account's login details\" : 'Set a new password with Replace password first'}"));
         assert.ok(!/notification|Notification/.test(PAGE));
     });
 

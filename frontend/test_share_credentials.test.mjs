@@ -38,12 +38,13 @@ describe('User Management: Share credentials (UI)', () => {
         assert.equal(apiError(err(422, ['Value error, Enter a valid e-mail address.'])), 'Enter a valid e-mail address.', 'existing handling is unchanged');
     });
 
-    test('Share is offered for student accounts only, beside the existing actions, in the design system', () => {
-        assert.ok(PAGE.includes("canManage && u.role === 'STUDENT' && ("), 'students only; Admin and Super Admin rows get no Share');
+    test('Share is offered for student accounts, and for admin accounts to a Super Admin, beside the existing actions, in the design system', () => {
+        assert.ok(PAGE.includes('{canShare && ('), 'Share only where canShare is true');
+        assert.ok(PAGE.includes("const canShare = canManage && (u.role === 'STUDENT' || (u.role === 'ADMIN' && manageableRoles(me?.role).includes('ADMIN')));"), 'students always, admins only when the signed-in user may manage admins; Super Admin rows never');
         // the existing actions are all still there
         assert.ok(PAGE.includes('aria-label={`View ${u.email}`}') && PAGE.includes('aria-label={`Replace password for ${u.email}`}'));
         assert.ok(PAGE.includes("`${u.is_active ? 'Deactivate' : 'Activate'} ${u.email}`"));
-        const button = PAGE.slice(PAGE.indexOf("canManage && u.role === 'STUDENT' && ("), PAGE.indexOf('aria-label={`Replace password for'));
+        const button = PAGE.slice(PAGE.indexOf('{canShare && ('), PAGE.indexOf('aria-label={`Replace password for'));
         assert.ok(button.includes('className={ghostBtn}'), 'same button style as the other actions');
         assert.ok(button.includes('<Mail size={14} />') && button.includes('Share'));
         assert.ok(button.includes('animate-spin') && button.includes('Sending...'), 'loading state');

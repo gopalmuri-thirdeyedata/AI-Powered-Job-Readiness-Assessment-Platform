@@ -437,7 +437,7 @@ const AssessmentAccess = ({ u, canManage, accessBusyId, setAccessConfirm }) => (
 );
 
 /** View / Share / Replace password / Deactivate (+ Delete for students) for one user (the same actions in the table and in the cards). */
-const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentials, setConfirm, setDeleteTarget, compact = false }) => (
+const RowActions = ({ u, isSelf, canManage, canShare, sharingId, setDialog, shareCredentials, setConfirm, setDeleteTarget, compact = false }) => (
     <div className={`flex items-center gap-1.5 ${compact ? 'flex-nowrap justify-end [&_button]:min-h-[32px] [&_button]:px-2.5 [&_button]:py-1 [&_button]:text-[13px]' : 'flex-wrap'}`}>
         <button
             type="button"
@@ -449,7 +449,7 @@ const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentia
             <Eye size={14} />
             <span>View</span>
         </button>
-        {canManage && u.role === 'STUDENT' && (
+        {canShare && (
             <button
                 type="button"
                 className={ghostBtn}
@@ -457,7 +457,7 @@ const RowActions = ({ u, isSelf, canManage, sharingId, setDialog, shareCredentia
                 disabled={sharingId !== null || !u.is_active}
                 aria-label={`Share login credentials with ${u.email}`}
                 aria-busy={sharingId === u.id}
-                title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? "E-mail this student's login details" : 'Set a new password with Replace password first'}
+                title={!u.is_active ? 'Activate this account to share its credentials' : u.credentials_ready ? "E-mail this account's login details" : 'Set a new password with Replace password first'}
             >
                 {sharingId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
                 <span>{sharingId === u.id ? 'Sending...' : 'Share'}</span>
@@ -612,7 +612,7 @@ const UserManagementPage = () => {
 
     const displayedEligible = data.items.filter((u) => {
         const isSelf = me && Number(me.user_id) === u.id;
-        return !isSelf && manageableRoles(me?.role).includes(u.role) && u.role === 'STUDENT';
+        return !isSelf && manageableRoles(me?.role).includes(u.role) && (u.role === 'STUDENT' || u.role === 'ADMIN');
     });
     const allSelected = displayedEligible.length > 0 && displayedEligible.every((u) => selectedIds.includes(u.id));
     const someSelected = displayedEligible.some((u) => selectedIds.includes(u.id));
@@ -693,7 +693,7 @@ const UserManagementPage = () => {
     return (
         <WorkspacePage title="User Management" description="Create and manage the Student and Admin accounts that can sign in to PrepWin. There is no public sign-up: every account starts here.">
             <div className="space-y-5">
-                <PanelIntro onRefresh={load} loading={loading}>Passwords are stored securely and are never shown again after an account is created. Use Replace password to give someone a new one. Share e-mails a student their login details right after you create the account or replace the password.</PanelIntro>
+                <PanelIntro onRefresh={load} loading={loading}>Passwords are stored securely and are never shown again after an account is created. Use Replace password to give someone a new one. Share e-mails a student or an admin their login details right after you create the account or replace the password.</PanelIntro>
 
                 <div className={`${cardCls} p-3 sm:p-4 flex flex-col lg:flex-row gap-3 lg:items-center`}>
                     <div className="relative flex-1 min-w-0">
@@ -712,7 +712,7 @@ const UserManagementPage = () => {
                         className={selectedIds.length > 0 ? primaryBtn : ghostBtn}
                         disabled={selectedIds.length === 0 || bulkSending}
                         onClick={() => setBulkConfirmOpen(true)}
-                        title={selectedIds.length === 0 ? 'Select at least one eligible student to share credentials' : 'Share credentials with selected students'}
+                        title={selectedIds.length === 0 ? 'Select at least one eligible account to share credentials' : 'Share credentials with selected accounts'}
                     >
                         {bulkSending ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
                         <span>Share Credentials{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}</span>
@@ -727,7 +727,7 @@ const UserManagementPage = () => {
                                 {selectedIds.length}
                             </span>
                             <span className="text-sm font-semibold">
-                                {selectedIds.length} {selectedIds.length === 1 ? 'student' : 'students'} selected
+                                {selectedIds.length} {selectedIds.length === 1 ? 'account' : 'accounts'} selected
                             </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -792,7 +792,7 @@ const UserManagementPage = () => {
                                     manageableRoles(me?.role).includes(u.role) ||
                                     isAdminRole(me?.role)
                                 );
-                                const isEligibleStudent = canManage && u.role === 'STUDENT';
+                                const canShare = canManage && (u.role === 'STUDENT' || (u.role === 'ADMIN' && manageableRoles(me?.role).includes('ADMIN'))); const isEligibleStudent = canShare;
                                 return (
                                     <li key={u.id} className={`${cardCls} p-4 space-y-3`}>
                                         <div className="flex items-start gap-3">
@@ -819,7 +819,7 @@ const UserManagementPage = () => {
                                         {u.role === 'STUDENT' && <AssessmentAccess u={u} canManage={canManage} accessBusyId={accessBusyId} setAccessConfirm={setAccessConfirm} />}
                                         <p className="text-xs text-slate-500 dark:text-slate-400">Last sign-in: {formatDate(u.last_login_at)}</p>
                                         <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                                            <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} setDeleteTarget={setDeleteTarget} />
+                                            <RowActions u={u} isSelf={isSelf} canManage={canManage} canShare={canShare} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} setDeleteTarget={setDeleteTarget} />
                                         </div>
                                     </li>
                                 );
@@ -863,7 +863,7 @@ const UserManagementPage = () => {
                                             manageableRoles(me?.role).includes(u.role) ||
                                             isAdminRole(me?.role)
                                         );
-                                        const isEligibleStudent = canManage && u.role === 'STUDENT';
+                                        const canShare = canManage && (u.role === 'STUDENT' || (u.role === 'ADMIN' && manageableRoles(me?.role).includes('ADMIN'))); const isEligibleStudent = canShare;
                                         return (
                                             <tr key={u.id} className={`group h-[68px] ${trCls}`}>
                                                 <td className="w-[44px] min-w-[44px] max-w-[44px] px-3 py-3 align-middle text-center">
@@ -907,7 +907,7 @@ const UserManagementPage = () => {
                                                     {formatDate(u.last_login_at)}
                                                 </td>
                                                 <td className={`${tdCls} !px-3 sticky right-0 z-[1] bg-white dark:bg-[var(--pw-surface)] group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.15)]`}>
-                                                    <RowActions u={u} isSelf={isSelf} canManage={canManage} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} setDeleteTarget={setDeleteTarget} compact />
+                                                    <RowActions u={u} isSelf={isSelf} canManage={canManage} canShare={canShare} sharingId={sharingId} setDialog={setDialog} shareCredentials={shareCredentials} setConfirm={setConfirm} setDeleteTarget={setDeleteTarget} compact />
                                                 </td>
                                             </tr>
                                         );
@@ -931,14 +931,14 @@ const UserManagementPage = () => {
             </div>
 
             {dialog?.type === 'create' && (
-                <CreateUserDialog allowedRoles={creatableRoles(me?.role)} onClose={() => setDialog(null)} onCreated={(res) => { setDialog(null); say(res.user?.role === 'STUDENT' ? `${res.message} Click Share to e-mail the login details to the student.` : res.message); setPage(1); load(); }} />
+                <CreateUserDialog allowedRoles={creatableRoles(me?.role)} onClose={() => setDialog(null)} onCreated={(res) => { setDialog(null); say(res.user?.role === 'STUDENT' ? `${res.message} Click Share to e-mail the login details to the student.` : res.user?.role === 'ADMIN' ? `${res.message} Click Share to e-mail the login details to the admin.` : res.message); setPage(1); load(); }} />
             )}
             {deleteTarget && (
                 <DeleteAccountDialog user={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={accountDeleted} onFailed={load} />
             )}
             {dialog?.type === 'reset' && (
                 <ResetPasswordDialog user={dialog.user} onClose={() => setDialog(null)}
-                    onDone={(message) => { const student = dialog.user.role === 'STUDENT'; setDialog(null); say(student ? `${message} Click Share to e-mail the new password to the student.` : message); load(); }} />
+                    onDone={(message) => { const role = dialog.user.role; setDialog(null); say(role === 'STUDENT' ? `${message} Click Share to e-mail the new password to the student.` : role === 'ADMIN' ? `${message} Click Share to e-mail the new password to the admin.` : message); load(); }} />
             )}
             <ConfirmationModal
                 isOpen={Boolean(needsReplace)}
@@ -982,8 +982,8 @@ const UserManagementPage = () => {
                 onConfirm={handleBulkShare}
                 type="info"
                 title="Share Credentials"
-                message={`Send login credentials to ${selectedIds.length} selected ${selectedIds.length === 1 ? 'student' : 'students'}?\n\nEach student will receive an individual email with their login credentials if available. Retained passwords will be cleared once accepted by the mail server.`}
-                confirmText={`Send to ${selectedIds.length} ${selectedIds.length === 1 ? 'Student' : 'Students'}`}
+                message={`Send login credentials to ${selectedIds.length} selected ${selectedIds.length === 1 ? 'account' : 'accounts'}?\n\nEach person will receive an individual email with their login credentials if available. Retained passwords will be cleared once accepted by the mail server.`}
+                confirmText={`Send to ${selectedIds.length} ${selectedIds.length === 1 ? 'Account' : 'Accounts'}`}
             />
             <ConfirmationModal
                 isOpen={bulkReplaceConfirmOpen}
@@ -1000,7 +1000,7 @@ const UserManagementPage = () => {
                         <Loader2 size={36} className="mx-auto text-[#5d8c2c] dark:text-emerald-400 animate-spin" />
                         <h3 className="pw-card-title">Sending Credentials</h3>
                         <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-400">
-                            Processing emails for {selectedIds.length} {selectedIds.length === 1 ? 'student' : 'students'}... Please do not close this window.
+                            Processing emails for {selectedIds.length} {selectedIds.length === 1 ? 'account' : 'accounts'}... Please do not close this window.
                         </p>
                     </div>
                 </div>

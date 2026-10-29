@@ -257,9 +257,9 @@ def test_5_role_permissions_and_cross_org_isolation(db, world, smtp):
     assert res_b["status"] == "unauthorized"
     assert res_b["name"] is None and res_b["email"] is None
 
-    # Target is Admin -> skipped
+    # Target is a Super Admin -> skipped (students and admins can be shared; a Super Admin never)
     admin_row = client.post(f"{USERS}/", headers=h.auth(platform["token"], a["org"].id), json={
-        "role": "ADMIN", "full_name": "Target Admin", "email": f"t.admin.{h.new_tag()}@students.example.org", "password": OLD_PW}).json()["user"]
+        "role": "SUPER_ADMIN", "full_name": "Target Super", "email": f"t.super.{h.new_tag()}@students.example.org", "password": OLD_PW}).json()["user"]
     world["created"].append(admin_row["id"])
 
     r_admin = replace_and_share_bulk(platform, [admin_row["id"]], org_id=a["org"].id)

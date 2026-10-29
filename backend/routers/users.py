@@ -44,6 +44,7 @@ _bulk_replace_limiter = SlidingWindowLimiter(limit=10, window_seconds=60)
 
 SUPER, ADMIN, STUDENT = (models.UserRole.SUPER_ADMIN.value, models.UserRole.ADMIN.value, models.UserRole.STUDENT.value)
 ASSIGNABLE_ROLES = (SUPER, ADMIN, STUDENT)
+SHAREABLE = credential_delivery.SHAREABLE_ROLES     # Share / Replace password & Share work for Student and Admin accounts (an Admin only for a Super Admin)
 
 # caller role -> roles it may create / manage
 CREATABLE_ROLES = {SUPER: (SUPER, ADMIN, STUDENT), ADMIN: (STUDENT,)}
@@ -239,7 +240,7 @@ def list_users(
         ))
     total = query.count()
     rows = query.order_by(models.User.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    ready = credential_delivery.ready_user_ids(db, [u.id for u in rows if u.role == STUDENT])
+    ready = credential_delivery.ready_user_ids(db, [u.id for u in rows if u.role in SHAREABLE])
     items = [{**_serialize(db, u), "credentials_ready": u.id in ready} for u in rows]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
@@ -287,7 +288,7 @@ def create_user(
         elif role == ADMIN:
             db.add(models.OrganizationMember(organization_id=ctx.tenant_id, user_id=user.id, role="ADMIN", status="active"))
         # SUPER_ADMIN is platform scope: no organization membership is needed (or granted)
-        if role == STUDENT:
+        if role in SHAREABLE:
             credential_delivery.retain(db, user, payload.password, ctx.user.id)   # encrypted + short-lived, for "Share"
         _audit(db, ctx, "user_created", user, f"role={role}")
         db.commit()  # user, profile/membership and audit row are one transaction
@@ -437,7 +438,7 @@ def reset_password(
     target.hashed_password = utils.get_password_hash(payload.new_password)
     target.password_changed = False
     revoked = local_auth.revoke_user_sessions(db, target.id)
-    if target.role == STUDENT:
+    if target.role in SHAREABLE:
         credential_delivery.retain(db, target, payload.new_password, ctx.user.id)   # the new password replaces any retained one
     else:
         credential_delivery.discard(db, target.id)
@@ -492,14 +493,14 @@ def bulk_share_credentials(
         profile = _profile(db, target)
         student_name = target.full_name or (profile.full_name if profile else None) or "Student"
 
-        if target.role != STUDENT:
+        if target.role not in SHAREABLE:
             results.append({
                 "id": user_id,
                 "name": student_name,
                 "email": target.email,
                 "status": "skipped",
-                "code": "NOT_A_STUDENT",
-                "message": "Login credentials can only be shared for student accounts.",
+                "code": "NOT_SHAREABLE",
+                "message": "Login credentials can only be shared for student and admin accounts.",
             })
             continue
 
@@ -613,15 +614,15 @@ def bulk_replace_passwords_and_share(
         profile = _profile(db, target)
         student_name = target.full_name or (profile.full_name if profile else None) or "Student"
 
-        if target.role != STUDENT:
+        if target.role not in SHAREABLE:
             results.append({
                 "id": user_id,
                 "name": student_name,
                 "email": target.email,
                 "status": "skipped",
                 "stage": "validation",
-                "code": "NOT_A_STUDENT",
-                "message": "Password replacement and credential sharing can only be performed for student accounts.",
+                "code": "NOT_SHAREABLE",
+                "message": "Password replacement and credential sharing can only be performed for student and admin accounts.",
             })
             continue
 
@@ -656,7 +657,7 @@ def bulk_replace_passwords_and_share(
                 "status": "failed",
                 "stage": "password_replacement",
                 "code": "PASSWORD_REPLACE_FAILED",
-                "message": "Failed to update student password.",
+                "message": "Failed to update the password.",
             })
             continue
         finally:
@@ -728,8 +729,8 @@ def share_credentials(
     or changed since) cannot be recovered: the answer says to use Replace password first. Nothing here returns or logs a password.
     """
     target = _load_target(db, ctx, user_id, manage=True)          # same organization and role-hierarchy rules as every other action
-    if target.role != STUDENT:
-        raise _fail(403, "Login credentials can only be shared for student accounts.")
+    if target.role not in SHAREABLE:
+        raise _fail(403, "Login credentials can only be shared for student and admin accounts.")
     if not target.is_active:
         raise _fail(409, "Activate this account before sharing its login credentials.")
     try:

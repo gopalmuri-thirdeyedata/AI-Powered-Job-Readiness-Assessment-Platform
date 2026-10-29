@@ -170,19 +170,39 @@ def test_unauthorized_callers_are_refused_and_nothing_is_sent(db, world, smtp):
     assert smtp.send_calls == 0 and pending(db, user["id"]) is not None                                 # untouched, still shareable by its owner
 
 
-def test_credentials_can_only_be_shared_for_student_accounts(db, world, smtp):
+def make_account(world, platform, org, role, name):
+    row = client.post(f"{USERS}/", headers=h.auth(platform["token"], org["org"].id), json={
+        "role": role, "full_name": name, "email": f"{name.lower().replace(' ', '.')}.{h.new_tag()}@students.example.org", "password": PW}).json()["user"]
+    world["created"].append(row["id"])
+    return row
+
+
+def test_a_super_admin_can_share_an_admins_credentials_and_the_admin_gets_the_admin_template(db, world, smtp):
     a, platform = world["a"], world["platform"]
-    admin_row = client.post(f"{USERS}/", headers=h.auth(platform["token"], a["org"].id), json={
-        "role": "ADMIN", "full_name": "Some Admin", "email": f"some.admin.{h.new_tag()}@students.example.org", "password": PW}).json()["user"]
-    super_row = client.post(f"{USERS}/", headers=h.auth(platform["token"], a["org"].id), json={
-        "role": "SUPER_ADMIN", "full_name": "Other Super", "email": f"other.super.{h.new_tag()}@students.example.org", "password": PW}).json()["user"]
-    world["created"] += [admin_row["id"], super_row["id"]]
-    for target in (admin_row, super_row):
-        r = share(platform, target["id"], org_id=a["org"].id)
-        assert r.status_code == 403 and "student" in r.json()["detail"].lower()
+    admin_row = make_account(world, platform, a, "ADMIN", "Prof Seema")
+    row, body = listed(platform, admin_row["id"], org_id=a["org"].id)
+    assert row["credentials_ready"] is True and PW not in body                  # an Admin's password is kept (encrypted, short-lived) like a student's
+    r = share(platform, admin_row["id"], org_id=a["org"].id)
+    assert r.status_code == 200 and r.json()["status"] == "sent" and PW not in r.text
+    (to_addr, msg), = smtp.sent
+    text, html = mail_text(msg)
+    assert to_addr == admin_row["email"] and msg["Subject"] == "Your PrepWin Admin Login Credentials"
+    assert PW in text and admin_row["email"] in text and "Your PrepWin admin account is ready." in text and "/admin/login" in text
+    assert "Recommended Websites" in text and "Recommended Websites" in html and "https://neev.learningpath.ai/" in html   # the learning links are in the admin e-mail too
+    assert "Student" not in msg["Subject"]
+    assert pending(db, admin_row["id"]) is None                                 # gone once the mail server accepted it
+    assert share(platform, admin_row["id"], org_id=a["org"].id).status_code == 409   # the password cannot be shared twice
+
+
+def test_an_admin_cannot_share_an_admin_and_a_super_admin_is_never_shared(db, world, smtp):
+    a, platform = world["a"], world["platform"]
+    admin_row = make_account(world, platform, a, "ADMIN", "Some Admin")
+    super_row = make_account(world, platform, a, "SUPER_ADMIN", "Other Super")
     assert share(a, admin_row["id"]).status_code == 403                                                    # an Admin cannot manage Admins at all
-    assert db.query(models.CredentialDelivery).filter(models.CredentialDelivery.user_id.in_([admin_row["id"], super_row["id"]])).count() == 0
-    assert smtp.send_calls == 0                                                                           # admin passwords are never retained
+    r = share(platform, super_row["id"], org_id=a["org"].id)
+    assert r.status_code == 403 and "student and admin" in r.json()["detail"].lower()
+    assert db.query(models.CredentialDelivery).filter(models.CredentialDelivery.user_id == super_row["id"]).count() == 0   # never kept for a Super Admin
+    assert pending(db, admin_row["id"]) is not None and smtp.send_calls == 0                              # the Admin's record is untouched by the refusals
 
 
 def test_deactivated_students_are_refused(db, world, smtp):
@@ -406,6 +426,8 @@ def test_template_escapes_html_and_has_no_placeholders():
     assert "A&lt;b&gt;&amp;&quot;x1Z9" in r.html and "a=1&amp;b=2" in r.html
     assert 'A<b>&"x1Z9\'' in r.text                                                                      # the plain-text part is verbatim
     assert "{{" not in r.html + r.text and r.subject == "Your PrepWin Student Login Credentials"
+    admin = cd.render_email(student_name=None, student_email="x@y.org", password="p", url="https://app.test/admin/login", role="ADMIN")
+    assert admin.subject == "Your PrepWin Admin Login Credentials" and admin.text.startswith("Hello Admin,") and "Recommended Websites" in admin.html and "Recommended Websites" in admin.text
     assert cd.render_email(student_name=None, student_email="x@y.org", password="p", url="u").text.startswith("Hello Student,")
 
 
