@@ -186,3 +186,12 @@ def test_a_provider_failure_gives_a_safe_message_not_the_upstream_body(db_sessio
     with pytest.raises(el.VoiceServiceError) as caught:
         el.realtime_caption_session()
     assert "401" not in caught.value.public_message and "upstream" not in caught.value.public_message
+
+
+def test_the_greeting_never_names_a_placeholder_company_when_none_was_entered():
+    from services import elevenlabs_service as el
+    without = el.build_voice_session("Gopal", "Full Stack Engineer", questions=[{"question": "A?"}])
+    assert "Full Stack Engineer position" in without["first_message"] and "Target Company" not in without["first_message"] + without["system_prompt"]
+    import inspect
+    from services import roleready_service
+    assert 'or "Target Company"' not in inspect.getsource(roleready_service.init_voice_interview_session)      # the init builds "<role> at <company>" only for a real company

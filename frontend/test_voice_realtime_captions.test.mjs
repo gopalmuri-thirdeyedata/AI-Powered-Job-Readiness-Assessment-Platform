@@ -282,7 +282,7 @@ describe('the interview screen and the API', () => {
         const bubbles = read('./src/components/interview/LiveCaptionBubbles.jsx');
         assert.ok(page.includes("voice.on('caption'") && page.includes("caption?.role === 'assistant'"));
         assert.ok(page.includes('<AiLiveCaption caption={aiCaption} />') && page.includes('<UserLiveCaption'));
-        assert.ok(page.includes('pendingAiRef.current.push(msg.transcript)'), 'the finished interviewer line waits for the speech to end');
+        assert.ok(page.includes('pendingAiRef.current.push({ text: msg.transcript, q: msg.questionNo })'), 'the finished interviewer line waits for the speech to end');
         const speechEnd = page.slice(page.indexOf("voice.on('speech-end'"), page.indexOf("voice.on('volume-level'"));
         assert.ok(speechEnd.includes('flushInterviewerLines()'));
         assert.ok(bubbles.includes('data-testid="live-caption"') && bubbles.includes('data-testid="ai-live-caption"'));

@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from typing import Iterator, Optional
 
@@ -24,6 +25,30 @@ load_dotenv()
 
 DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 REQUEST_TIMEOUT_SECONDS = 30
+# One shared HTTP client per worker process. httpx.post()/httpx.stream() build a brand-new client for every call, which means loading the CA
+# certificates and doing a fresh TLS handshake each time; with 20 simultaneous interview turns that setup (CPU bound, so it serialises) pushed the
+# time to the first token from about 1.2 s to 5-7 s. A shared client reuses the SSL context and keeps connections alive (measured: 20 at once, p50 1.2 s).
+_client: Optional[httpx.Client] = None
+_client_lock = threading.Lock()
+
+
+def _http() -> httpx.Client:
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, limits=httpx.Limits(max_connections=200, max_keepalive_connections=50, keepalive_expiry=20.0))
+    return _client
+
+
+def _http_post(url, **kwargs):
+    return _http().post(url, **kwargs)
+
+
+def _http_stream(method, url, **kwargs):
+    return _http().stream(method, url, **kwargs)
+
+
 FAST_MAX_OUTPUT_TOKENS = 256  # a spoken reply is one to three short sentences (<= 700 chars)
 RETRY_BACKOFF_SECONDS = (1,)  # 1 retry for transient errors during interactive assessment generation
 GEMINI_REST_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -203,7 +228,7 @@ def _generate_via_rest(api_key, prompt, system_prompt, temperature, json_mode, t
         "generationConfig": generation_config,
     }
     try:
-        resp = httpx.post(
+        resp = _http_post(
             GEMINI_REST_URL.format(model=model_name),
             json=body,
             headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
@@ -331,7 +356,7 @@ def call_gemini_grounded(prompt: str, system_prompt: str = "You are a helpful as
         "generationConfig": {"temperature": temperature},
     }
     try:
-        resp = httpx.post(
+        resp = _http_post(
             GEMINI_REST_URL.format(model=get_model_name()), json=body,
             headers={"x-goog-api-key": get_gemini_api_key(), "Content-Type": "application/json"}, timeout=timeout,
         )
@@ -374,7 +399,7 @@ def stream_gemini_text(prompt: str, system_prompt: str = "You are a helpful assi
     url = GEMINI_REST_URL.format(model=model_name).replace(":generateContent", ":streamGenerateContent") + "?alt=sse"
     produced = False
     try:
-        with httpx.stream("POST", url, json=body, timeout=REQUEST_TIMEOUT_SECONDS,
+        with _http_stream("POST", url, json=body, timeout=REQUEST_TIMEOUT_SECONDS,
                           headers={"x-goog-api-key": get_gemini_api_key(), "Content-Type": "application/json"}) as resp:
             if resp.status_code != 200:
                 resp.read()

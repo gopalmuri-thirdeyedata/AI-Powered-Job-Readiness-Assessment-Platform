@@ -676,6 +676,7 @@ def voice_interview_turn_stream(
     audio: Optional[UploadFile] = File(None),
     history: str = Form("[]"),
     opening: bool = Form(False),
+    hint: str = Form(""),
     session: models.RoleReadySession = Depends(get_authorized_session),
     db: Session = Depends(database.get_db)
 ):
@@ -690,7 +691,7 @@ def voice_interview_turn_stream(
         raise HTTPException(status_code=400, detail="Invalid conversation history.")
     events = roleready_service.voice_interview_turn_stream(
         db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
-        parsed_history, opening)
+        parsed_history, opening, hint)
     return StreamingResponse(
         (json.dumps(event, separators=(",", ":")) + "\n" for event in events),
         media_type="application/x-ndjson",

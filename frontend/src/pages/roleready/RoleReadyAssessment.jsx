@@ -94,12 +94,12 @@ const SUBMIT_TIPS = [
     'Busy sandbox? Running every hidden test can take up to a minute.',
 ];
 
-// Canonical limits (services/assessment_policy.py): 20 minutes per section, 60 minutes overall. These are only the display
+// Canonical limits (services/assessment_policy.py): 20 minutes for Aptitude and Coding, 10 for the Interview, 60 overall. These are only the display
 // placeholder shown until the server answers; the countdown is always re-hydrated from the server's remaining_seconds.
 const ROUND_DURATIONS = {
     aptitude: 20 * 60,
     coding: 20 * 60,
-    interview: 20 * 60
+    interview: 10 * 60
 };
 const DRAFT_DEBOUNCE_MS = 4000;
 
@@ -1017,11 +1017,12 @@ export const AssessmentWorkspace = ({
                 setCurrentSpeaker('ai');
             });
 
-            const addEntry = (role, text) => {
+            const addEntry = (role, text, q) => {
                 const newEntry = {
                     id: Date.now() + Math.random(),
                     role,
                     text,
+                    ...(Number.isInteger(q) ? { q } : {}),         // which prepared question this line asked (hidden tag from the server)
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 };
                 setVoiceTranscript(prev => [...prev, newEntry]);
@@ -1030,7 +1031,7 @@ export const AssessmentWorkspace = ({
             };
             const flushInterviewerLines = () => {
                 setAiCaption(null);
-                pendingAiRef.current.splice(0).forEach((line) => addEntry('ai', line));
+                pendingAiRef.current.splice(0).forEach((line) => addEntry('ai', line.text, line.q));
             };
 
             voice.on('speech-end', () => {
@@ -1054,13 +1055,14 @@ export const AssessmentWorkspace = ({
                         setLiveCaption('');                  // the real transcript replaces the live one
                         addEntry('user', msg.transcript);
                     } else {
-                        pendingAiRef.current.push(msg.transcript);       // shown word by word while spoken, then added to the transcript
+                        pendingAiRef.current.push({ text: msg.transcript, q: msg.questionNo });       // shown word by word while spoken, then added to the transcript
                     }
 
                     // Automatically detect progression across questions
                     if (role === 'ai') {
                         setInterviewQuestions(qs => {
                             const lower = (msg.transcript || "").toLowerCase();
+                            if (Number.isInteger(msg.questionNo) && msg.questionNo >= 1 && msg.questionNo <= qs.length) setCurrentInterviewIndex(msg.questionNo - 1);
                             qs.forEach((q, idx) => {
                                 if (
                                     lower.includes(`question ${idx + 1}`) || 
@@ -1171,7 +1173,9 @@ export const AssessmentWorkspace = ({
             active_follow_up_prompt: null
         }));
 
-        let currentQIdx = 0;
+        // -1 = the conversation before the first prepared question (introduction, getting to know the candidate): it belongs to no question.
+        // The server tags the reply that starts a prepared question (item.q), so the split no longer depends on the interviewer saying "Question N".
+        let currentQIdx = -1;
         const numberWordMap = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
 
         for (const item of (transcript || [])) {
@@ -1185,7 +1189,9 @@ export const AssessmentWorkspace = ({
                 const ordMatch = lower.match(/\b(first|second|third|fourth|fifth)\s+question\b/i);
 
                 let detectedIdx = null;
-                if (qNumMatch && qNumMatch[1]) {
+                if (Number.isInteger(item.q) && item.q >= 1) {
+                    detectedIdx = item.q - 1;
+                } else if (qNumMatch && qNumMatch[1]) {
                     detectedIdx = parseInt(qNumMatch[1], 10) - 1;
                 } else if (ordMatch && ordMatch[1]) {
                     detectedIdx = (numberWordMap[ordMatch[1].toLowerCase()] || 1) - 1;
@@ -1199,13 +1205,13 @@ export const AssessmentWorkspace = ({
                     currentQIdx = detectedIdx;
                     buckets[currentQIdx].dialogue.push(`Interviewer: ${text}`);
                     buckets[currentQIdx].active_follow_up_prompt = null;
-                } else {
+                } else if (currentQIdx >= 0) {
                     buckets[currentQIdx].dialogue.push(`Interviewer: ${text}`);
                     if (text.includes('?') || lower.includes('could you') || lower.includes('can you') || lower.includes('tell me more') || lower.includes('elaborate')) {
                         buckets[currentQIdx].active_follow_up_prompt = text;
                     }
                 }
-            } else if (item.role === 'user') {
+            } else if (item.role === 'user' && currentQIdx >= 0) {
                 buckets[currentQIdx].dialogue.push(`Candidate: ${text}`);
                 if (buckets[currentQIdx].active_follow_up_prompt) {
                     buckets[currentQIdx].follow_ups.push({
@@ -1681,7 +1687,7 @@ export const AssessmentWorkspace = ({
                                 {[
                                     { label: 'Round 1', mins: '20 Mins', title: 'Aptitude & Reasoning', Icon: BrainCircuit, desc: 'Role-tailored domain logic, psychometrics, and quantitative problem solving questions. Counts for one third of your overall score.', hover: 'hover:border-emerald-300 hover:shadow-emerald-100', lab: 'text-emerald-700', pill: 'bg-emerald-100 text-emerald-800', ic: 'text-emerald-600' },
                                     { label: 'Round 2', mins: '20 Mins', title: 'Sandboxed Coding', Icon: Code2, desc: 'Real coding problems executed in an isolated runtime container against public and hidden test cases.', hover: 'hover:border-cyan-300 hover:shadow-cyan-100', lab: 'text-cyan-700', pill: 'bg-cyan-100 text-cyan-800', ic: 'text-cyan-600' },
-                                    { label: 'Round 3', mins: '20 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
+                                    { label: 'Round 3', mins: '10 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
                                 ].map((r, i) => (
                                     <Enter
                                         key={r.label}

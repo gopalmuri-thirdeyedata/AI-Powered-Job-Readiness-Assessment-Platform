@@ -9,7 +9,7 @@ const SECTION_ICONS = { aptitude: ListChecks, coding: Code2, interview: Brain };
 const DEFAULT_SECTIONS = [
     { key: 'aptitude', label: 'Aptitude', minutes: 20 },
     { key: 'coding', label: 'Coding', minutes: 20 },
-    { key: 'interview', label: 'AI Technical Interview', minutes: 20 },
+    { key: 'interview', label: 'AI Technical Interview', minutes: 10 },
 ];
 
 /**

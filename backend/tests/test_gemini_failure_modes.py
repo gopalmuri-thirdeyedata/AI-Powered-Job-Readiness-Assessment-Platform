@@ -51,7 +51,7 @@ def fake_gemini(monkeypatch, responder):
         assert headers["x-goog-api-key"] == FAKE_KEY
         return responder(calls["n"], timeout)
 
-    monkeypatch.setattr(gemini_client.httpx, "post", post)
+    monkeypatch.setattr(gemini_client, "_http_post", post)
     return calls
 
 

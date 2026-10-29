@@ -3,7 +3,7 @@ Canonical timing and scoring policy shared by the Student Platform (RoleReady se
 Admin Recruitment shared-link assessment.
 
 Single source of truth for:
-  * section limits (20 / 20 / 20 minutes) and the 60-minute overall deadline,
+  * section limits (Aptitude 20, Coding 20, Interview 10 minutes) and the 60-minute overall deadline,
   * the submission arrival window,
   * the equal-weight overall score  (Aptitude % + Coding % + Interview %) / 3,
   * the incomplete-attempt rule (any missing section -> overall is None, never a fabricated zero).
@@ -16,8 +16,15 @@ from typing import Any, Dict, Optional
 
 SECTION_ORDER = ("APTITUDE", "CODING", "INTERVIEW")
 
-SECTION_MINUTES = 20
+SECTION_MINUTES = 20                       # the default (Aptitude and Coding)
+SECTION_MINUTES_BY_SECTION = {"APTITUDE": 20, "CODING": 20, "INTERVIEW": 10}
 OVERALL_MINUTES = 60
+
+
+def section_minutes(section: Optional[str]) -> int:
+    """The time limit of one section: the interview is a 10-minute conversation, the other two sections have 20 minutes."""
+    return SECTION_MINUTES_BY_SECTION.get(str(section or "").upper(), SECTION_MINUTES)
+
 # A final submission dispatched before a deadline may still arrive up to this many seconds later.
 TRANSIT_WINDOW_SECONDS = 10
 
@@ -60,9 +67,9 @@ def overall_deadline(started_at: datetime) -> datetime:
     return started_at + timedelta(minutes=OVERALL_MINUTES)
 
 
-def section_deadline(section_started_at: datetime, overall_deadline_at: Optional[datetime]) -> datetime:
+def section_deadline(section_started_at: datetime, overall_deadline_at: Optional[datetime], section: Optional[str] = None) -> datetime:
     """A section never outlives the overall deadline, and the overall deadline never moves."""
-    deadline = section_started_at + timedelta(minutes=SECTION_MINUTES)
+    deadline = section_started_at + timedelta(minutes=section_minutes(section))
     return min(deadline, overall_deadline_at) if overall_deadline_at is not None else deadline
 
 

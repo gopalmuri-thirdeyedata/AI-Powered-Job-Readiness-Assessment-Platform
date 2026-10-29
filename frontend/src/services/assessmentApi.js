@@ -68,7 +68,7 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
         deadline_at: state?.section?.deadline_at,
         started_at: state?.section?.started_at,
         server_time: state?.server_time,
-        time_limit_minutes: 20,
+        time_limit_minutes: state?.section?.limit_minutes ?? 20,
     });
     const remember = (state) => {
         lastState = state;

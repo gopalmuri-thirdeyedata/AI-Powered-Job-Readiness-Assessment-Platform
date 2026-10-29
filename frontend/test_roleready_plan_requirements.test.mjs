@@ -27,10 +27,11 @@ describe('RoleReady implementation plan - frontend requirements', () => {
         assert.ok(assessmentCode.split('syncTiming(').length - 1 >= 6);
     });
 
-    test('Canonical limits are shown: 20 minutes per section, 60 overall, equal split (no 15/30/15 left)', () => {
-        assert.ok(assessmentCode.includes('aptitude: 20 * 60') && assessmentCode.includes('coding: 20 * 60') && assessmentCode.includes('interview: 20 * 60'));
+    test('Canonical limits are shown: 20 / 20 / 10 minutes, 60 overall, equal split (no 15/30/15 left)', () => {
+        assert.ok(assessmentCode.includes('aptitude: 20 * 60') && assessmentCode.includes('coding: 20 * 60') && assessmentCode.includes('interview: 10 * 60'));
         assert.ok(!assessmentCode.includes("mins: '15 Mins'") && !assessmentCode.includes("mins: '30 Mins'"));
-        assert.strictEqual(assessmentCode.split("mins: '20 Mins'").length - 1, 3);
+        assert.strictEqual(assessmentCode.split("mins: '20 Mins'").length - 1, 2);
+        assert.strictEqual(assessmentCode.split("mins: '10 Mins'").length - 1, 1);
         assert.ok(assessmentCode.includes('aria-label="Overall time remaining"'), 'the overall 60-minute countdown is displayed');
     });
 

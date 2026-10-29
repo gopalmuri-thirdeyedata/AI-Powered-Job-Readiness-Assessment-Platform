@@ -110,3 +110,17 @@ describe('waiting for the candidate to finish (adaptive end of answer)', () => {
         assert.deepEqual(run(0.004, 5700, 5700 + 900, 4000), ['speech-end']);
     });
 });
+
+describe('the transcript carries the hidden prepared-question tag, so scoring does not depend on spoken words', () => {
+    test('the session passes the tag on, the page keeps it, and the split by question uses it', async () => {
+        const fs = await import('node:fs');
+        const session = fs.readFileSync(new URL('./src/utils/voiceInterviewSession.js', import.meta.url), 'utf8');
+        assert.ok(session.includes('questionNo: Number.isInteger(event.question_no)') && session.includes('questionNo: Number.isInteger(result.question_no)'));
+        assert.ok(session.includes('...(Number.isInteger(event.question_no) ? { q: event.question_no } : {})'), 'the history sent back keeps the tag');
+        const page = fs.readFileSync(new URL('./src/pages/roleready/RoleReadyAssessment.jsx', import.meta.url), 'utf8');
+        assert.ok(page.includes('addEntry(\'ai\', line.text, line.q)') && page.includes('let currentQIdx = -1;') && page.includes('Number.isInteger(item.q) && item.q >= 1'));
+        assert.ok(!page.includes('let currentQIdx = 0;'), 'the introduction is no longer filed under Question 1');
+        const report = fs.readFileSync(new URL('./src/pages/roleready/RoleReadyReport.jsx', import.meta.url), 'utf8');
+        assert.ok(report.includes("not_assessed: { label: 'Not reached'"), 'an unreached question is shown as not reached, not as 0%');
+    });
+});

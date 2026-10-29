@@ -145,9 +145,9 @@ def test_voice_init_defines_the_shared_voice_interviewer_within_the_section_limi
     r = client.post(h.sess_url(s, "voice-init"), headers=h.sh(s))
     assert r.status_code == 200
     body = r.json()
-    assert body["voiceConfig"]["maxDurationSeconds"] == 1200 - 300 and "Test Candidate" in body["voiceConfig"]["firstMessage"]
-    assert body["remaining_seconds"] == 900 and len(body["questions"]) == 5
-    assert fake_voice["max_duration_seconds"] == 900 and fake_voice["candidate_name"] == "Test Candidate"
+    assert body["voiceConfig"]["maxDurationSeconds"] == 600 - 300 and "Test Candidate" in body["voiceConfig"]["firstMessage"]
+    assert body["remaining_seconds"] == 300 and len(body["questions"]) == 5
+    assert fake_voice["max_duration_seconds"] == 300 and fake_voice["candidate_name"] == "Test Candidate"
     blob = r.text + json.dumps(fake_voice["questions"])
     assert "evaluation_criteria" not in blob and "expected_technical_concepts" not in blob   # the rubric never reaches the browser or the voice model
     assert "system_prompt" not in r.text and "assistantId" not in r.text                     # the interview prompt stays on the server
