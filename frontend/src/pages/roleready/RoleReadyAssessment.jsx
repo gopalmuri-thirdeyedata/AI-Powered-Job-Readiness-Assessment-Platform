@@ -44,6 +44,7 @@ import { Counter } from '../../components/home/primitives';
 import { StepHighlight, PopIn, Stagger, StaggerItem, SlideSwap, ProgressBar, Enter } from '../../components/roleready-ui/assessmentMotion';
 import { Editor } from '@monaco-editor/react';
 import AssessmentCodingWorkspace from '../../components/coding/AssessmentCodingWorkspace';
+import { useWorkspaceTheme } from '../../components/coding/workspaceParts';
 import { AiLiveCaption, UserLiveCaption } from '../../components/interview/LiveCaptionBubbles';
 import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
@@ -522,6 +523,7 @@ export const AssessmentWorkspace = ({
     // ── Round 2: Coding State ────────────────────────────────────────
     const [codingProblems, setCodingProblems] = useState([]);
     const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
+    const [workspaceTheme, toggleWorkspaceTheme] = useWorkspaceTheme();   // dark like LeetCode, or light
     const selectedLanguage = 'python'; // Python only, for students and shared-link candidates alike
     const [codeSolutions, setCodeSolutions] = useState({}); // { [probId]: { code: string, language: string } }
     const [codeOutput, setCodeOutput] = useState(null);
@@ -2349,32 +2351,32 @@ export const AssessmentWorkspace = ({
                                 <p className="text-xs text-slate-600">Complete and submit the Aptitude Round to unlock this challenge.</p>
                             </div>
                         ) : (
-                            <div className="space-y-4">
+                            <div className={`space-y-2 rounded-2xl ${workspaceTheme === 'dark' ? 'dark bg-[#0f0f0f] p-2 sm:p-3' : ''}`} data-workspace-theme={workspaceTheme}>
                                 {/* Students: one slim bar (title, problems, camera thumbnail, submit) so the workspace gets the screen */}
-                                    <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+                                    <div className="bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#2f2f2f] rounded-xl px-4 py-2.5 shadow-sm dark:shadow-none">
                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
                                             <div className="min-w-0 flex-1 sm:flex-none order-1">
-                                                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                                <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                                     <Code2 className="w-5 h-5 text-cyan-600 shrink-0" />
                                                     <span className="truncate">Round 2: Practical Coding</span>
                                                 </h2>
                                                 <p className="hidden sm:block text-[11px] text-slate-500 mt-0.5">Solve each problem, run the public tests, then submit everything to unlock the interview.</p>
                                             </div>
 
-                                            <div className="order-3 sm:order-2 flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 max-w-full overflow-x-auto [&>*]:shrink-0">
+                                            <div className="order-3 sm:order-2 flex items-center gap-1 bg-slate-100 dark:bg-[#2b2b2b] p-1 rounded-xl border border-slate-200 dark:border-[#2f2f2f] max-w-full overflow-x-auto [&>*]:shrink-0">
                                                 {codingProblems.map((prob, idx) => (
                                                     <button
                                                         key={prob.id}
                                                         type="button"
                                                         onClick={() => { setCurrentProblemIndex(idx); setCodeOutput(null); }}
                                                         className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                                                            currentProblemIndex === idx ? 'text-cyan-700' : 'text-slate-600 hover:text-slate-900'
+                                                            currentProblemIndex === idx ? 'text-cyan-700 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                                                         }`}
                                                     >
                                                         {currentProblemIndex === idx && (
                                                             <motion.span
                                                                 layoutId="pw-problem-tab"
-                                                                className="absolute inset-0 -z-10 rounded-lg bg-white border border-slate-200 shadow-xs"
+                                                                className="absolute inset-0 -z-10 rounded-lg bg-white dark:bg-[#3a3a3a] border border-slate-200 dark:border-transparent shadow-xs"
                                                                 transition={{ type: 'spring', stiffness: 420, damping: 36 }}
                                                             />
                                                         )}
@@ -2405,7 +2407,7 @@ export const AssessmentWorkspace = ({
                                                 disabled={isRunningCode}
                                                 onClick={handleRunCode}
                                                 title="Run (Ctrl + ')"
-                                                className="order-4 flex-1 sm:flex-none min-h-[44px] px-4 rounded-xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-all active:scale-[0.97] shrink-0"
+                                                className="order-4 flex-1 sm:flex-none min-h-[44px] px-4 rounded-xl border border-cyan-200 dark:border-[#3a3a3a] bg-cyan-50 dark:bg-[#2b2b2b] hover:bg-cyan-100 dark:hover:bg-[#3a3a3a] text-cyan-800 dark:text-slate-100 text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-all active:scale-[0.97] shrink-0"
                                             >
                                                 <Play className="w-4 h-4" />
                                                 <span>{isRunningCode ? 'Running…' : 'Run'}</span>
@@ -2422,7 +2424,7 @@ export const AssessmentWorkspace = ({
 
                                             {/* Run and Submit sit together in the middle (like LeetCode's top bar); the camera is apart, behind a divider */}
                                             <div className="hidden sm:block sm:flex-1 sm:order-6" aria-hidden="true" />
-                                            <div className="hidden sm:block sm:order-7 w-px h-14 bg-slate-200" aria-hidden="true" />
+                                            <div className="hidden sm:block sm:order-7 w-px h-14 bg-slate-200 dark:bg-[#3a3a3a]" aria-hidden="true" />
                                         </div>
 
                                         {codingSubmitError && !isSubmittingCoding && (
@@ -2445,6 +2447,8 @@ export const AssessmentWorkspace = ({
                                         const ranWithResults = codeOutput && (codeOutput.test_results || []).length > 0;
                                         return (
                                             <AssessmentCodingWorkspace
+                                                themeIsDark={workspaceTheme === 'dark'}
+                                                onToggleTheme={toggleWorkspaceTheme}
                                                 key={probId}
                                                 problem={activeProblem}
                                                 code={curSol.code}

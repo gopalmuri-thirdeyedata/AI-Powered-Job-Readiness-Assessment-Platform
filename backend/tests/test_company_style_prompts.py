@@ -195,6 +195,7 @@ def test_ai_generated_questions_can_never_claim_a_source():
     assert all("provenance" not in q for q in built[0])
 
     ai_coding = [{"title": "P", "description": "d", "provenance": {"company": "Google"},
+                  "starter_code": {"python": "def p(n):\n    pass\n\nif __name__ == '__main__':\n    print(p(int(input())))\n"},
                   "public_test_cases": [{"input": "1", "expected_output": "1"}],
                   "hidden_test_cases": [{"input": str(i), "expected_output": str(i)} for i in range(3)]}]
     built = roleready_service._build_coding_payload(ai_coding, 1)
@@ -296,7 +297,7 @@ def test_aptitude_falls_back_to_generator_when_web_finds_nothing(web_on, rr_prom
 
 def test_coding_merges_web_problem_with_provenance(web_on, rr_prompts):
     problem = {"title": "Real Problem", "difficulty": "Medium", "description": "d", "input_format": "i", "output_format": "o",
-               "constraints": "c", "starter_code": {"python": "def solve():\n    pass"},
+               "constraints": "c", "starter_code": {"python": "def real_problem(n):\n    pass\n\nif __name__ == '__main__':\n    print(real_problem(int(input())))\n"},
                "public_test_cases": [{"input": "1", "expected_output": "1", "explanation": "e"}],
                "hidden_test_cases": [{"input": str(i), "expected_output": str(i)} for i in range(3)],
                "company": "Acme Corp", "year": 2022, "source_domain": "geeksforgeeks.org"}

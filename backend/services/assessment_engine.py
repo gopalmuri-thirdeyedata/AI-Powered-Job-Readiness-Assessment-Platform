@@ -458,7 +458,7 @@ def adapt_blueprint(bp: Dict[str, Any]) -> Dict[str, Tuple[List[Dict[str, Any]],
         names = ", ".join(f"`{n}`" for n in params)
         # LeetCode structure (Python only): the student sees `class Solution` with just the signature; the server keeps the input / output driver
         starter = _python_starter(p, params)
-        parts = function_style.to_function_style(starter)
+        parts = function_style.rename_function(function_style.to_function_style(starter), p["title"])
         if parts:
             input_format = (f"Your function receives the parameter(s): {names}." if names else "Your function takes no parameters.")
             output_format = "Return the result."

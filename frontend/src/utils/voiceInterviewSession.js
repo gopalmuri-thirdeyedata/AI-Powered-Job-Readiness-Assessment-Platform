@@ -6,7 +6,9 @@ import { RealtimeCaptions } from './liveCaptions';
 //   start(config) / stop() / setMuted(bool) / setInputDevicesAsync({ audioDeviceId }) / removeAllListeners()
 // The turn-taking logic (UtteranceDetector) is pure and framework-free so it can be unit tested without a browser or a microphone.
 
-export const END_SILENCE_MS = 1100;        // pause that ends an answer: long enough to think mid-answer, short enough that the reply feels prompt
+export const END_SILENCE_MS = 2200;        // pause that ends an answer: a real interviewer lets the candidate think and finish the thought
+export const END_SILENCE_FINISHED_MS = 1800;     // ... a little less when the last words already read as a finished sentence
+export const END_SILENCE_UNFINISHED_MS = 4000;   // ... and longer when the sentence is left hanging ("and", "because", a trailing comma)
 export const MIN_SPEECH_MS = 400;          // shorter sounds (a cough, a click) are discarded, not sent
 export const MAX_UTTERANCE_MS = 90000;     // an answer is cut here and sent
 export const SPEECH_CONFIRM_MS = 120;      // sound must last this long to count as speech
@@ -16,6 +18,21 @@ export const CALIBRATE_MS = 600;           // the first moments of listening tea
 export const NOISE_FLOOR_CAP = 0.02;
 export const POLL_MS = 50;
 const MIN_THRESHOLD = 0.015;
+
+// Words that cannot end a thought: the candidate is still going.
+const HANGING_WORDS = new Set(['and', 'but', 'so', 'because', 'or', 'then', 'which', 'that', 'like', 'um', 'uh', 'umm', 'uhh', 'hmm', 'well', 'actually',
+    'basically', 'with', 'to', 'of', 'in', 'on', 'for', 'as', 'is', 'are', 'was', 'were', 'the', 'a', 'an', 'if', 'when', 'where', 'while', 'also', 'my', 'we', 'i']);
+
+/** How long a pause must last before the answer counts as finished, judged from the words heard so far (live captions). */
+export const endSilenceFor = (text) => {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return END_SILENCE_MS;
+    const last = words[words.length - 1];
+    const lastWord = last.toLowerCase().replace(/[^a-z']/g, '');
+    if (/[,;:…-]$/.test(last) || HANGING_WORDS.has(lastWord)) return END_SILENCE_UNFINISHED_MS;
+    if (/[.?!]$/.test(last) && words.length >= 5) return END_SILENCE_FINISHED_MS;
+    return END_SILENCE_MS;
+};
 
 /** Root-mean-square loudness (0..1) of a block of samples. */
 export const rms = (samples) => {
@@ -49,7 +66,7 @@ export class UtteranceDetector {
         this.noiseFloor = this.noiseFloor || 0.005;
     }
 
-    push(level, now) {
+    push(level, now, endSilenceMs = END_SILENCE_MS) {
         if (!this.calibrated) {
             if (this.calibStart === null) this.calibStart = now;
             this.calibSum += level;
@@ -78,7 +95,7 @@ export class UtteranceDetector {
         }
         if (level > threshold * 0.7) this.lastLoudAt = now;      // hysteresis: a dip between words is not a pause
         const forced = now - this.speechStartedAt >= MAX_UTTERANCE_MS;
-        if (forced || now - this.lastLoudAt >= END_SILENCE_MS) {
+        if (forced || now - this.lastLoudAt >= endSilenceMs) {
             const spokenMs = this.lastLoudAt - this.speechStartedAt;
             this.speaking = false;
             this.loudSince = null;
@@ -179,6 +196,7 @@ export class VoiceInterviewSession {
     removeAllListeners() { this.listeners = {}; }
 
     emit(event, payload) {
+        if (event === 'caption' && payload?.role === 'user') this.userCaptionText = payload.text || '';      // the words heard so far decide how long to wait
         for (const handler of this.listeners[event] || []) {
             try { handler(payload); } catch (e) { console.error(`[voice] ${event} handler failed`, e); }
         }
@@ -379,7 +397,7 @@ export class VoiceInterviewSession {
         const now = Date.now();
         if (now - this.lastActivityAt > this.silenceTimeoutMs) { this.finish(); return; }
         if (this.muted) return;
-        const event = this.detector.push(this.micLevel(), now);
+        const event = this.detector.push(this.micLevel(), now, endSilenceFor(this.userCaptionText));
         if (event === 'speech-start') {
             this.lastActivityAt = now;
         } else if (event === 'speech-end') {

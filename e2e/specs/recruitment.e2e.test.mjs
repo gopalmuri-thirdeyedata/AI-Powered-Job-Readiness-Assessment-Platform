@@ -100,12 +100,12 @@ describe('the full journey in the browser', () => {
       assert.doesNotMatch(await U.editorText(ui), /import|__main__|stdin|json/i, 'the candidate sees only class Solution and the signature');
       assert.equal(await ui.page.getByRole('button', { name: /Java/ }).count(), 0, 'Python is the only language');
       await U.setCode(ui, U.SOLUTIONS.sumPython);
-      assert.match(await U.runPublicTests(ui), /Sample tests passed/);
+      assert.match(await U.runPublicTests(ui), /Accepted/);
       await ui.page.getByRole('button', { name: 'Problem 2' }).click();
       await U.setCode(ui, U.SOLUTIONS.pythonRuntimeError);
       assert.match(await U.runPublicTests(ui), /ZeroDivisionError|Runtime Error/i);
       await U.setCode(ui, U.SOLUTIONS.reversePython);
-      assert.match(await U.runPublicTests(ui), /Sample tests passed/);
+      assert.match(await U.runPublicTests(ui), /Accepted/);
       const executed = (await stack.info()).executions;
       assert.ok(executed.includes('python') && !executed.includes('java'), `only Python was used: ${executed}`);
 

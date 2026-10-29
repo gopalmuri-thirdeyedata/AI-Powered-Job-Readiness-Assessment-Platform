@@ -232,7 +232,7 @@ def test_stdin_input_cap_enforced():
 
 
 # ---- the shared link now works exactly like the student platform: LeetCode structure, custom input, same interview endpoints ----
-CLASS_SOLUTION = "class Solution:\n    def solve(self, a, b):\n        return a + b\n"
+CLASS_SOLUTION = "class Solution:\n    def sum_two_numbers(self, a, b):\n        return a + b\n"
 
 
 def test_candidates_write_only_the_function_and_the_server_adds_the_driver(db, env, monkeypatch):
@@ -243,14 +243,14 @@ def test_candidates_write_only_the_function_and_the_server_adds_the_driver(db, e
     assert "driver" not in problem and "__main__" not in problem                      # the harness never reaches the browser
     body = run(s, code=CLASS_SOLUTION).json()
     assert body["all_passed"] is True and all(t["passed"] for t in body["test_results"])
-    wrong = run(s, code="class Solution:\n    def solve(self, a, b):\n        return a - b\n").json()
+    wrong = run(s, code="class Solution:\n    def sum_two_numbers(self, a, b):\n        return a - b\n").json()
     assert wrong["all_passed"] is False
 
 
 def test_runtime_errors_report_the_candidates_own_line_numbers(db, env, monkeypatch):
     h.install_local_sandbox(monkeypatch)
     s = coding_session(db, env)
-    body = run(s, code="class Solution:\n    def solve(self, a, b):\n        return a // 0\n").json()
+    body = run(s, code="class Solution:\n    def sum_two_numbers(self, a, b):\n        return a // 0\n").json()
     assert body["error_type"] == "Runtime Error"
     assert "line 3" in json.dumps(body)                                                # the hidden import line is not counted
 

@@ -79,7 +79,7 @@ def test_every_offline_problem_in_the_codebase_converts():
     from services import gemini_mock_fixtures, roleready_service
     pattern = re.compile(r'"python": "((?:[^"\\]|\\.)*)"')
     starters = [s.encode().decode("unicode_escape") for src in (roleready_service, gemini_mock_fixtures) for s in pattern.findall(inspect.getsource(src))]
-    real = [s for s in starters if "__main__" in s and "write code" not in s]
+    real = [s for s in starters if "__main__" in s and "write code" not in s and "meaningful_function_name" not in s]
     assert len(real) >= 15
     for starter in real:
         parts = fs.to_function_style(starter)
@@ -360,3 +360,17 @@ def test_every_problem_shows_two_examples_without_losing_the_graded_case():
     client, keys = engine.adapt_blueprint(bp)["CODING"]
     assert len(client[0]["public_test_cases"]) == 2
     assert len(keys[client[0]["id"]]["hidden_test_cases"]) == len(bp["coding_problems"][0]["hidden_test_cases"])
+
+
+def test_each_problem_gets_its_own_function_name_and_must_take_parameters():
+    from services import function_style as fs, roleready_service
+    parts = fs.rename_function(fs.to_function_style("def solve(a, b):\n    pass\n\nif __name__ == '__main__':\n    print(solve(1, 2))\n"), "Database Schema Versioning")
+    assert parts["function"] == "database_schema_versioning" and "def database_schema_versioning(self, a, b):" in parts["starter"]
+    assert "Solution().database_schema_versioning(" in parts["driver"] and "solve" not in parts["starter"]
+    kept = fs.rename_function(fs.to_function_style("def two_sum(a):\n    pass\n\nif __name__ == '__main__':\n    print(two_sum(1))\n"), "Two Sum")
+    assert kept["function"] == "two_sum"                                     # a meaningful name from the generator is kept
+    assert fs.readable_name("1234") == "" and fs.readable_name("LRU Cache!") == "lru_cache"
+    # a generated starter that reads stdin inside a no-argument function is not LeetCode-shaped: the problem set is rejected (asked again / fallback bank)
+    bad = {"title": "X", "description": "d", "starter_code": {"python": "def solve():\n    pass\n\nif __name__ == '__main__':\n    solve()\n"},
+           "public_test_cases": [{"input": "1", "expected_output": "1"}], "hidden_test_cases": [{"input": "1", "expected_output": "1"}] * 3}
+    assert roleready_service._build_coding_payload([bad], 1) is None

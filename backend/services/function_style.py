@@ -83,7 +83,7 @@ def _function_variant(starter: Optional[str]) -> Optional[Dict[str, str]]:
     driver = (imports + "\n\n" if imports else "") + call.sub(f"Solution().{name}(", main_block)
     if not driver.endswith("\n"):
         driver += "\n"
-    return {"starter": student, "driver": driver, "function": name}
+    return {"starter": student, "driver": driver, "function": name, "params": params}
 
 
 def _class_variant(starter: Optional[str]) -> Optional[Dict[str, str]]:
@@ -127,6 +127,25 @@ def _class_variant(starter: Optional[str]) -> Optional[Dict[str, str]]:
     if not driver.endswith("\n"):
         driver += "\n"
     return {"starter": "\n".join(stubs), "driver": driver, "function": targets[0].name}
+
+
+def readable_name(title: Optional[str]) -> str:
+    """A LeetCode-style method name from a problem title ("Database Schema Versioning" -> "database_schema_versioning"); '' when none fits."""
+    words = re.findall(r"[A-Za-z0-9]+", str(title or ""))[:4]
+    name = "_".join(w.lower() for w in words)
+    return name if name and not name[0].isdigit() else ""
+
+
+def rename_function(parts: Optional[Dict[str, str]], title: Optional[str]) -> Optional[Dict[str, str]]:
+    """Gives a generic `solve` method the problem's own name, in both what the student sees and the hidden driver."""
+    if not parts or parts.get("function") != "solve":
+        return parts
+    new = readable_name(title)
+    if not new or new == "solve":
+        return parts
+    return {**parts, "function": new,
+            "starter": parts["starter"].replace("def solve(", f"def {new}(", 1),
+            "driver": parts["driver"].replace("Solution().solve(", f"Solution().{new}(")}
 
 
 def to_function_style(starter: Optional[str]) -> Optional[Dict[str, str]]:

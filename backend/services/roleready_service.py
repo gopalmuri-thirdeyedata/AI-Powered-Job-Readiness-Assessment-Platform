@@ -653,7 +653,9 @@ def _build_coding_payload(problems: Any, count: int):
         pid = str(idx)
         starter = prob.get("starter_code") if isinstance(prob.get("starter_code"), dict) else {}
         # LeetCode structure: the student sees `class Solution` with just the function; the stdin/print plumbing stays on the server.
-        function_style = function_style_module.to_function_style(starter.get("python"))
+        function_style = function_style_module.rename_function(function_style_module.to_function_style(starter.get("python")), prob.get("title"))
+        if not function_style or not function_style.get("params"):
+            return None                          # not LeetCode-shaped (no function with parameters): the caller asks again or uses the fallback bank
         client_safe.append({
             "id": pid,
             "title": prob.get("title", f"Coding Challenge {pid}"),
@@ -686,7 +688,12 @@ def _generate_coding_core(jd_data: Dict[str, Any], count: int = 2, company: str 
     prompt = f"""
 Generate {count} coding assessment problems tailored specifically for the role '{role}' requiring skills in {', '.join(skills)}.
 Each problem must be algorithmic and executable in a Python 3 sandbox via stdin and stdout. Python is the only supported language.
-Each problem must be Medium difficulty, have exactly 1 public test case and 3 to 4 hidden test cases. The python starter_code must be only a skeleton (imports, function signature, stdin parsing, print) and must NOT contain the solution logic.
+Each problem must be Medium difficulty, have exactly 1 public test case and 3 to 4 hidden test cases. The python starter_code must be only a skeleton and must NOT contain the solution logic.
+Write each problem like a LeetCode problem. The starter_code defines ONE pure function with a meaningful snake_case name (never "solve") and typed parameters that
+receive the already-parsed input, and returns the answer (it never reads stdin or prints). The `if __name__ == '__main__':` block parses stdin into those
+parameters, calls the function and prints the result. Example for a problem about ordering scripts:
+def find_order(scripts: List[List[str]]) -> List[str]:\\n    pass\\n\\nif __name__ == '__main__':\\n    import sys\\n    lines = sys.stdin.read().splitlines()\\n    n = int(lines[0])\\n    scripts = [line.split() for line in lines[1:n + 1]]\\n    print(' '.join(find_order(scripts)))\\n
+The function must have at least one parameter.
 
 Return valid JSON:
 {{
@@ -700,7 +707,7 @@ Return valid JSON:
       "output_format": "Explanation of stdout format",
       "constraints": "Limits on input size",
       "starter_code": {{
-        "python": "def solve():\\n    # write code\\n    pass\\n\\nif __name__ == '__main__':\\n    import sys\\n    # parse stdin and print answer\\n"
+        "python": "def meaningful_function_name(param: type) -> type:\\n    pass\\n\\nif __name__ == '__main__':\\n    import sys\\n    # parse stdin into param, call the function, print the result\\n"
       }},
       "public_test_cases": [
         {{"input": "sample_input", "expected_output": "sample_output", "explanation": "why"}}
@@ -713,14 +720,17 @@ Return valid JSON:
   ]
 }}
 {jd_context_note(jd_text)}{style_block(company, style_companies)}"""
-    try:
-        res = call_gemini(prompt, system_prompt="You are a principal software engineer configuring algorithmic coding interview questions. Return strictly valid JSON.")
-        built = _build_coding_payload(res.get("problems", []), count)
-        if built:
-            return built
-        print(f"[RoleReady] AI Coding output did not contain {count} valid Python problems; using fallback bank.")
-    except Exception as e:
-        print(f"[RoleReady] AI Coding generation fallback: {e}")
+    for attempt in (1, 2):                      # a second try when the first output was not LeetCode-shaped (function with parameters)
+        try:
+            res = call_gemini(prompt, system_prompt="You are a principal software engineer configuring algorithmic coding interview questions. Return strictly valid JSON.")
+            built = _build_coding_payload(res.get("problems", []), count)
+            if built:
+                return built
+            print(f"[RoleReady] AI Coding output (attempt {attempt}) did not contain {count} valid LeetCode-style Python problems.")
+        except Exception as e:
+            print(f"[RoleReady] AI Coding generation fallback: {e}")
+            break
+    print("[RoleReady] Using the fallback bank for coding problems.")
 
     # Role-tailored deterministic fallback banks
     if "frontend" in role_lower:
@@ -1032,6 +1042,12 @@ Return valid JSON:
 
     for prob in selected:
         pid = str(prob["id"])
+        # the fallback bank is LeetCode-shaped too: the student sees the signature only, the stdin plumbing stays on the server
+        parts = function_style_module.rename_function(function_style_module.to_function_style((prob["starter_code"] or {}).get("python")), prob["title"])
+        examples = list(prob["public_test_cases"])
+        if len(examples) < 2 and prob["hidden_test_cases"]:
+            hidden_first = prob["hidden_test_cases"][0]
+            examples.append({"input": hidden_first.get("input", ""), "expected_output": hidden_first["expected_output"]})
         client_safe.append({
             "id": pid,
             "title": prob["title"],
@@ -1040,11 +1056,12 @@ Return valid JSON:
             "input_format": prob["input_format"],
             "output_format": prob["output_format"],
             "constraints": prob["constraints"],
-            "starter_code": prob["starter_code"],
-            "public_test_cases": prob["public_test_cases"]
+            "starter_code": {"python": parts["starter"]} if parts else prob["starter_code"],
+            "public_test_cases": examples
         })
         server_keys[pid] = {
-            "hidden_test_cases": prob["hidden_test_cases"]
+            "hidden_test_cases": prob["hidden_test_cases"],
+            **({"driver": parts["driver"]} if parts else {})
         }
 
     return client_safe, server_keys

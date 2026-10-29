@@ -194,4 +194,20 @@ describe('coding workspace wiring', () => {
         const panel = read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx');
         assert.ok(panel.includes('monaco.KeyCode.Quote') && panel.includes('runRef.current()'), 'Ctrl/Cmd + quote runs the tests in the one shared workspace');
     });
+
+    test('both coding screens share the LeetCode look: toolbar, status bar, tab bars, Accepted / Wrong Answer, dark by default in the assessment', () => {
+        const parts = read('src', 'components', 'coding', 'workspaceParts.jsx');
+        for (const piece of ['export const EditorToolbar', 'export const EditorStatusBar', 'export const useCursorPosition', 'export const useWorkspaceTheme', 'export const TAB_BAR', '>Python3<', 'Ln {position']) {
+            assert.ok(parts.includes(piece), `shared parts have: ${piece}`);
+        }
+        const assessment = read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx');
+        const student = read('src', 'pages', 'student', 'StudentCodingProblem.jsx');
+        for (const [name, src] of [['assessment', assessment], ['student', student]]) {
+            assert.ok(src.includes('<EditorToolbar') && src.includes('<EditorStatusBar') && src.includes('TAB_BAR') && src.includes('Test Result'), `${name} workspace uses the shared pieces`);
+        }
+        assert.ok(assessment.includes("label: 'Accepted'") && assessment.includes('Wrong Answer'));
+        const page = read('src', 'pages', 'roleready', 'RoleReadyAssessment.jsx');
+        assert.ok(page.includes('useWorkspaceTheme()') && page.includes("workspaceTheme === 'dark' ? 'dark "), 'the assessment coding area is dark unless the candidate switches to light');
+        assert.ok(!/Solutions|Editorial/.test(assessment), 'nothing that could show the answer is offered in the assessment');
+    });
 });

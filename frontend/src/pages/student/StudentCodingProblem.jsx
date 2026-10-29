@@ -3,11 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Editor } from '@monaco-editor/react';
 import { motion } from 'framer-motion';
 import {
-    ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, Lightbulb, Lock, Play, RefreshCw, RotateCcw, Send, Star, Terminal, XCircle,
+    ArrowLeft, CheckCircle2, CheckSquare, ChevronLeft, ChevronRight, Clock, FileText, Lightbulb, Lock, Play, RefreshCw, Send, Star, Terminal, XCircle,
 } from 'lucide-react';
 import codingApi from '../../services/codingApi';
 import RichText from '../../components/coding/RichText';
-import { Block, CaseViewer, EDITOR_OPTIONS, Pane, Splitter, TabButton, useIsDark } from '../../components/coding/workspaceParts';
+import { Block, CaseViewer, EDITOR_OPTIONS, EditorStatusBar, EditorToolbar, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton, useCursorPosition, useIsDark } from '../../components/coding/workspaceParts';
 import {
     DIFFICULTY_CLASSES, TONE_CLASSES, clearDraft, errorMessage, formatMemory, formatRuntime, isRunShortcut, isSubmitShortcut,
     loadDraft, pickInitialCode, saveDraft, statusLabel, verdictInfo,
@@ -17,6 +17,8 @@ const StudentCodingProblem = () => {
     const { slug } = useParams();
     const navigate = useNavigate();
     const dark = useIsDark();
+    const [expanded, setExpanded] = useState(false);
+    const [cursor, trackCursor] = useCursorPosition();
     const [problem, setProblem] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
@@ -209,9 +211,9 @@ const StudentCodingProblem = () => {
 
             <div ref={splitRef} className="flex-1 min-h-0 flex flex-col lg:flex-row" style={{ '--left': `${leftPct}%`, '--editor': `${editorPct}%` }}>
                 {/* Left: description / submissions / solution */}
-                <Pane className={`${mobileTab === 'problem' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[var(--left)] lg:shrink-0 min-h-[60vh] lg:min-h-0`}>
-                    <div role="tablist" className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto shrink-0">
-                        <TabButton active={leftTab === 'description'} onClick={() => setLeftTab('description')}>Description</TabButton>
+                <Pane className={`${mobileTab === 'problem' ? 'flex' : 'hidden'} ${expanded ? 'lg:!hidden' : 'lg:flex'} flex-col lg:w-[var(--left)] lg:shrink-0 min-h-[60vh] lg:min-h-0`}>
+                    <div role="tablist" className={TAB_BAR}>
+                        <TabButton active={leftTab === 'description'} onClick={() => setLeftTab('description')} icon={FileText}>Description</TabButton>
                         <TabButton active={leftTab === 'solution'} onClick={() => setLeftTab('solution')} icon={solved ? Lightbulb : Lock}>Solution</TabButton>
                         <TabButton active={leftTab === 'submissions'} onClick={() => { setLeftTab('submissions'); setOpenedSubmission(null); }} icon={Clock}>Submissions</TabButton>
                     </div>
@@ -226,7 +228,7 @@ const StudentCodingProblem = () => {
                                 </div>
                                 <RichText text={problem.description} />
                                 {problem.examples.map((ex, i) => (
-                                    <div key={i} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-1.5 text-sm">
+                                    <div key={i} className="border-l-2 border-slate-300 dark:border-[#444] pl-3 py-0.5 space-y-1.5 text-sm">
                                         <p className="font-semibold text-slate-900 dark:text-white">Example {i + 1}</p>
                                         <p className="font-mono text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 break-words"><span className="text-slate-500 dark:text-slate-400">Input: </span>{ex.input}</p>
                                         <p className="font-mono text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 break-words"><span className="text-slate-500 dark:text-slate-400">Output: </span>{ex.output}</p>
@@ -237,7 +239,7 @@ const StudentCodingProblem = () => {
                                     <div>
                                         <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1.5">Constraints</p>
                                         <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700 dark:text-slate-300">
-                                            {problem.constraints.map((c, i) => <li key={i}><code className="text-xs bg-slate-100 dark:bg-slate-800 rounded px-1 py-0.5">{c}</code></li>)}
+                                            {problem.constraints.map((c, i) => <li key={i}><code className="text-xs bg-slate-100 dark:bg-[#2b2b2b] text-slate-800 dark:text-slate-200 rounded px-1 py-0.5">{c}</code></li>)}
                                         </ul>
                                     </div>
                                 )}
@@ -296,16 +298,12 @@ const StudentCodingProblem = () => {
                     </div>
                 </Pane>
 
-                <Splitter axis="x" containerRef={splitRef} value={leftPct} onChange={setLeftPct} min={28} max={65} label="Resize problem panel" />
+                {!expanded && <Splitter axis="x" containerRef={splitRef} value={leftPct} onChange={setLeftPct} min={28} max={65} label="Resize problem panel" />}
 
                 {/* Right: editor above console */}
                 <div ref={rightRef} className={`${mobileTab === 'problem' ? 'hidden' : 'flex'} lg:flex flex-col flex-1 min-w-0 min-h-0 gap-2 lg:gap-0`} style={{ '--editor': `${editorPct}%` }}>
                     <Pane className={`${mobileTab === 'console' ? 'hidden' : 'flex'} lg:flex flex-col h-[62vh] min-h-[340px] lg:h-auto lg:min-h-0 lg:basis-[var(--editor)] lg:shrink-0`}>
-                        <div className="flex items-center gap-2 px-3 min-h-[44px] lg:min-h-[40px] border-b border-slate-200 dark:border-slate-800 shrink-0">
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Python 3</span>
-                            <span className="ml-auto text-[11px] text-slate-400 hidden sm:inline">Autosaved</span>
-                            <button type="button" onClick={resetCode} className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white" aria-label="Reset to starter code" title="Reset code"><RotateCcw className="w-4 h-4" /></button>
-                        </div>
+                        <EditorToolbar onReset={resetCode} expanded={expanded} onToggleExpand={() => setExpanded((v) => !v)} />
                         <div className="flex-1 min-h-0">
                             <Editor
                                 height="100%"
@@ -313,18 +311,19 @@ const StudentCodingProblem = () => {
                                 theme={dark ? 'vs-dark' : 'light'}
                                 value={code}
                                 onChange={(v) => setCode(v ?? '')}
-                                onMount={onEditorMount}
+                                onMount={(editor, monaco) => { trackCursor(editor); onEditorMount(editor, monaco); }}
                                 options={EDITOR_OPTIONS}
                             />
                         </div>
+                        <EditorStatusBar saved="Autosaved" position={cursor} />
                     </Pane>
 
                     <Splitter axis="y" containerRef={rightRef} value={editorPct} onChange={setEditorPct} min={25} max={80} label="Resize editor and console" />
 
                     <Pane className={`${mobileTab === 'code' ? 'hidden' : 'flex'} lg:flex flex-col min-h-[300px] lg:min-h-0 lg:flex-1`}>
-                        <div role="tablist" className="flex border-b border-slate-200 dark:border-slate-800 shrink-0">
-                            <TabButton active={consoleTab === 'testcase'} onClick={() => setConsoleTab('testcase')} icon={Terminal}>Testcase</TabButton>
-                            <TabButton active={consoleTab === 'result'} onClick={() => setConsoleTab('result')}>Result</TabButton>
+                        <div role="tablist" className={TAB_BAR}>
+                            <TabButton active={consoleTab === 'testcase'} onClick={() => setConsoleTab('testcase')} icon={CheckSquare}>Testcase</TabButton>
+                            <TabButton active={consoleTab === 'result'} onClick={() => setConsoleTab('result')} icon={Terminal}>Test Result</TabButton>
                         </div>
                         <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 text-sm" aria-live="polite">
                             {consoleTab === 'testcase' && (
@@ -338,8 +337,8 @@ const StudentCodingProblem = () => {
                                         ))}
                                     </div>
                                     <div>
-                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Input</p>
-                                        <pre className="rounded-lg bg-slate-100 dark:bg-slate-800 p-3 font-mono text-xs sm:text-[13px] text-slate-900 dark:text-white whitespace-pre-wrap break-words">{problem.examples[caseView]?.input ?? problem.examples[0]?.input}</pre>
+                                        <p className={`${SLIM_LABEL} mb-1`}>Input</p>
+                                        <pre className="rounded-lg bg-slate-100 dark:bg-[#2b2b2b] p-3 font-mono text-xs sm:text-[13px] text-slate-900 dark:text-white whitespace-pre-wrap break-words">{problem.examples[caseView]?.input ?? problem.examples[0]?.input}</pre>
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Run checks these {problem.examples.length} example{problem.examples.length === 1 ? '' : 's'} against your code.</p>
                                 </div>

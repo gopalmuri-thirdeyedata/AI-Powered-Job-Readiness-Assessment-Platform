@@ -162,7 +162,7 @@ describe('the full student journey', () => {
       await ui.page.getByRole('tab', { name: 'Testcase' }).click();
       assert.equal(await ui.page.getByLabel('Custom testcase').count(), 0, 'no free-text testcase box');
       assert.match(await ui.text(), /Case 1/);
-      assert.match(await U.runSample(ui), /Sample tests passed/);
+      assert.match(await U.runSample(ui), /Accepted/);
       await ui.page.getByRole('button', { name: 'Problem 2' }).click();
       // students code in Python only: there is no Java option (recruitment candidates keep theirs)
       assert.equal(await ui.page.getByRole('button', { name: /Java 17/ }).count(), 0, 'no Java option for students');
@@ -174,7 +174,7 @@ describe('the full student journey', () => {
       assert.ok(executed.includes('python') && !executed.includes('java'), `only Python ran: ${executed}`);
       // a correct solution for problem 2 as well, so the section is fully solved
       await U.setCodeExact(ui, U.STUDENT_SOLUTIONS.tagsPython);
-      assert.match(await U.runSample(ui), /Sample tests passed/);
+      assert.match(await U.runSample(ui), /Accepted/);
 
       // ---- interview (voice failure -> written fallback keeps the journey free of external calls)
       await U.stubVoiceApi(ui.page);

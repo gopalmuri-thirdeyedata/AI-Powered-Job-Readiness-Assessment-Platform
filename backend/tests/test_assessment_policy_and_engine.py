@@ -92,9 +92,9 @@ def test_adapter_orders_stdin_by_the_solve_signature_not_by_json_key_order(bluep
 def test_python_starter_is_the_signature_only_and_the_server_keeps_the_stdin_harness(blueprint):
     client_problems, keys = engine.adapt_blueprint(blueprint)["CODING"]
     starter = client_problems[0]["starter_code"]["python"]
-    assert starter == "class Solution:\n    def solve(self, a, b):\n        \n"          # exactly LeetCode: nothing but the signature
+    assert starter == "class Solution:\n    def sum_two_numbers(self, a, b):\n        \n"          # exactly LeetCode: nothing but the signature
     driver = keys[client_problems[0]["id"]]["driver"]
-    assert "json.dumps(Solution().solve(*_args))" in driver and "__main__" in driver      # the harness is server-side only
+    assert "json.dumps(Solution().sum_two_numbers(*_args))" in driver and "__main__" in driver      # the harness is server-side only
     assert "driver" not in json.dumps(client_problems)
     from services import function_style
     program = function_style.compose(starter.rstrip(" \n") + "\n        return a + b\n", driver)

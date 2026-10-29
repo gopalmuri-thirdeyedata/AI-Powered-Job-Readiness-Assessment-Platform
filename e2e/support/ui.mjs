@@ -111,7 +111,7 @@ export const editorText = (ui) => ui.page.locator('.monaco-editor .view-lines').
 // The student coding round is the LeetCode-style workspace: a Run button and a Result tab (recruitment keeps runPublicTests below).
 export const runSample = async (ui, settleMs = 1500) => {
   await ui.page.getByRole('button', { name: /^Run\b/ }).click();
-  await ui.page.waitForSelector('text=/Sample tests passed|Wrong Answer|Compilation Error|Runtime Error|Time Limit Exceeded|Finished/', { timeout: 60000 });
+  await ui.page.waitForSelector('text=/Accepted|Wrong Answer|Compilation Error|Runtime Error|Time Limit Exceeded|Finished/', { timeout: 60000 });
   await ui.page.waitForTimeout(settleMs);
   return ui.text();
 };
@@ -123,9 +123,9 @@ export const runPublicTests = (ui, settleMs = 1500) => runSample(ui, settleMs);
 // problem 1 "Sum Two Numbers" (solve(a, b)) and problem 2 "Reverse String" (solve(s)).
 export const SOLUTIONS = {
   // LeetCode structure: students and shared-link candidates alike write only the method of `class Solution`
-  sumPython: 'class Solution:\n    def solve(self, a, b):\n        return a + b\n',
-  reversePython: 'class Solution:\n    def solve(self, s):\n        return s[::-1]\n',
-  pythonRuntimeError: 'class Solution:\n    def solve(self, s):\n        return 1 // 0\n',
+  sumPython: 'class Solution:\n    def sum_two_numbers(self, a, b):\n        return a + b\n',
+  reversePython: 'class Solution:\n    def reverse_string(self, s):\n        return s[::-1]\n',
+  pythonRuntimeError: 'class Solution:\n    def reverse_string(self, s):\n        return 1 // 0\n',
 };
 
 export const openCoding = async (ui) => { await ui.page.waitForSelector('text=Round 2', { timeout: 30000 }).catch(() => {}); await ui.page.waitForTimeout(1500); };

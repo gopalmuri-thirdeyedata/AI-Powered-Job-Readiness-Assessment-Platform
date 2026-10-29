@@ -86,3 +86,27 @@ describe('helpers', () => {
         assert.equal(opening.get('audio'), null, 'the opening line needs no recording');
     });
 });
+
+describe('waiting for the candidate to finish (adaptive end of answer)', () => {
+    test('a sentence left hanging waits longer than a finished one, and nothing is cut off before the base pause', async () => {
+        const m = await load();
+        assert.ok(m.END_SILENCE_MS >= 2000, 'a real interviewer waits at least two seconds');
+        assert.equal(m.endSilenceFor(''), m.END_SILENCE_MS);
+        assert.equal(m.endSilenceFor('I built the service with Redis and'), m.END_SILENCE_UNFINISHED_MS);
+        assert.equal(m.endSilenceFor('We cached the results, because'), m.END_SILENCE_UNFINISHED_MS);
+        assert.equal(m.endSilenceFor('We used a queue so that,'), m.END_SILENCE_UNFINISHED_MS);
+        assert.equal(m.endSilenceFor('That is how I fixed the memory leak.'), m.END_SILENCE_FINISHED_MS);
+        assert.equal(m.endSilenceFor('We moved the work to a background queue'), m.END_SILENCE_MS);
+        assert.ok(m.END_SILENCE_FINISHED_MS < m.END_SILENCE_MS && m.END_SILENCE_MS < m.END_SILENCE_UNFINISHED_MS);
+    });
+
+    test('the detector keeps listening through a pause shorter than the wait it is given, and ends the answer after it', async () => {
+        const { UtteranceDetector } = await load();
+        const d = new UtteranceDetector();
+        const run = (level, from, to, wait) => { const out = []; for (let t = from; t < to; t += 50) { const e = d.push(level, t, wait); if (e) out.push(e); } return out; };
+        run(0.004, 0, 700, 4000);                                    // calibrate
+        assert.deepEqual(run(0.3, 700, 2200, 4000), ['speech-start']);
+        assert.deepEqual(run(0.004, 2200, 2200 + 3500, 4000), [], 'a 3.5 s pause after "and" is still the same answer');
+        assert.deepEqual(run(0.004, 5700, 5700 + 900, 4000), ['speech-end']);
+    });
+});

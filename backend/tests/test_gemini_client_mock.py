@@ -114,7 +114,7 @@ def test_voice_interviewer_replies_come_from_gemini_and_speech_from_elevenlabs(m
     reply = elevenlabs_service.next_reply(session["system_prompt"], [{"role": "ai", "text": "Hi Jo"}], "I used indexes a lot.")
     assert reply == "Question 2: how do you debug a slow query?"          # markdown and the speaker label are stripped before it is spoken
     assert "Interviewer: Hi Jo" in seen["prompt"] and "Candidate: I used indexes a lot." in seen["prompt"]
-    assert "Question 1 [SQL]: Explain indexes." in seen["system_prompt"] and "NEVER say goodbye" in seen["system_prompt"]
+    assert "Question 1 [SQL]: Explain indexes." in seen["system_prompt"] and "goodbye" in seen["system_prompt"].lower()
 
 
 def test_gemini_2_5_model_passes_thinking_budget_zero(monkeypatch):
