@@ -1,7 +1,6 @@
 # AI Voice Interview: Complete Architecture, Issues Solved and Optimal Approach
 
-Written for: the project owner and the engineers who will maintain the interview. Status date: 2026-10-29. Everything below is in the working tree on branch `PrepWin`
-and is **not committed, not pushed and not deployed** unless a line says otherwise. The earlier `docs/interview-architecture-audit.md` is superseded by this file.
+Written for: the project owner and the engineers who will maintain the interview. Status date: 2026-10-29. Everything below is on the branch **`prep/interview`** (based on `PrepWin` at `d4ee645d`). It is **not merged anywhere and not deployed**. The earlier `docs/interview-architecture-audit.md` is superseded by this file.
 
 **How to read it.** Each claim is tagged: **[code]** read in the repository, **[measured]** timed by me against the live ElevenLabs and Gemini APIs, **[official]** from
 ElevenLabs' own pages, **[estimate]** my arithmetic, **[open]** not checked or not done. Measurements come from one machine and one network, small samples, p99 not computed.
@@ -345,7 +344,7 @@ After editing `.env`, recreate the backend (`docker compose up -d backend`); a p
 
 ---
 
-## 15. Files changed for the interview work (uncommitted)
+## 15. Files changed for the interview work (branch `prep/interview`)
 
 Backend: `services/elevenlabs_service.py`, `services/gemini_client.py`, `services/shared_slots.py` (new), `services/interview_evaluation.py`, `services/roleready_service.py`,
 `services/assessment_flow_service.py`, `services/assessment_policy.py`, `services/assessment_rules.py`, `services/assessment_invitation_service.py`, `routers/roleready.py`,
@@ -353,6 +352,20 @@ Backend: `services/elevenlabs_service.py`, `services/gemini_client.py`, `service
 `pages/roleready/RoleReadyAssessment.jsx`, `pages/roleready/RoleReadyReport.jsx`, `pages/roleready/RoleReadySetup.jsx`, `pages/candidate/ExamInstructions.jsx`, `services/assessmentApi.js`,
 `services/recruitmentApi.js`, `services/rolereadyApi.js`. New and updated tests are under `backend/tests` and `frontend/test_*.test.mjs`.
 Some of these are files the admin teammate owns (shared-link flow): tell them before they pull.
+
+
+### Notes for the reviewer
+
+* **Base and scope.** The branch holds one commit on top of `PrepWin` (`d4ee645d`) and contains only interview work. It deliberately leaves out the coding-problem variety change and the test helpers that
+  only supported it (`gemini_mock_fixtures.py`, `conftest.py`, `test_function_style_assessment.py`, `e2e/harness/serve.py`, and the coding hunks of `roleready_service.py`).
+* **Review in this order:** `elevenlabs_service.py` (turn, prompt, early reply, shared lines), `shared_slots.py`, `gemini_client.py` (shared connection pool), `interview_evaluation.py` (scoring),
+  `assessment_policy.py` (10-minute interview), then the frontend `voiceInterviewSession.js` and `RoleReadyAssessment.jsx` (hidden tag, hint, transcript split).
+* **Shared-link files:** `assessment_flow_service.py`, `public_assessment.py`, `assessment_rules.py`, `assessment_invitation_service.py` belong to the admin side. The changes there are the early-reply
+  field, the 10-minute interview and its wording; please let their owner look at them.
+* **Tests run on the branch alone:** backend 232 passed, 4 skipped (the shared-slot tests need Linux; they were also run in a Linux container, 4 passed); frontend 587 passed, 1 failed
+  (`Invited-student workflow (UI) redirect`, which is in a file these changes do not touch; I have not run it on a clean `PrepWin` to confirm it also fails there).
+* **Known and expected:** the "frozen interview file" guard tests (`test_phase2` to `test_phase5`) fail because the guarded files were changed on purpose.
+* **Before deploying:** rebuild backend and frontend, restart nginx, confirm ElevenLabs billing is active and the plan limits, and run the dry run in section 13.
 
 ---
 
