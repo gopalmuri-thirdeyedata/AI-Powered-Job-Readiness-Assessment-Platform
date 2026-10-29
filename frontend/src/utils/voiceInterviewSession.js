@@ -15,8 +15,9 @@ export const SPEECH_CONFIRM_MS = 90;       // sound must last this long to count
 export const PRE_ROLL_RESET_MS = 3000;     // recording while nobody speaks is thrown away this often (keeps uploads small)
 export const REPLY_GUARD_MS = 250;         // the mic is ignored briefly after the interviewer stops (room echo)
 export const CALIBRATE_MS = 600;           // the first moments of listening teach the detector how noisy the room is
-export const NOISE_FLOOR_CAP = 0.02;
+export const NOISE_FLOOR_CAP = 0.01;       // keeps the speech threshold at or below 0.03 even if the candidate started talking during calibration
 export const POLL_MS = 50;
+export const PLAYBACK_WATCHDOG_MS = 45000;    // one spoken chunk never takes this long; past it the audio is treated as finished
 const MIN_THRESHOLD = 0.015;
 
 // Words that cannot end a thought: the candidate is still going.
@@ -393,6 +394,7 @@ export class VoiceInterviewSession {
         this.beginRecording();
         this.resetCaptions();
         this.emit('listening');           // the microphone is open for the candidate's answer
+        try { console.debug('[voice] listening', { noiseFloor: Number(this.detector.noiseFloor.toFixed(4)), threshold: Number(speechThreshold(this.detector.noiseFloor).toFixed(4)), muted: this.muted }); } catch { /* no console */ }
     }
 
     tick() {
@@ -541,10 +543,20 @@ export class VoiceInterviewSession {
                 });
                 if (player.readyState >= 1) announce(); else player.addEventListener('loadedmetadata', announce, { once: true });
             }
-            const done = () => { clearInterval(this.volumeTimer); URL.revokeObjectURL(url); this.emit('volume-level', 0); };
+            let settled = false;
+            const done = () => { settled = true; clearTimeout(watchdog); clearInterval(this.volumeTimer); URL.revokeObjectURL(url); this.emit('volume-level', 0); };
+            // If the browser never reports the end of the audio (suspended audio engine, a stalled stream), carry on instead of hanging the turn.
+            const watchdog = setTimeout(() => {
+                if (settled) return;
+                console.warn('[voice] interviewer audio did not finish in time; continuing');
+                try { player.pause(); } catch { /* ignore */ }
+                done();
+                resolve();
+            }, PLAYBACK_WATCHDOG_MS);
             player.onended = () => { done(); resolve(); };
             player.onerror = () => { done(); reject(audioError('Interviewer audio could not be played. Choose Retry Connection.')); };
             try {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
                 const source = this.ctx.createMediaElementSource(player);
                 const analyser = this.ctx.createAnalyser();
                 analyser.fftSize = 512;

@@ -320,7 +320,7 @@ def sample_coding_problem(slot: int = 1) -> Dict[str, Any]:
 
 def get_mock_response(prompt: str, json_mode: bool = True) -> Dict[str, Any]:
     if not json_mode:
-        return {"text": "Mock Gemini response."}
+        return {"text": "Thanks, that is clear. Can you tell me more about how you would measure the improvement? Please walk me through it step by step."}
 
     p = prompt.lower()
     if "aptitude answer check" in p:                              # the independent answer check of the blueprint's aptitude questions

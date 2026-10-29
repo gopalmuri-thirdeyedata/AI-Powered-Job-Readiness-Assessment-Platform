@@ -38,6 +38,7 @@ import {
     Binary,
     FileText,
     Settings,
+    Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Counter } from '../../components/home/primitives';
@@ -588,6 +589,8 @@ export const AssessmentWorkspace = ({
     const [voiceCallStatus, setVoiceCallStatus] = useState('idle'); // 'idle' | 'connecting' | 'active' | 'ended' | 'error'
     const [voiceSpeakingState, setVoiceSpeakingState] = useState('connecting'); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
     const [voiceVolume, setVoiceVolume] = useState(0);
+    const [voiceUserLevel, setVoiceUserLevel] = useState(0);        // 0..1: how loud the candidate is while the mic is open for them
+    const [voiceUserSpeaking, setVoiceUserSpeaking] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState([]);
     const [liveCaption, setLiveCaption] = useState('');          // what the candidate is saying right now (replaced by the server's transcript)
     const [captionsUnavailable, setCaptionsUnavailable] = useState(false);
@@ -1058,7 +1061,26 @@ export const AssessmentWorkspace = ({
 
             voice.on('processing', () => {
                 if (!current()) return;
+                setVoiceUserSpeaking(false);
+                setVoiceUserLevel(0);
                 setVoiceSpeakingState('processing');
+            });
+
+            voice.on('listening', () => {
+                if (!current()) return;
+                setVoiceUserSpeaking(false);
+                setVoiceSpeakingState('listening');
+            });
+
+            voice.on('mic-level', (level) => {
+                if (!current()) return;
+                setVoiceUserLevel((prev) => (Math.abs(prev - level) < 0.04 ? prev : level));     // no re-render for tiny changes
+            });
+
+            voice.on('user-speech', (speaking) => {
+                if (!current()) return;
+                setVoiceUserSpeaking(!!speaking);
+                if (speaking) setVoiceSpeakingState('listening');
             });
 
             voice.on('caption', (caption) => {
@@ -2634,11 +2656,17 @@ export const AssessmentWorkspace = ({
                                         <div className="text-sm text-gray-400">
                                             Time: <span className="font-mono text-white text-lg font-bold">{formatTimer(timeLeft)}</span>
                                         </div>
-                                        {currentSpeaker && (
-                                            <div className={`text-xs px-2.5 py-1 rounded font-semibold ${
-                                                currentSpeaker === 'ai' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                                        {voiceCallStatus === 'active' && (
+                                            <div data-testid="voice-state" className={`text-xs px-2.5 py-1 rounded font-semibold flex items-center gap-1.5 ${
+                                                voiceSpeakingState === 'ai_speaking' ? 'bg-blue-500/20 text-blue-400'
+                                                    : voiceSpeakingState === 'processing' ? 'bg-indigo-500/20 text-indigo-300'
+                                                        : voiceIsMuted ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'
                                             }`}>
-                                                {currentSpeaker === 'ai' ? 'AI Speaking' : 'You Speaking'}
+                                                {voiceSpeakingState === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}
+                                                {voiceSpeakingState === 'ai_speaking' ? 'AI Speaking'
+                                                    : voiceSpeakingState === 'processing' ? 'Thinking...'
+                                                        : voiceIsMuted ? 'Muted'
+                                                            : voiceUserSpeaking ? 'Hearing You' : 'Your Turn - Listening'}
                                             </div>
                                         )}
                                     </div>
@@ -2686,7 +2714,16 @@ export const AssessmentWorkspace = ({
                                     {/* RIGHT PANEL - Candidate Camera + Live Transcript (Image 2) */}
                                     <div className="w-full md:w-[380px] lg:w-[420px] bg-[#0f0f0f] flex flex-col border-t md:border-t-0 md:border-l border-gray-800 shrink-0">
                                         {/* Candidate Camera (Aspect Video) */}
-                                        <div className="relative bg-black aspect-video overflow-hidden">
+                                        <div
+                                            data-testid="candidate-tile"
+                                            className={`relative bg-black aspect-video overflow-hidden transition-all duration-200 ${
+                                                voiceCallStatus === 'active' && voiceSpeakingState === 'listening' && !voiceIsMuted
+                                                    ? (voiceUserSpeaking ? 'ring-4 ring-inset ring-emerald-400/70' : 'ring-2 ring-inset ring-indigo-400/60 animate-pulse')
+                                                    : ''
+                                            }`}
+                                            style={voiceCallStatus === 'active' && voiceSpeakingState === 'listening' && !voiceIsMuted && voiceUserSpeaking
+                                                ? { boxShadow: `inset 0 0 ${16 + voiceUserLevel * 48}px rgba(52, 211, 153, ${0.2 + voiceUserLevel * 0.5})` } : undefined}
+                                        >
                                             {cameraStream || proctorStream ? (
                                                 <>
                                                     <ProctorCameraFeed
@@ -2704,14 +2741,29 @@ export const AssessmentWorkspace = ({
                                                         <User className="w-3.5 h-3.5 text-emerald-400" />
                                                         <span>You</span>
                                                     </div>
-                                                    {currentSpeaker === 'user' && (
-                                                        <div className="absolute bottom-3 left-3 bg-green-500 px-3 py-1 rounded-full text-xs font-semibold z-10 text-white shadow-md">
-                                                            Speaking...
-                                                        </div>
-                                                    )}
-                                                    {currentSpeaker === 'ai' && (
-                                                        <div className="absolute bottom-3 left-3 bg-gray-700/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-medium z-10 text-slate-300 border border-white/10">
-                                                            Listening...
+                                                    {voiceCallStatus === 'active' && (
+                                                        <div data-testid="mic-badge" className={`absolute bottom-3 left-3 px-3 py-1 rounded-full text-xs font-semibold z-10 shadow-md flex items-center gap-2 border border-white/10 ${
+                                                            voiceIsMuted ? 'bg-red-500/90 text-white'
+                                                                : voiceSpeakingState === 'listening' ? (voiceUserSpeaking ? 'bg-green-500 text-white' : 'bg-indigo-500/90 text-white')
+                                                                    : voiceSpeakingState === 'processing' ? 'bg-indigo-900/90 text-indigo-200'
+                                                                        : 'bg-gray-700/90 backdrop-blur-sm text-slate-300 font-medium'
+                                                        }`}>
+                                                            {voiceIsMuted ? <MicOff className="w-3.5 h-3.5" />
+                                                                : voiceSpeakingState === 'processing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                    : <Mic className="w-3.5 h-3.5" />}
+                                                            <span>
+                                                                {voiceIsMuted ? 'Muted'
+                                                                    : voiceSpeakingState === 'listening' ? (voiceUserSpeaking ? 'Hearing you...' : 'Listening...')
+                                                                        : voiceSpeakingState === 'processing' ? 'Thinking...'
+                                                                            : 'Mic paused'}
+                                                            </span>
+                                                            {voiceSpeakingState === 'listening' && !voiceIsMuted && (
+                                                                <span className="flex items-end gap-0.5 h-3">
+                                                                    {[0.08, 0.2, 0.35, 0.5, 0.7].map((step) => (
+                                                                        <span key={step} className={`w-0.5 rounded-full transition-all ${voiceUserLevel > step ? 'bg-white h-3' : 'bg-white/30 h-1'}`} />
+                                                                    ))}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </>
