@@ -2,7 +2,9 @@
 
 Deployment runbook for **AI-Powered Job Readiness Assessment Platform** (branch `PrepWin`) on `server2` (`139.99.62.133`), served at **`https://interviewer.learningpath.ai`** with host entrypoint port **`8212`**.
 
-Last updated: 2026-10-28 (server2 runs commit `b1a72383` plus the build-speed changes in 5.8; the database dates from the 2026-10-27 fresh start and was migrated in place on 2026-10-28). Sections 1-4 describe how to deploy and operate the stack. Section 5 covers build time and image size, and 5.8 records what was done and measured.
+Last updated: 2026-10-30 (server2 runs `PrepWin` commit `11d48ee8`, deployed 2026-10-29: ONNX proctoring, the multi-language coding round and its runner, the new interview; the database dates from the 2026-10-27 fresh start, was migrated in place on 2026-10-28 and had new tables added on 2026-10-29, see 3.11). Sections 1-4 describe how to deploy and operate the stack. Section 5 covers build time and image size, and 5.8 records what was done and measured.
+
+**2026-10-29 summary:** deployed `11d48ee8` (2.5 plus the build steps, with a `mysqldump` and rollback tags first). Results: backend image 2.31 GB -> 904 MB and 4 workers 1.77 GiB -> 843 MiB (PyTorch and ultralytics replaced by ONNX Runtime); runner image 736 MB -> 1.24 GB (g++ and a precompiled header); proctor frame 58 ms on one thread; 15 simultaneous 7-test batches (5 Java, 4 C++, 3 C, 3 Python) all returned in 0.4-3.8 s with no failure; Python, Java, C++ and C each run. New container caps for the shared host: backend 3 CPUs / 3 GB, runner 3 CPUs / 4 GB / 768 pids / 8 slots. New backend settings in the compose file: `PUBLIC_REGISTER_LIMIT_PER_MIN=40`, `PUBLIC_START_LIMIT_PER_MIN=120`, `PUBLIC_META_LIMIT_PER_MIN=240`, `PROCTOR_STATUS_LIMIT_PER_MIN=600` (students behind one address share these per-worker limits), `PROCTOR_MAX_CONCURRENT=2`, `PROCTOR_THREADS=1`, `OMP_NUM_THREADS=1`. The deploy hit the startup deadlock in 3.11 and needed a manual index repair. ElevenLabs is on the Starter plan (6 voice outputs, 12 transcriptions, about 9 live captions at once): run 20 students in two waves of about 10.
 
 **2026-10-28 summary:** builds now go through `bash scripts/build-images.sh` (2.5, 5.8). The backend's dependencies live in a tagged base image, so a code-only deploy takes seconds even when the build cache was pruned. The build changes were deployed to server2 on 2026-10-28 and verified (end of 5.8). A plan for a 20-student concurrent trial (rate limits, thread settings, sandbox waiting, rehearsal) is in `plan.md`.
 
@@ -446,6 +448,83 @@ The script requires `role == ADMIN` exactly, but the platform admin is `SUPER_AD
 
 - `Duplicate entry 'admin@thirdeyedata.ai' for key 'users.ix_users_email'` printed as `[Startup Note] Platform Admin initialization`: the four workers each try to provision the admin, one wins, the others hit the unique key. Harmless.
 - Four `100%|... 6.25M/6.25M` progress bars: each worker downloads a ~6 MB model file at startup (almost certainly the YOLO proctoring weights via the ultralytics auto-download; inferred from the size, not confirmed). See the model-file note in 5.1.
+
+### 3.11 New tables on an existing database: startup deadlock leaves missing indexes (hit 2026-10-29)
+
+**Symptom:** right after `up -d` of a release that adds tables, the backend log shows `Exception in worker process`, `pymysql OperationalError (1213, 'Deadlock found when trying to get lock; try restarting transaction')` and `Worker failed to boot`, once or twice. `docker inspect -f '{{.RestartCount}}' interviewer_backend` is 1-2, and the container then ends up healthy with four `Application startup complete` lines. Nothing looks wrong afterwards.
+
+**Cause:** `create_all` runs at import time in each of the 4 workers at the same moment (3.1). Two workers collide on the DDL, MySQL cancels one (1213), that worker dies and Docker restarts it. The cancelled attempt may already have created the table but not its indexes, and `create_all` never adds an index to a table that exists, so the next start sees nothing to do and the indexes stay missing. The retry list in `create_tables_with_retry` does not include 1213.
+
+**Why it matters:** the failure is silent. On 2026-10-29 it left 13 indexes missing on `coding_problems`, `coding_bookmarks`, `coding_submissions` and `assessment_retests`. One was the unique `ix_coding_problems_slug`, which `ensure_seeded` relies on to stop two workers inserting the same problem, so all four seeded the practice bank: 320 rows for 80 problems.
+
+**When it can happen:** only at startup, of a release that adds tables or indexes to an existing database. Never while candidates are taking an assessment, and not on a plain restart of an up-to-date database (nothing to create).
+
+**Check after every deploy that changes `models.py`** (read only):
+
+```bash
+docker exec -i interviewer_backend python - <<'PY'
+import models, database
+from sqlalchemy import inspect
+insp = inspect(database.engine)
+have = set(insp.get_table_names()); problems = 0
+for t in models.Base.metadata.sorted_tables:
+    if t.name not in have: print("MISSING TABLE", t.name); problems += 1; continue
+    cols = {c["name"] for c in insp.get_columns(t.name)}
+    for c in t.columns:
+        if c.name not in cols: print("MISSING COLUMN", t.name, c.name); problems += 1
+    idx = {i["name"] for i in insp.get_indexes(t.name)} | {u["name"] for u in insp.get_unique_constraints(t.name)}
+    for i in t.indexes:
+        if i.name not in idx: print("MISSING INDEX", t.name, i.name); problems += 1
+print("schema check done, problems:", problems)
+PY
+```
+
+**Repair (done on server2, 2026-10-29, after a `mysqldump`):** create the missing indexes one at a time, and for a unique index first check for duplicates; if there are duplicates, remove them only when nothing references them.
+
+```bash
+docker exec -i interviewer_backend python - <<'PY'
+import models, database
+from sqlalchemy import inspect, text
+eng = database.engine
+insp = inspect(eng)
+todo = []
+for t in models.Base.metadata.sorted_tables:
+    have = {i["name"] for i in insp.get_indexes(t.name)} | {u["name"] for u in insp.get_unique_constraints(t.name)}
+    for i in t.indexes:
+        if i.name not in have:
+            todo.append((t, i))
+for t, i in todo:
+    cols = [col.name for col in i.columns]
+    if i.unique:
+        with eng.connect() as c:
+            dup = c.execute(text(f"select count(*) from (select 1 from {t.name} group by {','.join(cols)} having count(*) > 1) d")).scalar()
+        if dup:
+            print("DUPLICATES, not creating", i.name, "groups:", dup); continue
+    try:
+        i.create(bind=eng); print("created", t.name, i.name, "(unique)" if i.unique else "")
+    except Exception as e:
+        print("FAILED", i.name, type(e).__name__, str(e)[:150])
+PY
+```
+
+For the duplicated practice problems (`coding_problems` is only the student practice bank; `coding_bookmarks` and `coding_submissions` reference it and were empty), keep the lowest id per slug, then create `ix_coding_problems_slug`:
+
+```sql
+delete p from coding_problems p join (select slug, min(id) keep_id from coding_problems group by slug) k on p.slug = k.slug and p.id <> k.keep_id;
+```
+
+Run it in one transaction and only after `select (select count(*) from coding_bookmarks) + (select count(*) from coding_submissions)` returns 0; if it does not, stop and look at what references the duplicates.
+
+**Prevention for the next release with new tables (not run on server2; from the code, same idea as 3.1):** create the schema once from a single process before the four workers start, with the new image and the old backend still running (the change is additive):
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps backend sh -c 'python -c "import models, database; models.Base.metadata.create_all(bind=database.engine); print(\"tables ok\")" && python migrate_job_company_name.py && python migrate_assessment_retests.py'
+docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend
+```
+
+(replace the two `migrate_*` calls with the release's own additive migrations).
+
+**Permanent fix, not done yet (needs a rebuild):** retry on 1213 and lock wait timeout in `create_tables_with_retry` in `backend/main.py`, or serialise startup with a MySQL `GET_LOCK` so only one worker creates tables. Do not use `--preload` (3.1).
 
 ---
 
