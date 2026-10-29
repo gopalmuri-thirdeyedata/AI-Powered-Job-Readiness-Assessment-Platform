@@ -140,7 +140,7 @@ def test_proctoring_text_matches_the_workspace_constants():
     assert re.search(r"recoveryDuration\s*=\s*10\b", fullscreen) and rules.FULLSCREEN_RECOVERY_SECONDS == 10
     checks = int(re.search(r"NO_PERSON_THRESHOLD\s*=\s*(\d+)", camera).group(1))
     interval_ms = int(re.search(r"CHECK_INTERVAL_MS\s*=\s*(\d+)", camera).group(1))
-    assert checks * interval_ms // 1000 == rules.NO_PERSON_SECONDS == 9
+    assert checks * interval_ms // 1000 == rules.NO_PERSON_SECONDS == 6
     for label in ("Multiple persons detected", "Mobile phone detected", "Secondary electronic device", "Reference material or notes"):
         assert label in camera
 

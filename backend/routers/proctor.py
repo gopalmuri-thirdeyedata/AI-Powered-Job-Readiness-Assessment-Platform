@@ -33,7 +33,7 @@ from services import assessment_flow_service as flow
 from services import local_auth
 from services import retest_service
 from services.proctor_service import (InvalidFrame, MAX_BASE64_CHARS, analyze_frame, decode_frame, get_model_status, get_public_status)
-from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter, client_ip
+from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter, client_ip, env_limit
 
 router = APIRouter(prefix="/api/proctor", tags=["Proctoring"])
 
@@ -44,7 +44,7 @@ MAX_CONCURRENT_INFERENCES = max(1, int(os.getenv("PROCTOR_MAX_CONCURRENT", "4"))
 
 frame_limiter = SlidingWindowLimiter(FRAME_LIMIT_PER_MINUTE, 60)       # per authenticated principal
 auth_fail_limiter = SlidingWindowLimiter(30, 60)                       # failed credential attempts per client address
-status_limiter = SlidingWindowLimiter(60, 60)                          # public status checks per client address
+status_limiter = SlidingWindowLimiter(env_limit("PROCTOR_STATUS_LIMIT_PER_MIN", 60), 60)                          # public status checks per client address
 principal_gate = ConcurrencyGate(1)                                    # one frame in flight per principal
 inference_gate = ConcurrencyGate(MAX_CONCURRENT_INFERENCES)            # global bound on simultaneous inferences
 _GLOBAL = "global"

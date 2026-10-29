@@ -44,6 +44,8 @@ services:
     image: interviewer-platform-backend
     container_name: interviewer_backend
     restart: always
+    cpus: 3.0             # hard cap: server2 is shared with other projects (8 cores, about 5-6 free on average)
+    mem_limit: 3g         # 4 workers use about 1.8 GB
     env_file:
       - ./backend/.env
     environment:
@@ -63,6 +65,17 @@ services:
       - SANDBOX_MAX_CONCURRENCY=2
       # Student code runs wait in a fair line per worker: 4 workers x 2 = 8 = the runner's uid slots (RUNNER_UIDS below)
       - STUDENT_SANDBOX_CONCURRENCY=2
+      # Students sitting together reach the backend as ONE address (10.97.0.1), and every limit below is per address AND per worker process, so the
+      # strict defaults (5 registrations / 30 starts / 60 metadata / 60 status checks per minute) would block a class. Values for up to 40 students.
+      - PUBLIC_REGISTER_LIMIT_PER_MIN=40
+      - PUBLIC_START_LIMIT_PER_MIN=120
+      - PUBLIC_META_LIMIT_PER_MIN=240
+      - PROCTOR_STATUS_LIMIT_PER_MIN=600
+      # Proctoring on a shared host: one thread per inference (cheapest per CPU-second; a frame every 2 s does not need to be fast), at most 2 inferences
+      # per worker at a time; a busy frame is skipped and retried 2 s later. The container's CPU cap below keeps the rest of the host free.
+      - PROCTOR_MAX_CONCURRENT=2
+      - PROCTOR_THREADS=1
+      - OMP_NUM_THREADS=1
     volumes:
       - interviewer_media:/app/media
     networks:
@@ -94,9 +107,9 @@ services:
       - RUNNER_UIDS=10001,10002,10003,10004,10005,10006,10007,10008
     networks:
       - runner_net
-    mem_limit: 5g         # g++ needs ~300-500 MB per compile; 8 slots at once
-    memswap_limit: 5g
-    cpus: 4.0
+    mem_limit: 4g         # g++ needs ~300-500 MB per compile; 8 slots at once (the whole smoke suite peaked below 0.7 GB)
+    memswap_limit: 4g
+    cpus: 3.0             # shared host: this is also what the running server has today
     pids_limit: 768       # 8 slots x (compiler: g++ + cc1plus + as + ld, or a run) + the per-uid RLIMIT_NPROC of 128 is the real fork-bomb cap
     read_only: true
     tmpfs:

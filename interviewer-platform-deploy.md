@@ -257,7 +257,7 @@ results (or 40 s of tests) the remaining tests are returned as "not run: time li
 
 **How it is isolated**
 - Its own container on the private `runner_net` network (`internal: true`): no internet and no route to the host. Only the backend is attached.
-- Read-only root filesystem; `/tmp/runs` is a 256 MB tmpfs (`exec,nosuid`: compiled C / C++ programs run from it; **`exec` must be written explicitly, Docker mounts a tmpfs `noexec` by default and every compiled binary then fails with "Permission denied"**). Memory 5 GB, 4 CPUs, 768 processes.
+- Read-only root filesystem; `/tmp/runs` is a 256 MB tmpfs (`exec,nosuid`: compiled C / C++ programs run from it; **`exec` must be written explicitly, Docker mounts a tmpfs `noexec` by default and every compiled binary then fails with "Permission denied"**). Memory 4 GB, 3 CPUs, 768 processes.
 - `cap_drop: ALL`, then only `SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE` (each one was tested: without any of them the runner either fails
   every run or cannot stop a sleeping program). `no-new-privileges`, and `init: true` so the orphans of a fork bomb are reaped.
 - Each run is a throwaway numeric uid (10001-10008, set by `RUNNER_UIDS`, so at most 8 submissions at once) in its own `0700` directory, with RLIMIT cpu / memory / file size /

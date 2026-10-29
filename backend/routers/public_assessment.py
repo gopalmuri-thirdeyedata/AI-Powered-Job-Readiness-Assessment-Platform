@@ -26,7 +26,7 @@ from services import assessment_flow_service as flow
 from services import assessment_policy as policy
 from services import assessment_rules
 from services import elevenlabs_service
-from services.rate_limiter import SlidingWindowLimiter, client_ip
+from services.rate_limiter import SlidingWindowLimiter, client_ip, env_limit
 
 SECTIONS = [
     {"key": "aptitude", "label": "Aptitude", "minutes": policy.SECTION_MINUTES},
@@ -36,9 +36,11 @@ SECTIONS = [
 # Candidate-facing Rules of Assessment: grouped, generated from the enforcing modules' constants (services/assessment_rules.py).
 RULES = assessment_rules.candidate_rules()
 
-register_limiter = SlidingWindowLimiter(limit=5, window_seconds=60)
-start_limiter = SlidingWindowLimiter(limit=30, window_seconds=60)
-meta_limiter = SlidingWindowLimiter(limit=60, window_seconds=60)
+# Per client address AND per worker process. Behind the proxy chain every student can look like one address, so a group sitting together may need
+# these raised (PUBLIC_*_LIMIT_PER_MIN); the defaults are the strict single-user values.
+register_limiter = SlidingWindowLimiter(limit=env_limit("PUBLIC_REGISTER_LIMIT_PER_MIN", 5), window_seconds=60)
+start_limiter = SlidingWindowLimiter(limit=env_limit("PUBLIC_START_LIMIT_PER_MIN", 30), window_seconds=60)
+meta_limiter = SlidingWindowLimiter(limit=env_limit("PUBLIC_META_LIMIT_PER_MIN", 60), window_seconds=60)
 
 
 def _no_store(response: Response):

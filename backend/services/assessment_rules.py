@@ -23,7 +23,7 @@ from services import jd_blueprint_service as blueprint
 
 # Mirrors of workspace constants (frontend): useAssessmentFullscreen recoveryDuration, useFaceProctoring NO_PERSON_THRESHOLD * CHECK_INTERVAL_MS.
 FULLSCREEN_RECOVERY_SECONDS = 10
-NO_PERSON_SECONDS = 9
+NO_PERSON_SECONDS = 6
 
 
 def _item(text: str, important: bool = False) -> Dict[str, Any]:

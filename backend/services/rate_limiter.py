@@ -6,12 +6,22 @@ limit x workers; put an nginx `limit_req` in front for a hard global cap. The cl
 address, or the proxy-set X-Real-IP when (and only when) the peer is a trusted reverse proxy - see client_ip().
 X-Forwarded-For is never trusted here because its left-most values are client controlled.
 """
+import os
 import threading
 import time
 from collections import defaultdict, deque
 from typing import Deque, Dict, Hashable
 
 _clock = time.monotonic  # indirection for tests
+
+
+def env_limit(name: str, default: int) -> int:
+    """A per-minute limit from the environment; unset, empty, zero or malformed falls back to `default` (nothing changes unless it is set)."""
+    try:
+        value = int((os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+    return value if value >= 1 else default
 
 
 class SlidingWindowLimiter:
