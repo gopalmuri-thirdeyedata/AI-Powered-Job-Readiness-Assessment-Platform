@@ -676,7 +676,7 @@ const RoleReadySetup = () => {
                                         stepNumber="3"
                                         title="Technical Interview"
                                         description="AI-guided technical conversation & concept defense."
-                                        duration="20 min"
+                                        duration="10 min"
                                         isGated={true}
                                     />
                                 </div>

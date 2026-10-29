@@ -145,7 +145,7 @@ def run_student(db, data, clk, blueprint, scenario, stop_after=None):
     r = client.post(f"{base}/start-interview", headers=hdr)
     assert r.status_code == 200, r.text
     j.deadlines["interview"] = _minutes(clk, r.json()["deadline_at"])
-    clk.advance(13 * 60)
+    clk.advance(8 * 60)                          # the interview section is 10 minutes
     assert client.post(f"{base}/submit-interview", headers=hdr, json={"answers": INTERVIEW}).status_code == 200
     return j, sess
 
@@ -173,7 +173,7 @@ def run_recruitment(db, env, clk, scenario, stop_after=None):
     clk.advance(12 * 60)
     assert client.post(h.sess_url(s, "submit-coding"), headers=h.sh(s), json={"solutions": coding}).status_code == 200, "coding submit"
     j.deadlines["interview"] = _minutes(clk, state()["section"]["deadline_at"])
-    clk.advance(13 * 60)
+    clk.advance(8 * 60)                          # the interview section is 10 minutes
     assert client.post(h.sess_url(s, "submit-interview"), headers=h.sh(s), json={"answers": INTERVIEW, "transcript": []}).status_code == 200
     return j, s
 
@@ -240,14 +240,14 @@ def test_section_and_overall_deadlines_follow_the_same_policy(db, env, db_sessio
     _pin_interview_score(monkeypatch, 80.0)
     sj, _ = run_student(db_session, setup_test_data, clk, _blueprint(), SCENARIOS["mixed"])
     rj, _ = run_recruitment(db, env, clk, SCENARIOS["mixed"])
-    # aptitude starts at 0 -> ends at 20; coding starts at 8 -> 28; interview starts at 20 -> 40; overall is 60 from the start
-    assert sj.deadlines == rj.deadlines == {"aptitude": 20.0, "coding": 28.0, "interview": 40.0}
+    # aptitude starts at 0 -> ends at 20; coding starts at 8 -> 28; the interview (10 minutes) starts at 20 -> 30; overall is 60 from the start
+    assert sj.deadlines == rj.deadlines == {"aptitude": 20.0, "coding": 28.0, "interview": 30.0}
     assert sj.overall_deadline == rj.overall_deadline == 60.0
     assert policy.SECTION_MINUTES == 20 and policy.OVERALL_MINUTES == 60
 
 
 def test_the_overall_deadline_caps_a_late_section_in_both_workflows(db, env, db_session, setup_test_data, clk):
-    """Three full-length sections end exactly at the 60-minute mark; nothing is ever granted beyond it."""
+    """Aptitude (20) + Coding (20) + Interview (10) end at the 50-minute mark, inside the 60-minute overall deadline, which never moves."""
     sess = _student_session(db_session, setup_test_data, _blueprint())
     hdr = setup_test_data["auth_headers"]
     base = f"/api/roleready/session/{sess.session_uuid}"
@@ -259,7 +259,7 @@ def test_the_overall_deadline_caps_a_late_section_in_both_workflows(db, env, db_
     clk.advance(20 * 60)
     assert client.post(f"{base}/submit-coding", headers=hdr, json={"solutions": {}}).status_code == 200
     interview = client.post(f"{base}/start-interview", headers=hdr).json()
-    assert _minutes(clk, interview["deadline_at"]) == 60.0 == _minutes(clk, interview["overall_deadline_at"])
+    assert _minutes(clk, interview["deadline_at"]) == 50.0 and _minutes(clk, interview["overall_deadline_at"]) == 60.0
 
     clk.set(T0)
     token, _ = h.register_ok(env["token"])
@@ -269,7 +269,7 @@ def test_the_overall_deadline_caps_a_late_section_in_both_workflows(db, env, db_
     clk.advance(20 * 60)
     assert client.post(h.sess_url(s, "submit-coding"), headers=h.sh(s), json={"solutions": {}}).status_code == 200
     st = client.get(h.sess_url(s, "state"), headers=h.sh(s)).json()
-    assert _minutes(clk, st["section"]["deadline_at"]) == 60.0 == _minutes(clk, st["overall_deadline_at"])
+    assert _minutes(clk, st["section"]["deadline_at"]) == 50.0 and _minutes(clk, st["overall_deadline_at"]) == 60.0
 
 
 # ------------------------------------------------------------------------------ incomplete attempts

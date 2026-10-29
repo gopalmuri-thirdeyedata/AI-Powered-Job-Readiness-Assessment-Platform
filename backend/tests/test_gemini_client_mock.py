@@ -74,7 +74,7 @@ def test_rest_adapter_parses_response_and_strips_code_fences(monkeypatch):
         assert timeout == 30
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "```json\n{\"a\": 1}\n```"}]}}]})
 
-    monkeypatch.setattr(gemini_client.httpx, "post", fake_post)
+    monkeypatch.setattr(gemini_client, "_http_post", fake_post)
     assert gemini_client.call_gemini("p") == {"a": 1}
 
 
@@ -83,7 +83,7 @@ def test_rest_adapter_does_not_retry_auth_errors(monkeypatch):
     monkeypatch.setattr(gemini_client, "get_gemini_api_key", lambda: "k")
     monkeypatch.setitem(sys.modules, "google.generativeai", None)
     calls = []
-    monkeypatch.setattr(gemini_client.httpx, "post",
+    monkeypatch.setattr(gemini_client, "_http_post",
                         lambda *a, **k: calls.append(1) or httpx.Response(403, json={}))
     with pytest.raises(gemini_client.GeminiUnavailableError):
         gemini_client.call_gemini("p")
@@ -130,7 +130,7 @@ def test_gemini_2_5_model_passes_thinking_budget_zero(monkeypatch):
         captured.update(json=json)
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "{\"ok\": true}"}]}}]})
 
-    monkeypatch.setattr(gemini_client.httpx, "post", fake_post)
+    monkeypatch.setattr(gemini_client, "_http_post", fake_post)
     res = gemini_client.call_gemini("test prompt", json_mode=True)
     assert res == {"ok": True}
     assert "thinkingConfig" in captured["json"]["generationConfig"]
@@ -177,3 +177,20 @@ def test_the_voice_model_defaults_to_a_light_model_and_can_be_overridden(monkeyp
     assert el._voice_model() == "gemini-custom"
     monkeypatch.setenv("GEMINI_VOICE_MODEL_NAME", "default")
     assert el._voice_model() is None
+
+
+def test_every_gemini_call_goes_through_one_shared_connection_pool():
+    """httpx.post()/stream() build a new client (new TLS setup) per call; under 20 simultaneous turns that made the first token 5x slower."""
+    import inspect
+    import threading
+    first = gemini_client._http()
+    assert first is gemini_client._http() and isinstance(first, httpx.Client)
+    found = []
+    threads = [threading.Thread(target=lambda: found.append(gemini_client._http())) for _ in range(16)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert all(c is first for c in found)                                   # created once, even when many threads ask at the same moment
+    import ast
+    calls = [f"{n.func.value.id}.{n.func.attr}" for n in ast.walk(ast.parse(inspect.getsource(gemini_client)))
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name)]
+    assert "httpx.post" not in calls and "httpx.stream" not in calls          # no per-call client left anywhere in the module

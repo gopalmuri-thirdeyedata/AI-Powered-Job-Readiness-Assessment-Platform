@@ -6,12 +6,15 @@ text-to-speech. The browser records the candidate and plays the answer; the API 
 the questions and the job context) never leave the server. Nothing is provisioned at the provider, so there is nothing to clean up.
 """
 import base64
+import logging
 import os
+import queue
 import random
 import time
 import re
 import threading
 from collections import OrderedDict
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Iterator, Dict, List, Optional
 from urllib.parse import urlencode
@@ -20,9 +23,12 @@ import requests
 from dotenv import load_dotenv
 
 from services import gemini_client
+from services.shared_slots import SharedLine
 from services.student_sandbox import SandboxGate
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 REQUEST_TIMEOUT_SECONDS = 25
@@ -90,8 +96,8 @@ def _post(*args, **kwargs):
 
 
 # ElevenLabs allows only a few requests at the same instant per plan (Starter: 6 text-to-speech, 12 speech-to-text; Creator 10 / 20; Pro 20 / 40).
-# Beyond that it answers 429 and a student's voice turn fails. These lines make the surplus WAIT instead. They are per server worker, so set
-# ELEVENLABS_TTS_CONCURRENCY / ELEVENLABS_STT_CONCURRENCY to (plan limit / number of workers), rounded down (Starter with 4 workers: 1 and 3).
+# Beyond that it answers 429 and a student's voice turn fails. These lines make the surplus WAIT instead. They are per server worker; each
+# worker's share is worked out from the plan (see _per_worker_limit).
 def _voice_busy(message: str) -> "VoiceServiceError":
     return VoiceServiceError("The voice service is busy right now. Please try again in a moment.", 503)
 
@@ -103,8 +109,56 @@ def _concurrency_env(name: str, default: int) -> int:
         return default
 
 
-_tts_line = SandboxGate(_concurrency_env("ELEVENLABS_TTS_CONCURRENCY", 1), 12.0, 200, busy_factory=_voice_busy)
-_stt_line = SandboxGate(_concurrency_env("ELEVENLABS_STT_CONCURRENCY", 3), 12.0, 200, busy_factory=_voice_busy)
+def _per_worker_limit(explicit_name: str, plan_name: str, plan_default: int, round_up: bool) -> int:
+    """
+    The waiting-line size of ONE worker. An explicit ELEVENLABS_*_CONCURRENCY wins. Otherwise it is the plan's limit
+    (ELEVENLABS_PLAN_TTS / ELEVENLABS_PLAN_STT, Starter by default) shared over the workers (WEB_CONCURRENCY, 4 as in the Dockerfile).
+    Text-to-speech rounds UP so a Starter plan with 4 workers uses all 6 slots (2 each, a rare brief overshoot is absorbed by the 429 retry);
+    speech-to-text rounds down.
+    """
+    if os.getenv(explicit_name, "").strip():
+        return _concurrency_env(explicit_name, 1)
+    plan = _concurrency_env(plan_name, plan_default)
+    workers = _concurrency_env("WEB_CONCURRENCY", 4)
+    return max(1, -(-plan // workers) if round_up else plan // workers)
+
+
+class _VoiceLine:
+    """The per-worker line (bounded wait, busy error) plus, when available, the machine-wide slots shared by all workers (services.shared_slots)."""
+
+    def __init__(self, local: SandboxGate, shared: Optional[SharedLine] = None):
+        self.local, self.shared = local, shared
+        self.concurrency = local.concurrency
+
+    @contextmanager
+    def slot(self):
+        with self.local.slot():
+            if self.shared is not None and self.shared.available:
+                with self.shared.slot(self.local.max_wait_seconds, _voice_busy):
+                    yield
+            else:
+                yield
+
+    def stats(self):
+        return self.local.stats()
+
+
+def _make_line(name: str, explicit_name: str, plan_name: str, plan_default: int, round_up: bool):
+    """
+    One line for the whole machine when possible: any worker may use any of the plan's slots (a busy worker no longer waits while another is
+    idle). A hand-pinned ELEVENLABS_*_CONCURRENCY, ELEVENLABS_SHARED_LINES=off, or a machine without file locks keeps the per-worker share.
+    """
+    per_worker = _per_worker_limit(explicit_name, plan_name, plan_default, round_up)
+    if not os.getenv(explicit_name, "").strip() and os.getenv("ELEVENLABS_SHARED_LINES", "").strip().lower() != "off":
+        total = _concurrency_env(plan_name, plan_default)
+        shared = SharedLine(name, total)
+        if shared.available:
+            return _VoiceLine(SandboxGate(total, 12.0, 200, busy_factory=_voice_busy), shared)
+    return _VoiceLine(SandboxGate(per_worker, 12.0, 200, busy_factory=_voice_busy))
+
+
+_tts_line = _make_line("tts", "ELEVENLABS_TTS_CONCURRENCY", "ELEVENLABS_PLAN_TTS", 6, True)
+_stt_line = _make_line("stt", "ELEVENLABS_STT_CONCURRENCY", "ELEVENLABS_PLAN_STT", 12, False)
 
 
 def _post_in_line(line: SandboxGate, *args, **kwargs):
@@ -190,8 +244,22 @@ questions already covered is added to every turn: trust it.
 
 # PREPARED QUESTIONS
 {formatted_questions}
-Every prepared question must be covered before time runs out. Ask each one in its own words when its turn comes. When you start one, say "Question N" first.
-Adaptive follow-ups do not get a number.
+Every prepared question must be covered before time runs out, but they are topics to explore, not a script to read out. Ask each one in your own words,
+fitted to what the candidate has told you (their project, stack or company), so it sounds like it came from the conversation. The numbers are for internal tracking only:
+NEVER say "Question 3" or any number aloud. When your reply asks one of them, start the reply with its hidden tag, for example [Q3] (the system removes the tag before
+speaking, so the candidate never hears or sees it). Tag ONLY the reply where you first begin a prepared question. Follow-ups, even on the same topic, and every
+other reply get no tag.
+
+# SOUND LIKE A REAL PERSON
+- Talk the way an experienced engineer talks to a colleague they just met: relaxed spoken English, contractions, short sentences. Not formal, not scripted.
+- Never announce structure: no "Question 1", "next question", "let's move on to", "now I'll ask", "moving to the technical part".
+- Right after the candidate's introduction, do NOT start the prepared questions. React to something real in what they said (their current job, project, stack,
+  how they got there) and ask a genuinely curious, easy question about it ("What's the hardest part of that project so far?"). Keep the opening comfortable.
+- Show you listened: a few natural words that pick up their own details are enough. Small natural reactions are fine ("Okay.", "Right.", "Got it.", "Interesting.",
+  "Ah, that makes sense."), but vary them and do not gush or grade the answer.
+- Move between topics the way a person does: connect the next question to something they said ("You mentioned the pipeline, so I'm curious how you'd debug it
+  when it slows down"). A change of topic should feel like curiosity, not like the next item on a form.
+- Do not start two replies in a row the same way.
 
 # HOW TO RUN THE CONVERSATION
 - Open from the candidate's own words. Your reply must be built on something specific they JUST said (a technology, a decision, a number, a problem).
@@ -272,6 +340,7 @@ def _interview_state(voice_session: Dict[str, Any], history: List[Dict[str, str]
         lines.append(f"Time: about {elapsed // 60} of {total // 60} minutes used, about {max(0, total - elapsed) // 60} minutes left.")
     questions = voice_session.get("questions") or []
     asked = {int(n) for turn in history if turn["role"] == "ai" for n in re.findall(r"\bQuestion (\d+)\b", turn["text"])}
+    asked |= {turn["q"] for turn in history if turn["role"] == "ai" and turn.get("q")}
     if questions:
         todo = [i + 1 for i in range(len(questions)) if (i + 1) not in asked]
         lines.append("Prepared questions not asked yet (they come after follow-ups, unless time is short): " + (", ".join(f"Question {n}" for n in todo) if todo else "none (all covered)."))
@@ -281,12 +350,15 @@ def _interview_state(voice_session: Dict[str, Any], history: List[Dict[str, str]
     for turn in reversed(history):
         if turn["role"] != "ai":
             continue
-        if re.search(r"\bQuestion \d+\b", turn["text"]):
+        if turn.get("q") or re.search(r"\bQuestion \d+\b", turn["text"]):
             marked = True
             break
         follow_ups += 1
     if not marked:
         follow_ups = max(0, follow_ups - 1)                   # the opening line is the topic's question, not a follow-up
+    if not any(t["role"] == "ai" and (t.get("q") or re.search(r"\bQuestion \d+\b", t["text"])) for t in history) and sum(1 for t in history if t["role"] == "ai") <= 1:
+        lines.append("The candidate has just introduced themselves. React to one specific thing they said about themselves (their job, project, stack or path) and "
+                     "ask one easy, genuinely curious question about it. Do not ask a prepared question yet and do not announce any structure.")
     lines.append(f"Follow-ups already used on the current topic: {follow_ups} of 2."
                  + (" The topic is covered: move on to the next prepared question." if follow_ups >= 2 else " Do NOT start a new prepared question yet: follow up on the candidate's last answer."))
     hint = _answer_hint(user_text, history)
@@ -485,8 +557,59 @@ def _clean_history(history: Any) -> List[Dict[str, str]]:
             continue
         text = str(item.get("text") or "").strip()[:MAX_TURN_CHARS]
         if text:
-            turns.append({"role": "ai" if item.get("role") in ("ai", "assistant") else "user", "text": text})
+            turn = {"role": "ai" if item.get("role") in ("ai", "assistant") else "user", "text": text}
+            q = item.get("q")
+            if turn["role"] == "ai" and isinstance(q, int) and not isinstance(q, bool) and 1 <= q <= 99:
+                turn["q"] = q                      # which prepared question this reply asked (never spoken or shown)
+            turns.append(turn)
     return turns
+
+
+_QUESTION_TAG = re.compile(r"^\s*(?:\[\s*Q\s*(\d{1,2})\s*\]|Question\s+(\d{1,2})\s*[.:,\-]?)\s*", re.I)
+
+
+def _split_question_tag(text: str):
+    """(n, spoken_text): the hidden prepared-question tag the model puts first ("[Q3]", or a spoken "Question 3.") is removed from what is said and shown."""
+    m = _QUESTION_TAG.match(text or "")
+    if not m:
+        return None, text
+    rest = (text[m.end():] or "").lstrip()
+    return (int(m.group(1) or m.group(2)), rest) if rest else (None, text)
+
+
+def _accepted_question_no(q: Optional[int], history: List[Dict[str, str]], voice_session: Dict[str, Any]) -> Optional[int]:
+    """
+    A tag only counts when this reply really STARTS a prepared question: not one that was already asked (a follow-up on the same topic),
+    not a number outside the prepared list, and not the reply to the introduction (that one is a natural follow-up).
+    """
+    if not q:
+        return None
+    total = len(voice_session.get("questions") or [])
+    if total and q > total:
+        return None
+    ai_turns = [t for t in history if t["role"] == "ai"]
+    asked = {t["q"] for t in ai_turns if t.get("q")} | {int(n) for t in ai_turns for n in re.findall(r"\bQuestion (\d+)\b", t["text"])}
+    if q in asked or len(ai_turns) <= 1:
+        return None
+    return q
+
+
+def _strip_leading_tag(deltas: Iterator[str], holder: Dict[str, Any]) -> Iterator[str]:
+    """Streams text deltas without the leading question tag (decided once the first ~18 characters are in); the tag number goes to holder["q"]."""
+    buf, decided = "", False
+    for delta in deltas:
+        if decided:
+            yield delta
+            continue
+        buf += delta
+        if len(buf.lstrip()) >= 18:
+            holder["q"], buf = _split_question_tag(buf)
+            decided = True
+            if buf:
+                yield buf
+    if not decided and buf:
+        holder["q"], buf = _split_question_tag(buf)
+        yield buf
 
 
 def _clean_reply(text: str) -> str:
@@ -531,7 +654,9 @@ def run_turn(voice_session: Dict[str, Any], *, audio: Optional[bytes] = None, co
         return {"user_text": "", "reply_text": "", "audio_base64": None, "mime": AUDIO_MPEG}
     clean = _clean_history(history)
     reply = next_reply(voice_session["system_prompt"], clean, user_text, _interview_state(voice_session, clean, user_text))
-    return {"user_text": user_text, "reply_text": reply, "audio_base64": _audio_b64(synthesize(reply)), "mime": AUDIO_MPEG}
+    question_no, reply = _split_question_tag(reply)
+    question_no = _accepted_question_no(question_no, clean, voice_session)
+    return {"user_text": user_text, "reply_text": reply, "question_no": question_no, "audio_base64": _audio_b64(synthesize(reply)), "mime": AUDIO_MPEG}
 
 
 # ------------------------------------------------------------------------------
@@ -565,8 +690,67 @@ def _audio_event(index: int, text: str, audio: bytes) -> Dict[str, Any]:
     return {"type": "audio", "index": index, "text": text, "audio_base64": _audio_b64(audio), "mime": AUDIO_MPEG}
 
 
+def _words(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9']+", str(text or "").lower())
+
+
+def _hint_matches(hint: str, transcript: str, threshold: float = 0.8) -> bool:
+    """The live-caption text is only trusted when it agrees with the server's own transcript (shared words / the longer of the two)."""
+    a, b = _words(hint), _words(transcript)
+    if not a or not b:
+        return False
+    shared = len(set(a) & set(b))
+    return shared / max(len(set(a)), len(set(b))) >= threshold
+
+
+MIN_HINT_WORDS = 4
+
+
+class _EarlyReply:
+    """
+    The reply, started from the live-caption text while the recording is still being transcribed (saves the transcription time on every turn).
+    The caller keeps it only if the real transcript agrees (_hint_matches); otherwise it is cancelled and the reply is produced again from the
+    transcript, so nothing but the server's own transcript ever drives what is stored or scored.
+    """
+    _END = object()
+
+    def __init__(self, voice_session: Dict[str, Any], history: List[Dict[str, str]], hint: str):
+        self.hint = hint
+        self.tag: Dict[str, Any] = {"q": None}
+        self._queue: "queue.Queue" = queue.Queue()
+        self._cancelled = threading.Event()
+        self._state = _interview_state(voice_session, history, hint)
+        self._prompt = _reply_prompt(history, hint, self._state)
+        self._system = voice_session["system_prompt"]
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            stream = _strip_leading_tag(gemini_client.stream_gemini_text(self._prompt, self._system, 0.7, fast=True, model=_voice_model()), self.tag)
+            for chunk in _chunk_sentences(stream):
+                if self._cancelled.is_set():
+                    return
+                self._queue.put(chunk)
+        except Exception as exc:                       # surfaced to the consumer, which then falls back to the normal path
+            self._queue.put(exc)
+        else:
+            self._queue.put(self._END)
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+
+    def chunks(self) -> Iterator[str]:
+        while True:
+            item = self._queue.get()
+            if item is self._END:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+
 def run_turn_stream(voice_session: Dict[str, Any], *, audio: Optional[bytes] = None, content_type: str = AUDIO_WEBM,
-                    history: Any = None, opening: bool = False) -> Iterator[Dict[str, Any]]:
+                    history: Any = None, opening: bool = False, hint: str = "") -> Iterator[Dict[str, Any]]:
     """
     Same exchange as run_turn, delivered as events so playback can start early:
       {"type": "transcript", "user_text"}  what the candidate said ("" = no speech: nothing else follows but "done")
@@ -582,36 +766,74 @@ def run_turn_stream(voice_session: Dict[str, Any], *, audio: Optional[bytes] = N
             yield {"type": "done", "reply_text": text}
             return
 
-        user_text = transcribe(audio or b"", content_type)
+        clean_history = _clean_history(history)
+        hint = re.sub(r"\s+", " ", str(hint or "")).strip()[:MAX_TURN_CHARS]
+        t_start = time.monotonic()
+        marks: Dict[str, Any] = {}                                    # timings of this turn (milliseconds), sent with "done" and logged: no text in it
+        early = _EarlyReply(voice_session, clean_history, hint) if len(_words(hint)) >= MIN_HINT_WORDS and audio else None
+        try:
+            user_text = transcribe(audio or b"", content_type)
+            marks["stt_ms"] = round((time.monotonic() - t_start) * 1000)
+        except BaseException:
+            if early:
+                early.cancel()
+            raise
         yield {"type": "transcript", "user_text": user_text}
         if not user_text:
+            if early:
+                early.cancel()
             yield {"type": "done", "reply_text": ""}
             return
+        marks["early_reply"] = "used" if early and _hint_matches(hint, user_text) else ("discarded" if early else "off")
+        if early and not _hint_matches(hint, user_text):
+            early.cancel()                               # the caption was incomplete or wrong: reply from the real transcript instead
+            early = None
 
-        clean_history = _clean_history(history)
         prompt = _reply_prompt(clean_history, user_text, _interview_state(voice_session, clean_history, user_text))
         reply_parts: List[str] = []
         futures = []
         emitted = 0
+        tag: Dict[str, Any] = early.tag if early else {"q": None}
         try:
             with ThreadPoolExecutor(max_workers=3) as pool:
                 try:
-                    for chunk in _chunk_sentences(gemini_client.stream_gemini_text(prompt, voice_session["system_prompt"], 0.7, fast=True, model=_voice_model())):
+                    def source():
+                        if early:
+                            spoke = False
+                            try:
+                                for piece in early.chunks():
+                                    spoke = True
+                                    yield piece
+                            except Exception:                       # the early reply failed: keep what was already produced, else start over from the transcript
+                                if spoke:
+                                    return
+                            else:
+                                if spoke:
+                                    return
+                            tag["q"] = None
+                        yield from _chunk_sentences(_strip_leading_tag(gemini_client.stream_gemini_text(prompt, voice_session["system_prompt"], 0.7, fast=True, model=_voice_model()), tag))
+                    for chunk in source():
+                        marks.setdefault("first_text_ms", round((time.monotonic() - t_start) * 1000))
                         reply_parts.append(chunk)
                         futures.append(pool.submit(synthesize, chunk))
                         while emitted < len(futures) and futures[emitted].done():       # speak whatever is already ready, in order
+                            marks.setdefault("first_audio_ms", round((time.monotonic() - t_start) * 1000))
                             yield _audio_event(emitted, reply_parts[emitted], futures[emitted].result())
                             emitted += 1
                 except gemini_client.GeminiUnavailableError:
                     raise VoiceServiceError("The interviewer is unavailable right now. Please try again.")
                 while emitted < len(futures):
-                    yield _audio_event(emitted, reply_parts[emitted], futures[emitted].result())
+                    audio_event = _audio_event(emitted, reply_parts[emitted], futures[emitted].result())
+                    marks.setdefault("first_audio_ms", round((time.monotonic() - t_start) * 1000))
+                    yield audio_event
                     emitted += 1
         finally:
             for f in futures:
                 f.cancel()
         if not reply_parts:
             raise VoiceServiceError("The interviewer is unavailable right now. Please try again.")
-        yield {"type": "done", "reply_text": " ".join(reply_parts)}
+        marks["total_ms"] = round((time.monotonic() - t_start) * 1000)
+        logger.info("voice turn timings %s", marks)
+        yield {"type": "done", "reply_text": " ".join(reply_parts), "question_no": _accepted_question_no(tag["q"], clean_history, voice_session), "timings": marks}
     except VoiceServiceError as exc:
         yield {"type": "error", "message": exc.public_message, "status": exc.status_code}

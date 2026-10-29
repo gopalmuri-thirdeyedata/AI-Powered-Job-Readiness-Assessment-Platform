@@ -132,11 +132,12 @@ const audioError = (message) => {
 };
 
 /** The multipart body of one voice turn (shared by the student and the recruitment candidate API). */
-export const buildVoiceTurnForm = ({ blob, history = [], opening = false } = {}) => {
+export const buildVoiceTurnForm = ({ blob, history = [], opening = false, hint = '' } = {}) => {
     const form = new FormData();
     if (blob) form.append('audio', blob, 'answer.webm');
     form.append('history', JSON.stringify(history));
     form.append('opening', opening ? 'true' : 'false');
+    if (hint) form.append('hint', String(hint).slice(0, 2400));     // the live-caption text (optional)
     return form;
 };
 
@@ -196,6 +197,7 @@ export class VoiceInterviewSession {
     removeAllListeners() { this.listeners = {}; }
 
     emit(event, payload) {
+        if (event === 'caption' && payload?.role === 'user') this.lastUserCaption = String(payload.text || '');      // sent with the recording so the reply can start early
         if (event === 'caption' && payload?.role === 'user') this.userCaptionText = payload.text || '';      // the words heard so far decide how long to wait
         for (const handler of this.listeners[event] || []) {
             try { handler(payload); } catch (e) { console.error(`[voice] ${event} handler failed`, e); }
@@ -409,13 +411,14 @@ export class VoiceInterviewSession {
     }
 
     async answerGiven() {
+        const hint = (this.lastUserCaption || '').trim();             // what the live captions heard: the server only uses it if its own transcript agrees
         this.state = 'processing';
         this.stopCaptions();             // the caption stays on screen until the server's transcript replaces it
         this.emit('processing');
         try {
             const blob = await this.endRecording();
             if (this.closed) return;
-            if (this.turnStream && blob && blob.size && await this.streamAnswer(blob)) return;
+            if (this.turnStream && blob && blob.size && await this.streamAnswer(blob, hint)) return;
             const result = blob && blob.size ? await this.requestTurn({ blob, history: this.history }) : null;
             if (this.closed) return;
             if (!result || !result.user_text) { this.startListening(); return; }      // no speech recognised: keep listening
@@ -432,14 +435,16 @@ export class VoiceInterviewSession {
      * @returns {Promise<boolean>} true when the turn was handled here; false when the stream failed before anything was heard,
      *   so the caller can repeat the exchange with the plain request (nothing was recorded twice).
      */
-    async streamAnswer(blob) {
+    async streamAnswer(blob, hint = '') {
+        const sentAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        this.lastTurnTiming = {};            // how long the candidate really waited (answer sent -> first words of the reply arrive); shown in the console only
         let heard = false;
         let spoke = false;
         let spokenSoFar = '';
         let playback = Promise.resolve();
         this.abortController = typeof AbortController === 'undefined' ? null : new AbortController();
         try {
-            for await (const event of this.turnStream({ blob, history: this.history }, { signal: this.abortController?.signal })) {
+            for await (const event of this.turnStream({ blob, history: this.history, hint }, { signal: this.abortController?.signal })) {
                 if (this.closed) return true;
                 if (event.type === 'transcript') {
                     if (!event.user_text) { this.startListening(); return true; }       // no speech recognised: keep listening
@@ -449,6 +454,7 @@ export class VoiceInterviewSession {
                 } else if (event.type === 'audio') {
                     if (!spoke) {
                         spoke = true;
+                        this.lastTurnTiming.first_audio_wait_ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - sentAt);
                         this.state = 'speaking';
                         this.stopCaptions({ clear: true });
                         this.rtCaptions?.warm();
@@ -461,9 +467,11 @@ export class VoiceInterviewSession {
                     playback = playback.then(() => (this.closed ? undefined : this.play(chunk, caption)));
                     playback.catch(() => {});       // surfaced below when awaited; never an unhandled rejection meanwhile
                 } else if (event.type === 'done') {
+                    this.lastTurnTiming.server = event.timings;
+                    try { console.debug('[voice] turn timing', this.lastTurnTiming); } catch { /* no console */ }
                     if (event.reply_text) {
-                        this.history.push({ role: 'ai', text: event.reply_text });
-                        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: event.reply_text });
+                        this.history.push({ role: 'ai', text: event.reply_text, ...(Number.isInteger(event.question_no) ? { q: event.question_no } : {}) });
+                        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: event.reply_text, questionNo: Number.isInteger(event.question_no) ? event.question_no : undefined });
                     }
                 } else if (event.type === 'error') {
                     const err = new Error(event.message || 'The interviewer is unavailable right now.');
@@ -505,9 +513,9 @@ export class VoiceInterviewSession {
         this.rtCaptions?.warm();                  // ready before the candidate's turn: the first words are not delayed
         this.lastActivityAt = Date.now();
         const text = result.reply_text || '';
-        this.history.push({ role: 'ai', text });
+        this.history.push({ role: 'ai', text, ...(Number.isInteger(result.question_no) ? { q: result.question_no } : {}) });
         this.emit('speech-start');
-        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: text });
+        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: text, questionNo: Number.isInteger(result.question_no) ? result.question_no : undefined });
         await this.play(base64ToBlob(result.audio_base64, result.mime), { prefix: '', text });
         if (this.closed) return;
         this.emit('speech-end');

@@ -31,7 +31,7 @@ from services.rate_limiter import SlidingWindowLimiter, client_ip
 SECTIONS = [
     {"key": "aptitude", "label": "Aptitude", "minutes": policy.SECTION_MINUTES},
     {"key": "coding", "label": "Coding", "minutes": policy.SECTION_MINUTES},
-    {"key": "interview", "label": "AI Technical Interview", "minutes": policy.SECTION_MINUTES},
+    {"key": "interview", "label": "AI Technical Interview", "minutes": policy.section_minutes("INTERVIEW")},
 ]
 # Candidate-facing Rules of Assessment: grouped, generated from the enforcing modules' constants (services/assessment_rules.py).
 RULES = assessment_rules.candidate_rules()
@@ -345,7 +345,7 @@ def voice_caption_token(session_uuid: str, headers=Depends(_session_headers), db
 
 @router.post("/session/{session_uuid}/voice-turn-stream")
 def voice_turn_stream(session_uuid: str, audio: Optional[UploadFile] = File(None), history: str = Form("[]"), opening: bool = Form(False),
-                      headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+                      hint: str = Form(""), headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     """The same exchange as /voice-turn as newline-delimited JSON events, so the first sentence is spoken before the reply is finished."""
     token, lease = headers
     session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
@@ -355,7 +355,7 @@ def voice_turn_stream(session_uuid: str, audio: Optional[UploadFile] = File(None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid conversation history.")
     events = flow.voice_turn_stream(db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
-                                    parsed_history, opening)
+                                    parsed_history, opening, hint)
     return StreamingResponse(
         (json.dumps(event, separators=(",", ":")) + "\n" for event in events),
         media_type="application/x-ndjson",

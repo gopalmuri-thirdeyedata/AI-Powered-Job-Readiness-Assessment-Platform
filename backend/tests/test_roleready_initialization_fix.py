@@ -164,7 +164,7 @@ def test_non_retryable_errors_fail_fast(monkeypatch):
         rest_calls.append(1)
         return httpx.Response(400, text="Bad Request: Invalid argument")
 
-    monkeypatch.setattr(gemini_client.httpx, "post", fake_post)
+    monkeypatch.setattr(gemini_client, "_http_post", fake_post)
 
     with pytest.raises(gemini_client.GeminiUnavailableError):
         gemini_client.call_gemini("test prompt")
@@ -189,7 +189,7 @@ def test_transient_error_retries_once_then_raises(monkeypatch):
         rest_calls.append(1)
         return httpx.Response(429, text="Too Many Requests")
 
-    monkeypatch.setattr(gemini_client.httpx, "post", fake_post)
+    monkeypatch.setattr(gemini_client, "_http_post", fake_post)
 
     with pytest.raises(gemini_client.GeminiUnavailableError):
         gemini_client.call_gemini("test prompt")

@@ -107,7 +107,7 @@ def test_gemini_generation_is_labelled_gemini(monkeypatch, admin):
         prompt = json["contents"][0]["parts"][0]["text"]
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": jsonlib.dumps(gemini_mock_fixtures.get_mock_response(prompt))}]}}]})
 
-    monkeypatch.setattr(gemini_client.httpx, "post", post)
+    monkeypatch.setattr(gemini_client, "_http_post", post)
     r = generate(admin, job)
     assert r.status_code == 200, r.text
     assert r.json()["blueprint"]["source"] == "gemini" and r.json()["blueprint_data"]["generation"]["label"] == "Gemini"
@@ -142,7 +142,7 @@ def test_quota_exhaustion_is_reported_as_unavailable_not_success(monkeypatch, ad
         calls["n"] += 1
         return httpx.Response(402, json={"error": {"status": "RESOURCE_EXHAUSTED", "message": "Your prepayment credits are depleted."}})
 
-    monkeypatch.setattr(gemini_client.httpx, "post", post)
+    monkeypatch.setattr(gemini_client, "_http_post", post)
     monkeypatch.setattr("services.jd_blueprint_service._sleep", lambda s: None)
     r = generate(admin, job)
     assert r.status_code == 502 and ("quota" in r.text.lower() or "credit" in r.text.lower())
@@ -206,7 +206,7 @@ def test_candidate_completes_all_three_sections_and_results_use_the_existing_pip
     h.patch_interview_eval(monkeypatch, score=70.0)
     pub = h.create_published_job(admin, monkeypatch)
     meta = client.get(f"/api/public/assessment/{pub['share_token']}").json()
-    assert [s["minutes"] for s in meta["sections"]] == [20, 20, 20] and meta["total_duration_minutes"] == 60
+    assert [s["minutes"] for s in meta["sections"]] == [20, 20, 10] and meta["total_duration_minutes"] == 60
     started, qs, s3 = sit(db, pub, aptitude_correct=12)
     assert s3["state"] == "COMPLETED"
     assert len(qs) == 5 and all(set(q) == {"id", "category", "question"} for q in qs), "rubrics stay server side"

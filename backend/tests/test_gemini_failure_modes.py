@@ -56,7 +56,7 @@ def fake_gemini(monkeypatch, responder):
         _prompt.text = json["contents"][0]["parts"][0]["text"]
         return responder(calls["n"], timeout)
 
-    monkeypatch.setattr(gemini_client.httpx, "post", post)
+    monkeypatch.setattr(gemini_client, "_http_post", post)
     return calls
 
 

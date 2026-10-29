@@ -498,6 +498,7 @@ const RoleReadyReport = () => {
                                     partially_correct: { label: 'Partially Demonstrated', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800' },
                                     incomplete: { label: 'Incomplete / Shallow', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-800' },
                                     incorrect: { label: 'Needs Rework', color: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800' },
+                                    not_assessed: { label: 'Not reached', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700' },
                                     unanswered: { label: 'Unanswered', color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700' }
                                 }[status] || { label: status, color: 'bg-slate-100 text-slate-700 border-slate-200' };
 
@@ -532,8 +533,8 @@ const RoleReadyReport = () => {
 
                                             <div className="flex items-center gap-3 shrink-0">
                                                 <div className="text-right">
-                                                    <span className={`text-base font-extrabold ${score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : score >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                        {score}%
+                                                    <span className={`text-base font-extrabold ${status === 'not_assessed' ? 'text-slate-400' : score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : score >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                        {status === 'not_assessed' ? '—' : `${score}%`}
                                                     </span>
                                                 </div>
                                                 {isExpanded ? (

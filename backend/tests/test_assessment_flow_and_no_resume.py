@@ -436,9 +436,9 @@ def test_arrival_window_consumption_reduces_next_section_time(db, env, clk):
     assert r.status_code == 200
     section = r.json()["section"]
     assert section["key"] == "interview"
-    assert section["remaining_seconds"] == 1195  # 60m - 40m05s: the overall deadline is never extended
+    assert section["remaining_seconds"] == 600 and section["limit_minutes"] == 10   # the interview section is 10 minutes (40m05s + 10m is inside the 60m overall)
     row = h.session_row(db, started["session_uuid"])
-    assert row.current_section_deadline_at == row.overall_deadline_at
+    assert row.current_section_deadline_at == (t0 + timedelta(seconds=2405 + 600)).replace(tzinfo=None) < row.overall_deadline_at
 
 
 def test_near_global_deadline_submission_leaves_only_remaining_seconds(db, env, clk):

@@ -272,7 +272,7 @@ def start_assessment(db: Session, share_token: str, registration_token: Optional
             first = section == "APTITUDE"
             db.add(models.RoleReadyRoundAttempt(
                 session_id=session.id, round_type=section, round_order=order,
-                status="IN_PROGRESS" if first else "PENDING", time_limit_minutes=SECTION_MINUTES,
+                status="IN_PROGRESS" if first else "PENDING", time_limit_minutes=policy.section_minutes(section),
                 questions_payload=client_payload, server_keys_payload=server_payload,
                 started_at=_db_dt(now) if first else None,
             ))
@@ -547,6 +547,7 @@ def build_state(db: Session, session: models.RoleReadySession, now: Optional[dat
             "started_at": _iso(rounds[section].started_at),
             "deadline_at": deadline.isoformat(),
             "remaining_seconds": max(0, int((deadline - now).total_seconds())),
+            "limit_minutes": policy.section_minutes(section),
             "questions": rounds[section].questions_payload,
         }
     else:
@@ -773,7 +774,7 @@ def voice_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
         "voiceConfig": voice_config,
         "questions": client_questions,
         "role": role, "company": company or "Target Company", "candidateName": candidate_name,
-        "duration": SECTION_MINUTES,
+        "duration": policy.section_minutes("INTERVIEW"),
         "started_at": started_at, "deadline_at": deadline.isoformat(), "remaining_seconds": remaining,
         "server_time": now.isoformat(),
     }
@@ -807,10 +808,10 @@ def voice_turn(db: Session, session: models.RoleReadySession, audio, content_typ
         raise _http(exc.status_code, exc.public_message)
 
 
-def voice_turn_stream(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool):
+def voice_turn_stream(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool, hint: str = ""):
     """The same exchange as voice_turn, as a stream of events so the first sentence is spoken early (all gating runs before the first byte)."""
     voice_session = _voice_turn_session(db, session)
-    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening, hint=hint)
 
 
 caption_token_limiter = SlidingWindowLimiter(limit=8, window_seconds=60)      # one token per connection; reconnects are rare
@@ -1069,7 +1070,7 @@ def close_section(db: Session, session_pk: int, section: str, payload: Optional[
             _finalize_in_place(session, rounds, "TIMED_OUT", done_at)
         else:
             nxt = SECTION_ORDER[idx + 1]
-            deadline = min(done_at + timedelta(minutes=SECTION_MINUTES), overall)
+            deadline = min(done_at + timedelta(minutes=policy.section_minutes(nxt)), overall)
             session.current_state = STATE_FOR_SECTION[nxt]
             session.current_section_deadline_at = _db_dt(deadline)
             rounds[nxt].status = "IN_PROGRESS"

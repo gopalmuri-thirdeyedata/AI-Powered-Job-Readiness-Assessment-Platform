@@ -1304,7 +1304,7 @@ def create_student_session(
         round_type="APTITUDE",
         round_order=1,
         status="PENDING",
-        time_limit_minutes=policy.SECTION_MINUTES,
+        time_limit_minutes=policy.section_minutes("APTITUDE"),
         questions_payload=apt_client,
         server_keys_payload=apt_keys
     )
@@ -1314,7 +1314,7 @@ def create_student_session(
         round_type="CODING",
         round_order=2,
         status="PENDING",
-        time_limit_minutes=policy.SECTION_MINUTES,
+        time_limit_minutes=policy.section_minutes("CODING"),
         questions_payload=coding_client,
         server_keys_payload=coding_keys
     )
@@ -1324,7 +1324,7 @@ def create_student_session(
         round_type="INTERVIEW",
         round_order=3,
         status="PENDING",
-        time_limit_minutes=policy.SECTION_MINUTES,
+        time_limit_minutes=policy.section_minutes("INTERVIEW"),
         questions_payload=interview_questions,
         server_keys_payload={"questions": interview_questions}
     )
@@ -1618,7 +1618,7 @@ def _begin_round(db: Session, session: RoleReadySession, rnd: RoleReadyRoundAtte
         return
     now = clock.now()
     overall = clock.aware(session.overall_deadline_at)
-    section_deadline = policy.section_deadline(now, overall)
+    section_deadline = policy.section_deadline(now, overall, rnd.round_type)
     claimed = db.query(RoleReadySession).filter(
         RoleReadySession.id == session.id, RoleReadySession.current_state == unlocked_state
     ).update({"current_state": running_state.value, "current_section_deadline_at": clock.naive_utc(section_deadline)},
@@ -1630,7 +1630,7 @@ def _begin_round(db: Session, session: RoleReadySession, rnd: RoleReadyRoundAtte
     started = clock.naive_utc(now)
     db.query(RoleReadyRoundAttempt).filter(
         RoleReadyRoundAttempt.id == rnd.id, RoleReadyRoundAttempt.started_at.is_(None)
-    ).update({"status": "IN_PROGRESS", "started_at": started, "time_limit_minutes": policy.SECTION_MINUTES},
+    ).update({"status": "IN_PROGRESS", "started_at": started, "time_limit_minutes": policy.section_minutes(rnd.round_type)},
              synchronize_session=False)
     _commit_or_500(db)
     db.refresh(session)
@@ -2496,7 +2496,7 @@ def start_interview_round(db: Session, session: RoleReadySession) -> Dict[str, A
             session_id=session.id,
             round_type="INTERVIEW",
             status="NOT_STARTED",
-            time_limit_minutes=policy.SECTION_MINUTES
+            time_limit_minutes=policy.section_minutes("INTERVIEW")
         )
         db.add(int_round)
         _commit_or_500(db)
@@ -2561,7 +2561,7 @@ def init_voice_interview_session(db: Session, session: RoleReadySession) -> Dict
             session_id=session.id,
             round_type="INTERVIEW",
             status="NOT_STARTED",
-            time_limit_minutes=policy.SECTION_MINUTES
+            time_limit_minutes=policy.section_minutes("INTERVIEW")
         )
         db.add(int_round)
         _commit_or_500(db)
@@ -2640,7 +2640,7 @@ def init_voice_interview_session(db: Session, session: RoleReadySession) -> Dict
             _commit_or_500(db)
 
     role = session.target_role or (session.extracted_jd_data or {}).get("role_title") or "Software Engineer"
-    company = session.target_company or "Target Company"
+    company = (session.target_company or "").strip()            # blank when the student entered none: never a placeholder name in the greeting
 
     # 2. Extract Resume & JD Context
     resume_snapshot = session.resume_snapshot or {}
@@ -2781,13 +2781,13 @@ def voice_caption_session(db: Session, session: RoleReadySession) -> Dict[str, A
 
 
 def voice_interview_turn_stream(db: Session, session: RoleReadySession, audio: Optional[bytes], content_type: str,
-                                history: Any, opening: bool):
+                                history: Any, opening: bool, hint: str = ""):
     """
     The same exchange as voice_interview_turn, as a stream of events so the first sentence can be spoken early. All gating runs
     here, before the first byte, so a refused turn is an ordinary HTTP error; the returned generator never touches the database.
     """
     voice_session = _voice_turn_session(db, session)
-    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening, hint=hint)
 
 
 def _interview_context(session: RoleReadySession) -> Dict[str, str]:
@@ -3265,10 +3265,9 @@ def verify_and_start_invitation(db: Session, token: str) -> Dict[str, Any]:
             coding_client, coding_keys = future_coding.result()
             interview_questions = future_interview.result()
 
-        limit = policy.SECTION_MINUTES
-        r1 = RoleReadyRoundAttempt(session_id=session.id, round_type="APTITUDE", round_order=1, time_limit_minutes=limit, questions_payload=apt_client, server_keys_payload=apt_keys)
-        r2 = RoleReadyRoundAttempt(session_id=session.id, round_type="CODING", round_order=2, time_limit_minutes=limit, questions_payload=coding_client, server_keys_payload=coding_keys)
-        r3 = RoleReadyRoundAttempt(session_id=session.id, round_type="INTERVIEW", round_order=3, time_limit_minutes=limit, questions_payload=interview_questions, server_keys_payload={"questions": interview_questions})
+        r1 = RoleReadyRoundAttempt(session_id=session.id, round_type="APTITUDE", round_order=1, time_limit_minutes=policy.section_minutes("APTITUDE"), questions_payload=apt_client, server_keys_payload=apt_keys)
+        r2 = RoleReadyRoundAttempt(session_id=session.id, round_type="CODING", round_order=2, time_limit_minutes=policy.section_minutes("CODING"), questions_payload=coding_client, server_keys_payload=coding_keys)
+        r3 = RoleReadyRoundAttempt(session_id=session.id, round_type="INTERVIEW", round_order=3, time_limit_minutes=policy.section_minutes("INTERVIEW"), questions_payload=interview_questions, server_keys_payload={"questions": interview_questions})
         
         db.add_all([r1, r2, r3])
         inv.status = "ACCEPTED"
