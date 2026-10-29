@@ -10,6 +10,7 @@ Reproduces what a real outage looks like at the HTTP layer (the actual Gemini RE
   * an existing blueprint is never touched and nothing is published.
 """
 import json
+import threading
 import logging
 
 import httpx
@@ -19,6 +20,9 @@ from services import gemini_client, gemini_mock_fixtures, jd_blueprint_service
 from tests import recruitment_helpers as h
 
 client = h.client
+# One blueprint = three Gemini calls side by side: aptitude + interview, and one per coding problem (2).
+PARTS = 1 + jd_blueprint_service.CODING_COUNT
+_prompt = threading.local()     # the prompt of the call being answered (the three parts run on separate threads)
 FAKE_KEY = "AIzaSyFAKEFAKEFAKEFAKEFAKEFAKE0123456789"
 
 # The real body Gemini returned for the configured key (HTTP 402).
@@ -49,6 +53,7 @@ def fake_gemini(monkeypatch, responder):
         calls["n"] += 1
         calls["timeouts"].append(timeout)
         assert headers["x-goog-api-key"] == FAKE_KEY
+        _prompt.text = json["contents"][0]["parts"][0]["text"]
         return responder(calls["n"], timeout)
 
     monkeypatch.setattr(gemini_client.httpx, "post", post)
@@ -60,7 +65,12 @@ def status_response(code, body):
 
 
 def good_response(n=1, t=None):
-    return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(gemini_mock_fixtures.sample_blueprint())}]}}]})
+    """Gemini's answer to whichever part is being asked for (the offline fixtures answer each prompt the way the real prompt asks)."""
+    try:
+        body = gemini_mock_fixtures.get_mock_response(getattr(_prompt, "text", ""))
+    except RuntimeError:                      # a prompt that is not one of the blueprint parts (a plain client test): any valid JSON will do
+        body = gemini_mock_fixtures.sample_blueprint()
+    return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(body)}]}}]})
 
 
 # ------------------------------------------------------------------ client: classification and retry policy
@@ -196,7 +206,7 @@ def test_blueprint_retries_transient_kinds_but_not_permanent_ones(monkeypatch):
         monkeypatch.setattr(jd_blueprint_service.gemini_client, "call_gemini", boom)
         with pytest.raises(jd_blueprint_service.BlueprintGenerationError):
             jd_blueprint_service.generate_jd_blueprint(h.JD_TEXT)
-        assert n["c"] == expected_calls, kind
+        assert n["c"] == expected_calls * PARTS, kind      # every part follows the same retry policy
 
 
 def test_blueprint_asks_for_the_larger_timeout(monkeypatch):
@@ -204,7 +214,7 @@ def test_blueprint_asks_for_the_larger_timeout(monkeypatch):
 
     def ok(prompt, system_prompt="", temperature=0.1, json_mode=True, timeout=None):
         seen["timeout"] = timeout
-        return gemini_mock_fixtures.sample_blueprint()
+        return gemini_mock_fixtures.get_mock_response(prompt)
 
     monkeypatch.setattr(jd_blueprint_service.gemini_client, "call_gemini", ok)
     jd_blueprint_service.generate_jd_blueprint(h.JD_TEXT)
@@ -236,7 +246,7 @@ def test_reported_402_reaches_the_admin_as_a_clear_quota_message_and_the_log_has
     assert "run out of quota or prepaid credits" in detail["message"] and "Google AI Studio" in detail["message"]
     assert "GeminiUnavailableError" not in r.text, "the raw exception class name is no longer the message"
     assert "prepayment" not in r.text and "RESOURCE_EXHAUSTED" not in r.text, "provider text stays server side"
-    assert calls["n"] == 1, "a depleted balance is not retried"
+    assert calls["n"] == PARTS, "a depleted balance is not retried (one call per part)"
     logged = "\n".join(rec.getMessage() for rec in caplog.records)
     assert "kind=quota" in logged and "http_status=402" in logged and "provider_status=RESOURCE_EXHAUSTED" in logged and FAKE_KEY not in logged
 
@@ -276,13 +286,13 @@ def test_invalid_json_and_bad_schema_are_retried_then_reported_without_changing_
     calls = fake_gemini(monkeypatch, status_response(200, {"candidates": [{"content": {"parts": [{"text": json.dumps(bad)}]}}]}))
     r = generate(admin, job)
     assert r.status_code == 502 and r.json()["detail"]["code"] == "invalid_output"
-    assert calls["n"] == 1 + jd_blueprint_service.GENERATION_RETRIES
+    assert calls["n"] == PARTS * (1 + jd_blueprint_service.GENERATION_RETRIES)
     after = client.get(f"/api/admin/job-roles/{job['id']}", headers=h.auth(admin["token"])).json()
     assert after["blueprint_data"] is None and after["blueprint_version"] == 0
 
     calls = fake_gemini(monkeypatch, status_response(200, {"candidates": [{"content": {"parts": [{"text": "Sorry, I cannot do that"}]}}]}))
     r = generate(admin, job)
-    assert r.status_code == 502 and r.json()["detail"]["code"] == "invalid_output" and calls["n"] == 2
+    assert r.status_code == 502 and r.json()["detail"]["code"] == "invalid_output" and calls["n"] == PARTS * 2
 
 
 def test_successful_generation_through_the_real_adapter(monkeypatch, admin):
@@ -294,14 +304,14 @@ def test_successful_generation_through_the_real_adapter(monkeypatch, admin):
     body = r.json()
     assert body["blueprint"]["valid"] is True and body["blueprint_version"] == 1
     assert (body["status"], body["is_published"]) == ("DRAFT", False), "generation never publishes"
-    assert calls["n"] == 1 and calls["timeouts"] == [45]
+    assert calls["n"] == PARTS + 1 and calls["timeouts"] == [45] * (PARTS + 1)      # + the independent aptitude answer check
 
 
 def test_transient_outage_then_recovery_through_the_api(monkeypatch, admin):
     job = h.create_job(admin)
     calls = fake_gemini(monkeypatch, lambda n, t: httpx.Response(503, json=err_body(503, "UNAVAILABLE", "busy")) if n == 1 else good_response())
     r = generate(admin, job)
-    assert r.status_code == 200 and calls["n"] == 2
+    assert r.status_code == 200 and calls["n"] == PARTS + 2      # the one part that hit the outage retried, plus the aptitude answer check
 
 
 def test_timeout_through_the_api_is_reported_as_a_timeout(monkeypatch, admin):

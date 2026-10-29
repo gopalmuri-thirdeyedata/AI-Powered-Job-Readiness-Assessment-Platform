@@ -16,7 +16,8 @@ const proctorRouterFile = fs.readFileSync(path.join(__dirname, '..', 'backend', 
 describe('RoleReady Person Detection, Device Monitoring & Fullscreen Enforcement Suite', () => {
 
     test('1. Backend YOLO model configures CPU-optimized yolov8n with person and cell phone classes', () => {
-        assert.ok(proctorServiceFile.includes("yolov8n.pt"), "Backend proctor service must point to yolov8n.pt model");
+        assert.ok(proctorServiceFile.includes("yolov8n.onnx"), "Backend proctor service must point to the yolov8n.onnx model (ONNX Runtime)");
+        assert.ok(proctorServiceFile.includes("face_detection_yunet"), "Backend proctor service must also use the YuNet face detector");
         assert.ok(proctorServiceFile.includes("0:  'person'"), "Class 0 must be person");
         assert.ok(proctorServiceFile.includes("67: 'cell phone'"), "Class 67 must be cell phone");
         assert.ok(proctorServiceFile.includes("get_model_status"), "Service must expose get_model_status");

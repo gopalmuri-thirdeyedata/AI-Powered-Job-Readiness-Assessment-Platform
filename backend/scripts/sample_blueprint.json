@@ -1,0 +1,543 @@
+{
+  "blueprint_version": 1,
+  "role_title": "Backend Engineer",
+  "seniority_level": "Mid",
+  "required_technical_skills": [
+    "Python",
+    "SQL"
+  ],
+  "aptitude_questions": [
+    {
+      "id": "A1",
+      "domain": "Logical",
+      "difficulty": "Medium",
+      "question": "Mock aptitude question 1: choose the correct option.",
+      "options": {
+        "A": "Option A for question 1",
+        "B": "Option B for question 1",
+        "C": "Option C for question 1",
+        "D": "Option D for question 1"
+      },
+      "correct_key": "B",
+      "explanation": "Option B is correct."
+    },
+    {
+      "id": "A2",
+      "domain": "Verbal",
+      "difficulty": "Hard",
+      "question": "Mock aptitude question 2: choose the correct option.",
+      "options": {
+        "A": "Option A for question 2",
+        "B": "Option B for question 2",
+        "C": "Option C for question 2",
+        "D": "Option D for question 2"
+      },
+      "correct_key": "C",
+      "explanation": "Option C is correct."
+    },
+    {
+      "id": "A3",
+      "domain": "Domain Fundamentals",
+      "difficulty": "Easy",
+      "question": "Mock aptitude question 3: choose the correct option.",
+      "options": {
+        "A": "Option A for question 3",
+        "B": "Option B for question 3",
+        "C": "Option C for question 3",
+        "D": "Option D for question 3"
+      },
+      "correct_key": "D",
+      "explanation": "Option D is correct."
+    },
+    {
+      "id": "A4",
+      "domain": "Quantitative",
+      "difficulty": "Medium",
+      "question": "Mock aptitude question 4: choose the correct option.",
+      "options": {
+        "A": "Option A for question 4",
+        "B": "Option B for question 4",
+        "C": "Option C for question 4",
+        "D": "Option D for question 4"
+      },
+      "correct_key": "A",
+      "explanation": "Option A is correct."
+    },
+    {
+      "id": "A5",
+      "domain": "Logical",
+      "difficulty": "Hard",
+      "question": "Mock aptitude question 5: choose the correct option.",
+      "options": {
+        "A": "Option A for question 5",
+        "B": "Option B for question 5",
+        "C": "Option C for question 5",
+        "D": "Option D for question 5"
+      },
+      "correct_key": "B",
+      "explanation": "Option B is correct."
+    },
+    {
+      "id": "A6",
+      "domain": "Verbal",
+      "difficulty": "Easy",
+      "question": "Mock aptitude question 6: choose the correct option.",
+      "options": {
+        "A": "Option A for question 6",
+        "B": "Option B for question 6",
+        "C": "Option C for question 6",
+        "D": "Option D for question 6"
+      },
+      "correct_key": "C",
+      "explanation": "Option C is correct."
+    },
+    {
+      "id": "A7",
+      "domain": "Domain Fundamentals",
+      "difficulty": "Medium",
+      "question": "Mock aptitude question 7: choose the correct option.",
+      "options": {
+        "A": "Option A for question 7",
+        "B": "Option B for question 7",
+        "C": "Option C for question 7",
+        "D": "Option D for question 7"
+      },
+      "correct_key": "D",
+      "explanation": "Option D is correct."
+    },
+    {
+      "id": "A8",
+      "domain": "Quantitative",
+      "difficulty": "Hard",
+      "question": "Mock aptitude question 8: choose the correct option.",
+      "options": {
+        "A": "Option A for question 8",
+        "B": "Option B for question 8",
+        "C": "Option C for question 8",
+        "D": "Option D for question 8"
+      },
+      "correct_key": "A",
+      "explanation": "Option A is correct."
+    },
+    {
+      "id": "A9",
+      "domain": "Logical",
+      "difficulty": "Easy",
+      "question": "Mock aptitude question 9: choose the correct option.",
+      "options": {
+        "A": "Option A for question 9",
+        "B": "Option B for question 9",
+        "C": "Option C for question 9",
+        "D": "Option D for question 9"
+      },
+      "correct_key": "B",
+      "explanation": "Option B is correct."
+    },
+    {
+      "id": "A10",
+      "domain": "Verbal",
+      "difficulty": "Medium",
+      "question": "Mock aptitude question 10: choose the correct option.",
+      "options": {
+        "A": "Option A for question 10",
+        "B": "Option B for question 10",
+        "C": "Option C for question 10",
+        "D": "Option D for question 10"
+      },
+      "correct_key": "C",
+      "explanation": "Option C is correct."
+    },
+    {
+      "id": "A11",
+      "domain": "Domain Fundamentals",
+      "difficulty": "Hard",
+      "question": "Mock aptitude question 11: choose the correct option.",
+      "options": {
+        "A": "Option A for question 11",
+        "B": "Option B for question 11",
+        "C": "Option C for question 11",
+        "D": "Option D for question 11"
+      },
+      "correct_key": "D",
+      "explanation": "Option D is correct."
+    },
+    {
+      "id": "A12",
+      "domain": "Quantitative",
+      "difficulty": "Easy",
+      "question": "Mock aptitude question 12: choose the correct option.",
+      "options": {
+        "A": "Option A for question 12",
+        "B": "Option B for question 12",
+        "C": "Option C for question 12",
+        "D": "Option D for question 12"
+      },
+      "correct_key": "A",
+      "explanation": "Option A is correct."
+    },
+    {
+      "id": "A13",
+      "domain": "Logical",
+      "difficulty": "Medium",
+      "question": "Mock aptitude question 13: choose the correct option.",
+      "options": {
+        "A": "Option A for question 13",
+        "B": "Option B for question 13",
+        "C": "Option C for question 13",
+        "D": "Option D for question 13"
+      },
+      "correct_key": "B",
+      "explanation": "Option B is correct."
+    },
+    {
+      "id": "A14",
+      "domain": "Verbal",
+      "difficulty": "Hard",
+      "question": "Mock aptitude question 14: choose the correct option.",
+      "options": {
+        "A": "Option A for question 14",
+        "B": "Option B for question 14",
+        "C": "Option C for question 14",
+        "D": "Option D for question 14"
+      },
+      "correct_key": "C",
+      "explanation": "Option C is correct."
+    },
+    {
+      "id": "A15",
+      "domain": "Domain Fundamentals",
+      "difficulty": "Easy",
+      "question": "Mock aptitude question 15: choose the correct option.",
+      "options": {
+        "A": "Option A for question 15",
+        "B": "Option B for question 15",
+        "C": "Option C for question 15",
+        "D": "Option D for question 15"
+      },
+      "correct_key": "D",
+      "explanation": "Option D is correct."
+    }
+  ],
+  "coding_problems": [
+    {
+      "id": "C1",
+      "title": "Pair With Target Sum",
+      "difficulty": "Easy",
+      "description": "Given an array of integers nums and an integer target, return the indices of the two numbers that add up to target. Exactly one such pair exists, and the same element may not be used twice.",
+      "starter_code": {
+        "python": "class Solution:\n    def pairIndices(self, nums: List[int], target: int) -> List[int]:\n        pass\n",
+        "java": "class Solution {\n    public int[] pairIndices(int[] nums, int target) {\n        \n    }\n}\n",
+        "cpp": "class Solution {\npublic:\n    vector<int> pairIndices(vector<int>& nums, int target) {\n        \n    }\n};\n",
+        "c": "/**\n * Note: The returned array must be malloced, assume caller calls free().\n * Set *returnSize to the length of the returned array.\n */\nint* pairIndices(int* nums, int numsSize, int target, int* returnSize) {\n    \n}\n"
+      },
+      "public_test_cases": [
+        {
+          "input": {
+            "nums": [
+              2,
+              7,
+              11,
+              15
+            ],
+            "target": 9
+          },
+          "expected": [
+            0,
+            1
+          ],
+          "explanation": "nums[0] + nums[1] = 2 + 7 = 9, so return [0, 1]."
+        },
+        {
+          "input": {
+            "nums": [
+              3,
+              2,
+              4
+            ],
+            "target": 6
+          },
+          "expected": [
+            1,
+            2
+          ],
+          "explanation": "nums[1] + nums[2] = 2 + 4 = 6."
+        }
+      ],
+      "hidden_test_cases": [
+        {
+          "input": {
+            "nums": [
+              3,
+              3
+            ],
+            "target": 6
+          },
+          "expected": [
+            0,
+            1
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "target": 9
+          },
+          "expected": [
+            3,
+            4
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              -1,
+              -2,
+              -3,
+              -4,
+              -5
+            ],
+            "target": -8
+          },
+          "expected": [
+            2,
+            4
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              0,
+              4,
+              3,
+              0
+            ],
+            "target": 0
+          },
+          "expected": [
+            0,
+            3
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              5,
+              75,
+              25
+            ],
+            "target": 100
+          },
+          "expected": [
+            1,
+            2
+          ]
+        }
+      ],
+      "signature": {
+        "name": "pairIndices",
+        "params": [
+          {
+            "name": "nums",
+            "type": "int[]"
+          },
+          {
+            "name": "target",
+            "type": "int"
+          }
+        ],
+        "returns": "int[]"
+      },
+      "compare": "exact",
+      "constraints": [
+        "2 <= nums.length <= 20",
+        "-100 <= nums[i] <= 100",
+        "Exactly one valid pair exists"
+      ],
+      "examples": [
+        {
+          "explanation": "nums[0] + nums[1] = 2 + 7 = 9, so return [0, 1]."
+        },
+        {
+          "explanation": "nums[1] + nums[2] = 2 + 4 = 6."
+        }
+      ],
+      "reference_solution": "class Solution:\n    def pairIndices(self, nums: List[int], target: int) -> List[int]:\n        seen = {}\n        for i, x in enumerate(nums):\n            if target - x in seen:\n                return [seen[target - x], i]\n            seen[x] = i\n        return []\n"
+    },
+    {
+      "id": "C2",
+      "title": "Longest Unique Substring",
+      "difficulty": "Medium",
+      "description": "Given a string s, return the length of the longest substring that contains no repeated character.",
+      "starter_code": {
+        "python": "class Solution:\n    def longestUniqueSubstring(self, s: str) -> int:\n        pass\n",
+        "java": "class Solution {\n    public int longestUniqueSubstring(String s) {\n        \n    }\n}\n",
+        "cpp": "class Solution {\npublic:\n    int longestUniqueSubstring(string s) {\n        \n    }\n};\n",
+        "c": "int longestUniqueSubstring(char* s) {\n    \n}\n"
+      },
+      "public_test_cases": [
+        {
+          "input": {
+            "s": "abcabcbb"
+          },
+          "expected": 3,
+          "explanation": "The longest substring without repeats is \"abc\", length 3."
+        },
+        {
+          "input": {
+            "s": "bbbbb"
+          },
+          "expected": 1,
+          "explanation": "Every substring of repeated letters has length 1."
+        }
+      ],
+      "hidden_test_cases": [
+        {
+          "input": {
+            "s": "pwwkew"
+          },
+          "expected": 3
+        },
+        {
+          "input": {
+            "s": ""
+          },
+          "expected": 0
+        },
+        {
+          "input": {
+            "s": "a"
+          },
+          "expected": 1
+        },
+        {
+          "input": {
+            "s": "abba"
+          },
+          "expected": 2
+        },
+        {
+          "input": {
+            "s": "dvdf"
+          },
+          "expected": 3
+        }
+      ],
+      "signature": {
+        "name": "longestUniqueSubstring",
+        "params": [
+          {
+            "name": "s",
+            "type": "string"
+          }
+        ],
+        "returns": "int"
+      },
+      "compare": "exact",
+      "constraints": [
+        "0 <= s.length <= 100",
+        "s consists of printable ASCII characters"
+      ],
+      "examples": [
+        {
+          "explanation": "The longest substring without repeats is \"abc\", length 3."
+        },
+        {
+          "explanation": "Every substring of repeated letters has length 1."
+        }
+      ],
+      "reference_solution": "class Solution:\n    def longestUniqueSubstring(self, s: str) -> int:\n        last, start, best = {}, 0, 0\n        for i, ch in enumerate(s):\n            if ch in last and last[ch] >= start:\n                start = last[ch] + 1\n            last[ch] = i\n            best = max(best, i - start + 1)\n        return best\n"
+    }
+  ],
+  "interview_questions": [
+    {
+      "id": "I1",
+      "topic": "Topic 1",
+      "competency": "Technical depth",
+      "question_text": "Mock interview question 1: explain a relevant design trade-off.",
+      "evaluation_criteria": [
+        "Technical accuracy",
+        "Depth of fundamentals",
+        "Structured communication",
+        "Edge cases"
+      ],
+      "expected_technical_concepts": [
+        "trade-offs",
+        "scalability"
+      ]
+    },
+    {
+      "id": "I2",
+      "topic": "Topic 2",
+      "competency": "Technical depth",
+      "question_text": "Mock interview question 2: explain a relevant design trade-off.",
+      "evaluation_criteria": [
+        "Technical accuracy",
+        "Depth of fundamentals",
+        "Structured communication",
+        "Edge cases"
+      ],
+      "expected_technical_concepts": [
+        "trade-offs",
+        "scalability"
+      ]
+    },
+    {
+      "id": "I3",
+      "topic": "Topic 3",
+      "competency": "Technical depth",
+      "question_text": "Mock interview question 3: explain a relevant design trade-off.",
+      "evaluation_criteria": [
+        "Technical accuracy",
+        "Depth of fundamentals",
+        "Structured communication",
+        "Edge cases"
+      ],
+      "expected_technical_concepts": [
+        "trade-offs",
+        "scalability"
+      ]
+    },
+    {
+      "id": "I4",
+      "topic": "Topic 4",
+      "competency": "Technical depth",
+      "question_text": "Mock interview question 4: explain a relevant design trade-off.",
+      "evaluation_criteria": [
+        "Technical accuracy",
+        "Depth of fundamentals",
+        "Structured communication",
+        "Edge cases"
+      ],
+      "expected_technical_concepts": [
+        "trade-offs",
+        "scalability"
+      ]
+    },
+    {
+      "id": "I5",
+      "topic": "Topic 5",
+      "competency": "Technical depth",
+      "question_text": "Mock interview question 5: explain a relevant design trade-off.",
+      "evaluation_criteria": [
+        "Technical accuracy",
+        "Depth of fundamentals",
+        "Structured communication",
+        "Edge cases"
+      ],
+      "expected_technical_concepts": [
+        "trade-offs",
+        "scalability"
+      ]
+    }
+  ],
+  "generation": {
+    "source": "offline_fixture",
+    "label": "Offline test data"
+  }
+}

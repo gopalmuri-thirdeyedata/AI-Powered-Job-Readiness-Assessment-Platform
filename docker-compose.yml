@@ -42,13 +42,13 @@ services:
       timeout: 5s
       retries: 3
 
-  # Demo code runner (Judge0-compatible, Java + Python). Internal network only - never publish its port.
+  # Demo code runner (Judge0-compatible, Python + Java + C++ + C). Internal network only - never publish its port.
   code_runner:
     build:
       context: ./code-runner
     container_name: hiringai_code_runner
     restart: always
-    mem_limit: 768m
+    mem_limit: 2g
     networks:
       - hiringai_internal
 

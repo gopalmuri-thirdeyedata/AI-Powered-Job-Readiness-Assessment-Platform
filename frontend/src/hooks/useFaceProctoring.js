@@ -3,10 +3,10 @@ import API_URL from '../apiConfig';
 
 /**
  * useFaceProctoring
- * Real-time background proctoring using YOLOv8n (via FastAPI backend).
+ * Real-time background proctoring: YOLOv8n objects + a face detector (via FastAPI backend, ONNX Runtime).
  *
  * Checks camera frame every 3000ms:
- * - No person in frame (after 3 consecutive checks = 9s) → triggers violation
+ * - No face and no person in frame (after 3 consecutive checks = 9s) → triggers violation
  * - Multiple persons in frame (>= 2)                      → immediate violation
  * - Mobile phone detected (class 'cell phone', conf >= 0.45) → immediate violation
  * - Secondary electronic device (laptop/screen)           → immediate violation
@@ -72,6 +72,9 @@ const useFaceProctoring = ({
     useEffect(() => { onDetectionRef.current = onDetection; }, [onDetection]);
     useEffect(() => { onViolationRef.current = onViolation; }, [onViolation]);
 
+    // 640x480: phones and faces are small, and 320x240 left too little to find them (the server analyses frames up to 640 wide as sent)
+    const FRAME_WIDTH = 640;
+    const FRAME_HEIGHT = 480;
     const CHECK_INTERVAL_MS = 3000;
     const FRAME_TIMEOUT_MS = 30000; // gives up on a stuck request so detection can carry on
     const NO_PERSON_THRESHOLD = 3; // 3 consecutive checks (~9s)
@@ -117,7 +120,7 @@ const useFaceProctoring = ({
             let stream = externalStream;
             if (!stream || !stream.getVideoTracks().some(t => t.readyState === 'live')) {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 320, height: 240, facingMode: 'user' },
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
                     audio: false
                 });
             }
@@ -131,16 +134,20 @@ const useFaceProctoring = ({
             video.autoplay = true;
             video.playsInline = true;
             video.muted = true;
-            video.width = 320;
-            video.height = 240;
-            video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+            video.width = FRAME_WIDTH;
+            video.height = FRAME_HEIGHT;
+            // The capture element must really be rendered: a 1px, fully transparent, far off-screen video is not decoded by Chrome / Edge, and every
+            // frame drawn from it is BLACK (the server then sees nobody and "Face not visible" fires constantly). So it is full size and in the page,
+            // just behind everything, invisible to the eye and ignored by the mouse.
+            video.style.cssText = 'position:fixed;left:0;top:0;width:320px;height:240px;opacity:0.01;pointer-events:none;z-index:-1;';
             document.body.appendChild(video);
             videoRef.current = video;
+            try { await video.play(); } catch (e) { /* autoplay is allowed for a muted stream; analysis waits for readyState anyway */ }
 
             // Hidden canvas for JPEG export
             const canvas = document.createElement('canvas');
-            canvas.width = 320;
-            canvas.height = 240;
+            canvas.width = FRAME_WIDTH;
+            canvas.height = FRAME_HEIGHT;
             canvas.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
             document.body.appendChild(canvas);
             canvasRef.current = canvas;

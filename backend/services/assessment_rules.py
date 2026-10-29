@@ -66,13 +66,18 @@ def candidate_rules() -> List[Dict[str, Any]]:
         ]},
         {"key": "answering", "title": "Answering and Submitting", "items": [
             _item("Your work is saved automatically every few seconds. This saved copy is used only to score a section that ends before you "
-                  "submit it (time runs out or the attempt is interrupted). It does not let you resume a closed attempt."),
+                  "submit it (time runs out or the attempt ends early), and to restore your work if the page reloads."),
             _item("You can change your answers as often as you like until you submit the section."),
-            _item("Do not refresh, close or leave the assessment tab, and do not open it in a second tab or window. "
-                  "Refreshing or closing the page ends your attempt permanently; it cannot be resumed.", True),
+            _item("If the page reloads or the tab closes by accident, open the assessment link again in the same browser: your attempt resumes where "
+                  "you left off, with your saved work, and the timers keep running (they are never paused). Each resume is recorded and the number of "
+                  "resumes is limited. Do not open the assessment in a second tab or window.", True),
+            _item("Switching to another tab, leaving fullscreen, or the camera not seeing your face, or seeing a phone or "
+                  "another person, is recorded as an integrity event. If you switch to another tab more than once "
+                  "you are disqualified, and if more than 5 integrity events of any kind are recorded, the assessment ends and the "
+                  "work you have done so far is submitted.", True),
             _item(f"Keep a stable internet connection. A short drop while the page stays open is tolerated, but if the server hears nothing "
-                  f"from your page for about {drop}, your attempt is ended and cannot be resumed. Work saved before that point is kept "
-                  "and the attempt is recorded as incomplete.", True),
+                  f"from your page for about {drop} (for example you lost your connection and did not come back), your attempt is ended and cannot be "
+                  "resumed. Work saved before that point is kept and the attempt is recorded as incomplete.", True),
         ]},
         {"key": "aptitude", "title": "Aptitude", "items": [
             _item("Questions appear one at a time with answer options A to D. Select one option, and move between questions with "

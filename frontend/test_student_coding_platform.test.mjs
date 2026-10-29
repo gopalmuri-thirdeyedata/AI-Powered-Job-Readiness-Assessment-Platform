@@ -180,11 +180,15 @@ describe('coding workspace wiring', () => {
         assert.ok(!problem.includes('dangerouslySetInnerHTML') && !list.includes('dangerouslySetInnerHTML'));
     });
 
-    test('the assessment coding round is Python only for students and shared-link candidates alike', () => {
+    test('the assessment coding round is multi-language only where the problem offers it (typed problems), Python everywhere else', () => {
         const ws = read('src', 'pages', 'roleready', 'RoleReadyAssessment.jsx');
-        assert.ok(!/java/i.test(ws.replace(/javascript/gi, '')), 'no Java option anywhere in the shared workspace');
-        assert.ok(ws.includes("const selectedLanguage = 'python'"), 'the language is Python');
-        assert.ok(!ws.includes('Language selector'), 'no language selector is rendered');
+        assert.ok(!/java/i.test(ws.replace(/javascript/gi, '')), 'no language names hard-coded in the shared workspace page');
+        assert.ok(ws.includes('problemLanguages') && ws.includes('handleLanguageChange') && ws.includes('codeBuffersRef'), 'language choice and per-language buffers');
+        assert.ok(ws.includes('DEFAULT_LANGUAGE'), 'Python is still the default');
+        const panel = read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx');
+        assert.ok(panel.includes('languageOptions={languageOptions}') && panel.includes('onLanguageChange={onLanguageChange}'), 'the toolbar gets the language dropdown');
+        const student = read('src', 'pages', 'student', 'StudentCodingProblem.jsx');
+        assert.ok(!student.includes('languageOptions'), 'the Python-only Coding page keeps its static Python3 label');
     });
 
     test('the assessment page shows API errors as text and runs public tests with Ctrl/Cmd + quote', () => {
@@ -207,7 +211,9 @@ describe('coding workspace wiring', () => {
         }
         assert.ok(assessment.includes("label: 'Accepted'") && assessment.includes('Wrong Answer'));
         const page = read('src', 'pages', 'roleready', 'RoleReadyAssessment.jsx');
-        assert.ok(page.includes('useWorkspaceTheme()') && page.includes("workspaceTheme === 'dark' ? 'dark "), 'the assessment coding area is dark unless the candidate switches to light');
+        assert.ok(page.includes('useWorkspaceTheme()') && page.includes("workspaceTheme === 'dark' ? 'dark' : ''") && page.includes("const codingDark = codingWorkspaceActive && workspaceTheme === 'dark'"), 'the assessment coding area is dark unless the candidate switches to light');
+        assert.ok(page.includes('{!codingWorkspaceActive && (') && page.includes('<CodingTopBar'), 'the coding workspace has ONE compact bar and no global header');
+        assert.ok(page.includes("lg:h-[100dvh] lg:overflow-hidden"), 'the coding workspace fills the window height with no page scroll on a desktop');
         assert.ok(!/Solutions|Editorial/.test(assessment), 'nothing that could show the answer is offered in the assessment');
     });
 });

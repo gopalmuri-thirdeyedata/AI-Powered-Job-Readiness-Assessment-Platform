@@ -23,11 +23,12 @@ describe('Rules shown to Recruitment candidates inside the shared workspace', ()
             'the 3-warning card lives only inside the instructions stage');
     });
 
-    test('device-check text describes recorded integrity events (no warnings, strikes or termination) for recruitment', () => {
-        const block = slice(workspace, 'Fullscreen Proctoring Environment', 1500);
-        const recruitmentText = block.slice(block.indexOf('isRecruitment'), block.indexOf("do not end your assessment") + 140);
-        assert.match(recruitmentText, /recorded as integrity events for the hiring team\. They do not end your assessment/);
-        assert.doesNotMatch(recruitmentText, /strike|terminat|warning/i);
+    test('device-check text states the recruitment policy: recorded events, a second tab switch disqualifies, more than 5 events end the attempt', () => {
+        const block = slice(workspace, 'Fullscreen Proctoring Environment', 1800);
+        const recruitmentText = block.slice(block.indexOf('isRecruitment'), block.indexOf('10-second countdown recovery window') + 60);
+        assert.match(recruitmentText, /recorded as integrity events for the hiring team\. Switching to another tab more than once disqualifies you/);
+        assert.ok(recruitmentText.includes('${MAX_INTEGRITY_EVENTS} integrity events end your assessment'));
+        assert.doesNotMatch(recruitmentText, /strike/i);
         assert.match(recruitmentText, /10-second countdown recovery window/);
     });
 
@@ -60,10 +61,11 @@ describe('Rules shown to Recruitment candidates inside the shared workspace', ()
         assert.ok(workspace.includes("if (!instructionsAccepted || cameraStatus !== 'allowed') return;"));
     });
 
-    test('autosave, heartbeat and the unload guard back the "saved only for scoring, cannot resume" wording', () => {
+    test('autosave, heartbeat and the unload guard back the "a reload resumes the same attempt" wording', () => {
         assert.match(workspace, /DRAFT_DEBOUNCE_MS = 4000/);
         assert.ok(recruitmentPage.includes('HEARTBEAT_MS = 15000') && recruitmentPage.includes("addEventListener('beforeunload'"));
-        assert.ok(recruitmentPage.includes('An attempt cannot be resumed after a reload.'));
+        assert.ok(recruitmentPage.includes('Reloading is allowed, but the timer keeps running and the reload is recorded.'));
+        assert.ok(!recruitmentPage.includes('cannot be resumed after a reload'));
         const closed = slice(recruitmentPage, "if (phase === 'closed')", 800);
         assert.ok(closed.includes('Thank you. Your responses have been received and will be reviewed by the hiring team.'));
         assert.ok(!/score|report/i.test(closed.replace('reviewed by the hiring team', '')), 'no score or report is shown on completion');

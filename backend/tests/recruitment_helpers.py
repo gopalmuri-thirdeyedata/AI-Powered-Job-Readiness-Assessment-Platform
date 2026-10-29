@@ -1,4 +1,5 @@
 """Shared helpers for the recruitment-workflow test modules (not collected as tests)."""
+import copy
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -65,16 +66,25 @@ def auth(token, org_id=None):
 
 
 def patch_gemini_blueprint(monkeypatch, blueprint=None, fail=False):
-    """Make blueprint generation deterministic and offline."""
+    """
+    Make blueprint generation deterministic and offline. `calls["n"]` counts the Gemini calls of the aptitude + interview part.
+    The coding problems are taken from `blueprint["coding_problems"]` (the sample: two Python `solve(...)` problems, the shape every
+    older blueprint has), so the shared-link flow tests keep exercising that path. The new typed generation (Gemini call + sandbox
+    verification of the reference solution) has its own tests in test_coding_typed.py.
+    """
     calls = {"n": 0}
+    source = blueprint if blueprint is not None else gemini_mock_fixtures.sample_blueprint()
 
     def fake_call(prompt, system_prompt="", temperature=0.1, json_mode=True, timeout=None):
         calls["n"] += 1
         if fail:
             raise jd_blueprint_service.gemini_client.GeminiUnavailableError("simulated outage")
-        return blueprint if blueprint is not None else gemini_mock_fixtures.sample_blueprint()
+        if "aptitude answer check" in prompt.lower():          # the independent answer check: answer every question with its own key
+            return {"answers": [{"id": q["id"], "answer": q["correct_key"]} for q in source["aptitude_questions"]]}
+        return source
 
     monkeypatch.setattr(jd_blueprint_service.gemini_client, "call_gemini", fake_call)
+    monkeypatch.setattr(jd_blueprint_service, "_generate_coding", lambda text, role_title, slot: copy.deepcopy(source["coding_problems"][slot - 1]))
     monkeypatch.setattr(jd_blueprint_service, "_sleep", lambda s: None)
     return calls
 

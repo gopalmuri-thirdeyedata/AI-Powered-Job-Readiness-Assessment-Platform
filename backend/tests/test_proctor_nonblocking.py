@@ -80,18 +80,21 @@ def test_status_reports_ready_error_and_loading_correctly(monkeypatch):
 def test_the_model_is_loaded_exactly_once_even_when_frames_arrive_together(monkeypatch):
     loads = []
 
-    class FakeYolo:
-        def __init__(self, path):
-            time.sleep(0.3)  # a slow load
-            loads.append(path)
+    class FakeDetector:
+        names = {0: "person"}
 
         def __call__(self, *args, **kwargs):
             return []
 
-    fake_module = types.ModuleType("ultralytics")
-    fake_module.YOLO = FakeYolo
-    monkeypatch.setitem(sys.modules, "ultralytics", fake_module)
+    def slow_load():
+        time.sleep(0.3)  # a slow load
+        loads.append("yolo")
+        return FakeDetector()
+
+    monkeypatch.setattr(proctor_service, "_load_yolo", slow_load)
+    monkeypatch.setattr(proctor_service, "_load_face_detector", lambda: None)
     monkeypatch.setattr(proctor_service, "_model", None)
+    monkeypatch.setattr(proctor_service, "_face_detector", None)
     monkeypatch.setattr(proctor_service, "_load_state", "unloaded")
 
     results = []
@@ -105,13 +108,10 @@ def test_the_model_is_loaded_exactly_once_even_when_frames_arrive_together(monke
 
 
 def test_a_failed_load_is_reported_and_does_not_crash(monkeypatch):
-    class BrokenYolo:
-        def __init__(self, path):
-            raise RuntimeError("weights missing")
+    def broken():
+        raise RuntimeError("weights missing")
 
-    fake_module = types.ModuleType("ultralytics")
-    fake_module.YOLO = BrokenYolo
-    monkeypatch.setitem(sys.modules, "ultralytics", fake_module)
+    monkeypatch.setattr(proctor_service, "_load_yolo", broken)
     monkeypatch.setattr(proctor_service, "_model", None)
     monkeypatch.setattr(proctor_service, "_load_state", "unloaded")
     assert proctor_service.get_model() is None
@@ -119,6 +119,23 @@ def test_a_failed_load_is_reported_and_does_not_crash(monkeypatch):
     assert proctor_service.get_model_status(block=False)["status"] == "error"
     result = proctor_service.analyze_frame("data:image/jpeg;base64,AAAA")
     assert result["status"] == "error" and result["person_count"] == -1
+
+
+def test_a_missing_face_model_degrades_to_person_detection_instead_of_failing(monkeypatch):
+    """YOLO alone still proctors (with the old false-alarm weakness); the status says the face detector is off."""
+    class FakeDetector:
+        names = {0: "person"}
+
+        def __call__(self, *args, **kwargs):
+            return []
+
+    monkeypatch.setattr(proctor_service, "_load_yolo", lambda: FakeDetector())
+    monkeypatch.setattr(proctor_service, "FACE_MODEL", "does-not-exist.onnx")
+    monkeypatch.setattr(proctor_service, "_model", None)
+    monkeypatch.setattr(proctor_service, "_face_detector", None)
+    monkeypatch.setattr(proctor_service, "_load_state", "unloaded")
+    assert proctor_service.get_model() is not None
+    assert proctor_service.get_model_status()["status"] == "ready" and proctor_service.get_model_status()["face_model"] == "unavailable"
 
 
 def test_warm_up_runs_one_throwaway_inference(monkeypatch):

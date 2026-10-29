@@ -114,6 +114,16 @@ def run(language: str, code: str, stdin: str = "") -> Dict[str, Any]:
         return judge0_service.execute_code(language, code, stdin=stdin)       # looked up at call time: tests and alternative runners are honoured
 
 
+def run_batch(language: str, code: str, stdins) -> Dict[str, Any]:
+    """judge0_service.execute_batch after waiting for a turn. A whole batch (compile + every test) holds ONE slot, so a submission costs the
+    same turn whether it has 2 tests or 10; this is what keeps many students' runs from starving each other."""
+    stdins = list(stdins)
+    if any(len((s or "").encode("utf-8")) > judge0_service.MAX_STDIN_BYTES for s in stdins):
+        return {"status": "error", "output": "Standard input exceeds the 64 KB limit.", "compile_output": "", "results": [], "raw": {}}
+    with gate.slot():
+        return judge0_service.execute_batch(language, code, stdins)       # looked up at call time: tests and alternative runners are honoured
+
+
 def execute(language: str, code: str, stdin: str = "") -> Dict[str, Any]:
     """judge0_service.execute_sandboxed (input cap + classification) with the waiting line instead of an immediate refusal."""
     if len((stdin or "").encode("utf-8")) > judge0_service.MAX_STDIN_BYTES:

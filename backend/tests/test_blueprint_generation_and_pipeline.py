@@ -103,7 +103,9 @@ def test_gemini_generation_is_labelled_gemini(monkeypatch, admin):
     monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyFAKEFAKEFAKEFAKEFAKEFAKE0123456789")
 
     def post(url, json, headers, timeout):
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": jsonlib.dumps(gemini_mock_fixtures.sample_blueprint())}]}}]})
+        # one blueprint = three Gemini calls (aptitude + interview, coding problem 1, coding problem 2); answer each the way its prompt asks
+        prompt = json["contents"][0]["parts"][0]["text"]
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": jsonlib.dumps(gemini_mock_fixtures.get_mock_response(prompt))}]}}]})
 
     monkeypatch.setattr(gemini_client.httpx, "post", post)
     r = generate(admin, job)
@@ -144,7 +146,7 @@ def test_quota_exhaustion_is_reported_as_unavailable_not_success(monkeypatch, ad
     monkeypatch.setattr("services.jd_blueprint_service._sleep", lambda s: None)
     r = generate(admin, job)
     assert r.status_code == 502 and ("quota" in r.text.lower() or "credit" in r.text.lower())
-    assert calls["n"] <= 2, "a depleted account is not hammered with retries"
+    assert calls["n"] <= 3, "a depleted account is not hammered with retries (one call per part, none repeated)"
     assert get(admin, job)["blueprint_data"] is None
 
 

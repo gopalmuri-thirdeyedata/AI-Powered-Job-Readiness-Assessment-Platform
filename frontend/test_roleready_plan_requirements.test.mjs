@@ -15,9 +15,11 @@ describe('RoleReady implementation plan - frontend requirements', () => {
         assert.ok(route.slice(0, 300).includes('<StudentDashboard />'));
     });
 
-    test('REQ-06: coding assessment editor runs Python only (students and shared-link candidates)', () => {
-        assert.ok(!assessmentCode.includes('handleLanguageChange'));
-        assert.ok(assessmentCode.includes("'python'"));
+    test('REQ-06: the coding editor offers a language choice only for problems that carry several starters; every other problem stays Python', () => {
+        assert.ok(assessmentCode.includes('const handleLanguageChange'));
+        assert.ok(assessmentCode.includes('problemLanguages(problem).includes(language)'), 'a language the problem does not offer cannot be selected');
+        assert.ok(assessmentCode.includes('DEFAULT_LANGUAGE'), 'Python remains the default and the fallback');
+        assert.ok(!/java/i.test(assessmentCode.replace(/javascript/gi, '')), 'the language list lives in utils/codingLanguages.js, not hard-coded in the page');
     });
 
     test('Timers hydrate from the server-authoritative remaining_seconds for all three rounds', () => {

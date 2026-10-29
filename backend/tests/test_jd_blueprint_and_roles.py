@@ -100,13 +100,13 @@ def test_retry_succeeds_when_second_attempt_is_valid(monkeypatch, tenants):
         state["n"] += 1
         if state["n"] == 1:
             raise jd_blueprint_service.gemini_client.GeminiUnavailableError("transient")
-        return gemini_mock_fixtures.sample_blueprint()
+        return gemini_mock_fixtures.get_mock_response(prompt)
 
     monkeypatch.setattr(jd_blueprint_service.gemini_client, "call_gemini", flaky)
     monkeypatch.setattr(jd_blueprint_service, "_sleep", lambda s: None)
     job = h.create_job(tenants["a"])
     r = client.post(f"/api/admin/job-roles/{job['id']}/generate-blueprint", headers=h.auth(tenants["a"]["token"]))
-    assert r.status_code == 200 and state["n"] == 2
+    assert r.status_code == 200 and state["n"] == 1 + 3 + 1      # one part retried; 3 Gemini calls plus the independent aptitude answer check
 
 
 def test_short_job_description_rejected_without_calling_gemini(monkeypatch, tenants):

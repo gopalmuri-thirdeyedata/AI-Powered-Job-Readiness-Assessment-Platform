@@ -1,38 +1,67 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Editor } from '@monaco-editor/react';
-import { CheckSquare, FileText, RefreshCw, Terminal } from 'lucide-react';
+import { CheckSquare, FileText, Plus, RefreshCw, Terminal, X } from 'lucide-react';
 import RichText from './RichText';
-import { CaseViewer, Block, EDITOR_OPTIONS, EditorStatusBar, EditorToolbar, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton, useCursorPosition, useIsDark } from './workspaceParts';
+import { CaseViewer, Block, EDITOR_OPTIONS, EditorStatusBar, EditorToolbar, Field, LabeledFields, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton, useCursorPosition, useIsDark } from './workspaceParts';
 import { DIFFICULTY_CLASSES, isRunShortcut } from '../../utils/codingPlatform';
+import { PROTECTION_TEST_MODE } from '../../hooks/useAssessmentProtection';
+
+// The assessment editor has no right-click menu (its Paste entry) and takes no dropped text, unless protection is switched off for testing.
+const PROTECTED_EDITOR_OPTIONS = { ...EDITOR_OPTIONS, contextmenu: false, dropIntoEditor: { enabled: false } };
+import {
+    DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, constraintLines, customInputIssue, exampleValues, inlineInput, isTypedProblem, monacoLanguage, problemLanguages,
+} from '../../utils/codingLanguages';
 
 /**
  * Turns the assessment's run response into the cases the shared viewer shows. A sample test passes or fails; the student's own
  * testcase has nothing to compare against, so it only shows what the code printed.
  */
 export const casesFromRun = (result) => (result?.test_results || []).map((t) => ({
-    status: t.custom ? (t.error ? 'error' : 'ran') : t.passed ? 'passed' : (t.error_type ? 'error' : 'failed'),
+    status: t.custom
+        ? (t.error ? 'error' : 'ran')
+        : t.passed ? 'passed' : (t.timed_out || t.error_type === 'Time Limit Exceeded') ? 'tle' : (t.error_type ? 'error' : 'failed'),
     custom: !!t.custom,
     input: t.input,
     expected: t.expected_output,
     actual: t.actual_output || (t.error ? '' : '(no output)'),
     error: t.error || null,
+    stdout: t.stdout || '',
 }));
+
+const TONES = {
+    good: 'text-emerald-600 dark:text-emerald-400',
+    bad: 'text-rose-600 dark:text-rose-400',
+    warn: 'text-amber-600 dark:text-amber-400',
+};
+const ERROR_VERDICTS = {
+    'Compilation Error': { label: 'Compile Error', tone: TONES.bad },
+    'Runtime Error': { label: 'Runtime Error', tone: TONES.bad },
+    'Time Limit Exceeded': { label: 'Time Limit Exceeded', tone: TONES.warn },
+};
 
 export const runSummary = (result) => {
     if (!result) return null;
-    if (result.error_type) return { label: result.error_type, tone: 'text-amber-600 dark:text-amber-400' };
-    if (result.all_passed) return { label: 'Accepted', tone: 'text-emerald-600 dark:text-emerald-400' };
-    if ((result.test_results || []).some((t) => !t.custom && !t.passed)) return { label: 'Wrong Answer', tone: 'text-rose-600 dark:text-rose-400' };
+    if (result.error_type) return ERROR_VERDICTS[result.error_type] || { label: result.error_type, tone: TONES.warn };
+    if (result.all_passed) return { label: 'Accepted', tone: TONES.good };
+    if ((result.test_results || []).some((t) => !t.custom && !t.passed)) return { label: 'Wrong Answer', tone: TONES.bad };
     return { label: 'Finished', tone: 'text-slate-700 dark:text-slate-200' };
 };
+
+const chip = (active) => `min-h-[36px] px-3 rounded-lg text-xs font-semibold border inline-flex items-center gap-1.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 ${active
+    ? 'border-transparent bg-slate-200 dark:bg-[#3a3a3a] text-slate-900 dark:text-white'
+    : 'border-transparent bg-slate-100 dark:bg-[#2b2b2b] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333]'}`;
 
 /**
  * The LeetCode-style workspace for one assessment coding problem: description and examples on the left, the editor above a
  * Testcase / Result console on the right (draggable on a desktop, Problem / Code / Console tabs on a phone). Submitting the whole
  * section stays with the assessment page; this only edits, runs and shows output.
+ *
+ * A problem with typed `params` also gets a language dropdown (when it offers several), labeled example fields and an editable custom
+ * testcase; the page owns the language and the custom fields (so the top-bar Run button and Ctrl + ' see them).
  */
 const AssessmentCodingWorkspace = ({
     problem, code, onCodeChange, onReset, onRun, running, result, error, badge, themeIsDark, onToggleTheme,
+    language = DEFAULT_LANGUAGE, onLanguageChange, customFields, onCustomFieldsChange,
 }) => {
     const appDark = useIsDark();
     const dark = themeIsDark === undefined ? appDark : themeIsDark;
@@ -41,18 +70,26 @@ const AssessmentCodingWorkspace = ({
     const [mobileTab, setMobileTab] = useState('problem');
     const [consoleTab, setConsoleTab] = useState('testcase');
     const [caseIndex, setCaseIndex] = useState(0);
-    const [caseView, setCaseView] = useState(0);
+    const [caseView, setCaseView] = useState(0);          // an example index, or 'custom'
     const [leftPct, setLeftPct] = useState(42);
-    const [editorPct, setEditorPct] = useState(60);
+    const [editorPct, setEditorPct] = useState(50);
     const splitRef = useRef(null);
     const rightRef = useRef(null);
     const runRef = useRef(onRun);
     runRef.current = onRun;
 
+    const typed = isTypedProblem(problem);
+    const params = problem.params || [];
+    const examples = problem.public_test_cases || [];
+    const offered = problemLanguages(problem);
+    const languageOptions = offered.map((l) => ({ value: l, label: LANGUAGE_OPTIONS[l].label }));
+    const customOpen = typed && Array.isArray(customFields);
+    const customProblem = customOpen ? customInputIssue(problem, customFields) : null;
     const cases = casesFromRun(result);
     const summary = runSummary(result);
-    const examples = problem.public_test_cases || [];
+    const compileError = result?.error_type === 'Compilation Error';
     const runtimeMs = Math.max(0, ...((result?.test_results || []).map((t) => Number(t.execution_time_ms) || 0)));
+    const lines = typed ? constraintLines(problem.constraints) : [];
 
     // A new problem starts on its description with a clean console
     useEffect(() => { setMobileTab('problem'); setConsoleTab('testcase'); setCaseIndex(0); setCaseView(0); }, [problem.id]);
@@ -61,7 +98,7 @@ const AssessmentCodingWorkspace = ({
     useEffect(() => {
         if (!result) return;
         setConsoleTab('result');
-        setCaseIndex(Math.max(0, cases.findIndex((c) => c.status === 'failed' || c.status === 'error')));
+        setCaseIndex(Math.max(0, cases.findIndex((c) => c.status === 'failed' || c.status === 'error' || c.status === 'tle')));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [result]);
 
@@ -74,8 +111,17 @@ const AssessmentCodingWorkspace = ({
     // Run lives in the page's top bar: when it starts, show the console
     useEffect(() => { if (running) { setMobileTab('console'); setConsoleTab('result'); } }, [running]);
 
+    const openCustom = () => {
+        onCustomFieldsChange?.(exampleValues(problem, examples[0]));
+        setCaseView('custom');
+        setConsoleTab('testcase');
+    };
+    const closeCustom = () => { onCustomFieldsChange?.(undefined); setCaseView(0); };
+    const setField = (i, value) => onCustomFieldsChange?.(customFields.map((f, j) => (j === i ? value : f)));
+    const exampleIndex = typeof caseView === 'number' ? Math.min(caseView, Math.max(0, examples.length - 1)) : 0;
+
     return (
-        <div className="flex flex-col gap-2 min-w-0 lg:h-[calc(100vh-15rem)] lg:min-h-[480px]" data-testid="leetcode-workspace">
+        <div className="flex flex-col gap-2 min-w-0 lg:flex-1 lg:min-h-0" data-testid="leetcode-workspace">
             <div role="tablist" aria-label="Workspace section" className="lg:hidden flex border-b border-slate-200 dark:border-slate-800">
                 {[['problem', 'Problem'], ['code', 'Code'], ['console', 'Console']].map(([key, label]) => (
                     <button key={key} type="button" role="tab" aria-selected={mobileTab === key} onClick={() => setMobileTab(key)}
@@ -89,28 +135,38 @@ const AssessmentCodingWorkspace = ({
                     <div role="tablist" className={TAB_BAR}>
                         <TabButton active onClick={() => {}} icon={FileText}>Description</TabButton>
                     </div>
-                    <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-5">
-                        <p className="md:hidden text-[11px] leading-snug text-slate-500 dark:text-slate-400 -mt-1">Write only the function: input and output are handled for you, so just <code className="font-semibold">return</code> the result.</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-bold text-slate-900 dark:text-white min-w-0 break-words mr-auto">{problem.title}</h3>
-                            {badge}
-                            <span className={`text-[11px] font-semibold px-2 py-1 rounded-full border ${DIFFICULTY_CLASSES[problem.difficulty] || ''}`}>{problem.difficulty}</span>
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 flex flex-col gap-5">
+                        <p className="text-[11px] leading-snug text-slate-500 dark:text-slate-400">Write only the function: input and output are handled for you, so just <code className="font-semibold">return</code> the result. Run checks the examples (Ctrl + &apos;); the hidden tests are graded when you submit.</p>
+                        <div className="space-y-2">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white min-w-0 break-words">{problem.title}</h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${DIFFICULTY_CLASSES[problem.difficulty] || ''}`}>{problem.difficulty}</span>
+                                {badge}
+                            </div>
                         </div>
                         <RichText text={problem.description || ''} className="whitespace-pre-line" />
                         {String(problem.input_format || '').trim() && <Block label="Input">{problem.input_format}</Block>}
                         {String(problem.output_format || '').trim() && <Block label="Output">{problem.output_format}</Block>}
                         {examples.map((t, i) => (
-                            <div key={i} className="border-l-2 border-slate-300 dark:border-[#444] pl-3 py-0.5 space-y-1.5 text-sm">
-                                <p className="font-semibold text-slate-900 dark:text-white">Example {i + 1}</p>
-                                <p className="font-mono text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 break-words whitespace-pre-wrap"><span className="text-slate-500 dark:text-slate-400">Input: </span>{t.input}</p>
-                                <p className="font-mono text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 break-words whitespace-pre-wrap"><span className="text-slate-500 dark:text-slate-400">Output: </span>{t.expected_output}</p>
-                                {t.explanation && <p className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300"><span className="text-slate-500 dark:text-slate-400">Explanation: </span>{t.explanation}</p>}
+                            <div key={i} className="space-y-2 text-sm">
+                                <p className="font-semibold text-slate-900 dark:text-white">Example {i + 1}:</p>
+                                <div className="border-l-2 border-slate-300 dark:border-[#444] pl-3 py-0.5 space-y-1.5">
+                                    <p className="font-mono text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 break-words whitespace-pre-wrap"><span className="font-semibold text-slate-900 dark:text-white">Input: </span>{typed ? inlineInput(t.input) : t.input}</p>
+                                    <p className="font-mono text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 break-words whitespace-pre-wrap"><span className="font-semibold text-slate-900 dark:text-white">Output: </span>{t.expected_output}</p>
+                                    {t.explanation && <p className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300"><span className="font-semibold text-slate-900 dark:text-white">Explanation: </span>{t.explanation}</p>}
+                                </div>
                             </div>
                         ))}
                         {String(problem.constraints || '').trim() && (
                             <div>
-                                <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1.5">Constraints</p>
-                                <code className="block text-xs bg-slate-100 dark:bg-[#2b2b2b] text-slate-800 dark:text-slate-200 rounded px-2 py-1.5 whitespace-pre-wrap break-words">{problem.constraints}</code>
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1.5">Constraints:</p>
+                                {typed && lines.length > 0 ? (
+                                    <ul className="list-disc pl-5 space-y-1.5 text-sm text-slate-700 dark:text-slate-300 marker:text-slate-400">
+                                        {lines.map((l, i) => <li key={i}><code className="text-xs bg-slate-100 dark:bg-[#2b2b2b] text-slate-800 dark:text-slate-100 rounded px-1.5 py-0.5 font-mono">{l}</code></li>)}
+                                    </ul>
+                                ) : (
+                                    <code className="block text-xs bg-slate-100 dark:bg-[#2b2b2b] text-slate-800 dark:text-slate-200 rounded px-2 py-1.5 whitespace-pre-wrap break-words">{problem.constraints}</code>
+                                )}
                             </div>
                         )}
                     </div>
@@ -122,16 +178,17 @@ const AssessmentCodingWorkspace = ({
                 <div ref={rightRef} className={`${mobileTab === 'problem' ? 'hidden' : 'flex'} lg:flex flex-col flex-1 min-w-0 min-h-0 gap-2 lg:gap-0`} style={{ '--editor': `${editorPct}%` }}>
                     <Pane className={`${mobileTab === 'console' ? 'hidden' : 'flex'} lg:flex flex-col h-[62vh] min-h-[340px] lg:h-auto lg:min-h-0 lg:basis-[var(--editor)] lg:shrink-0`}>
                         <EditorToolbar onReset={onReset} onToggleTheme={onToggleTheme} themeIsDark={dark} expanded={expanded} onToggleExpand={() => setExpanded((v) => !v)}
-                            hint="Write only the function: input and output are handled for you. Run: Ctrl + '" />
+                            language={language} languageOptions={languageOptions} onLanguageChange={onLanguageChange} languageDisabled={running} />
                         <div className="flex-1 min-h-0">
                             <Editor
                                 height="100%"
-                                language="python"
+                                path={`problem-${problem.id}.${language}`}
+                                language={monacoLanguage(language)}
                                 theme={dark ? 'vs-dark' : 'light'}
                                 value={code}
                                 onChange={(v) => onCodeChange(v ?? '')}
                                 onMount={(editor, monaco) => { trackCursor(editor); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Quote, () => runRef.current()); }}
-                                options={EDITOR_OPTIONS}
+                                options={PROTECTION_TEST_MODE ? EDITOR_OPTIONS : PROTECTED_EDITOR_OPTIONS}
                             />
                         </div>
                         <EditorStatusBar saved="Autosaved" position={cursor} />
@@ -145,7 +202,35 @@ const AssessmentCodingWorkspace = ({
                             <TabButton active={consoleTab === 'result'} onClick={() => setConsoleTab('result')} icon={Terminal}>Test Result</TabButton>
                         </div>
                         <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 text-sm" aria-live="polite">
-                            {consoleTab === 'testcase' && (
+                            {consoleTab === 'testcase' && typed && (
+                                <div className="space-y-4">
+                                    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Test cases">
+                                        {examples.map((_, i) => (
+                                            <button key={i} type="button" role="tab" aria-selected={caseView === i} onClick={() => setCaseView(i)} className={chip(caseView === i)}>Case {i + 1}</button>
+                                        ))}
+                                        {customOpen ? (
+                                            <span className={`${chip(caseView === 'custom')} !pr-1.5 gap-1`}>
+                                                <button type="button" role="tab" aria-selected={caseView === 'custom'} onClick={() => setCaseView('custom')} className="cursor-pointer">Custom</button>
+                                                <button type="button" onClick={closeCustom} aria-label="Remove the custom testcase" title="Remove custom testcase" className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-slate-300 dark:hover:bg-[#555] cursor-pointer"><X className="w-3 h-3" /></button>
+                                            </span>
+                                        ) : (
+                                            <button type="button" onClick={openCustom} aria-label="Add a custom testcase" title="Add a custom testcase" className={`${chip(false)} !px-2.5`}><Plus className="w-3.5 h-3.5" /></button>
+                                        )}
+                                    </div>
+                                    {caseView === 'custom' && customOpen ? (
+                                        <div className="space-y-3">
+                                            {params.map((p, i) => <Field key={p.name} name={p.name} value={customFields[i] ?? ''} onChange={(v) => setField(i, v)} invalid={!String(customFields[i] ?? '').trim()} />)}
+                                            {customProblem
+                                                ? <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{customProblem}</p>
+                                                : <p className="text-xs text-slate-500 dark:text-slate-400">One JSON value per field, e.g. <code className="font-mono">[1,2,3]</code>, <code className="font-mono">7</code> or <code className="font-mono">"abc"</code>.</p>}
+                                        </div>
+                                    ) : (
+                                        <LabeledFields pairs={params.map((p, i) => ({ name: p.name, value: exampleValues(problem, examples[exampleIndex])[i] }))} />
+                                    )}
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Run checks the {examples.length || 2} examples and your custom case. Hidden tests are graded when you submit the section.</p>
+                                </div>
+                            )}
+                            {consoleTab === 'testcase' && !typed && (
                                 <div className="space-y-3">
                                     <div className="flex flex-wrap gap-2">
                                         {examples.map((_, i) => (
@@ -164,7 +249,7 @@ const AssessmentCodingWorkspace = ({
                             )}
                             {consoleTab === 'result' && (
                                 <div className="space-y-3">
-                                    {running && <p className="flex items-center gap-2 text-slate-500 dark:text-slate-400"><RefreshCw className="w-4 h-4 animate-spin" /> Running…</p>}
+                                    {running && <p className="flex items-center gap-2 text-slate-500 dark:text-slate-400"><RefreshCw className="w-4 h-4 animate-spin" /> {language === DEFAULT_LANGUAGE ? 'Running…' : 'Compiling and running…'}</p>}
                                     {error && !running && <p role="alert" className="text-rose-600 dark:text-rose-400">{error}</p>}
                                     {!running && !error && !result && <p className="text-slate-500 dark:text-slate-400">You must run your code first. Submitting the whole section is done from the button above.</p>}
                                     {!running && result && (
@@ -174,7 +259,8 @@ const AssessmentCodingWorkspace = ({
                                                 {result.error_type ? null : <span className="ml-3 text-xs font-medium text-slate-500 dark:text-slate-400">{cases.filter((c) => c.status === 'passed').length}/{cases.filter((c) => !c.custom).length} examples{runtimeMs > 0 ? ` · Runtime: ${Math.round(runtimeMs)} ms` : ''}</span>}
                                             </p>
                                             {result.error && !cases.length && <Block label="Details">{result.error}</Block>}
-                                            {!!cases.length && <CaseViewer cases={cases} index={caseIndex} onIndex={setCaseIndex} />}
+                                            {compileError && <Block label="Compilation error" tone="error">{result.stderr || cases.find((c) => c.error)?.error || 'Your code did not compile.'}</Block>}
+                                            {!!cases.length && !compileError && <CaseViewer cases={cases} index={caseIndex} onIndex={setCaseIndex} labeled={typed} />}
                                         </div>
                                     )}
                                 </div>

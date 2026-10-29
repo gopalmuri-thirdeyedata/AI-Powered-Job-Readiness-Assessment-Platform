@@ -9,6 +9,9 @@
 *.tflite
 backend/models/*.pt
 backend/models/*.onnx
+# ...except the two proctoring models the backend ships with (YOLOv8n and the YuNet face detector, 12.7 MB + 0.2 MB)
+!backend/models/yolov8n.onnx
+!backend/models/face_detection_yunet_2023mar.onnx
 
 # ====================================
 # SENSITIVE & SECURITY FILES

@@ -61,6 +61,8 @@ services:
       - CODE_RUNNER_URL=http://code_runner:2358/submissions
       - CODE_EXECUTION_ENGINE=judge0
       - SANDBOX_MAX_CONCURRENCY=2
+      # Student code runs wait in a fair line per worker: 4 workers x 2 = 8 = the runner's uid slots (RUNNER_UIDS below)
+      - STUDENT_SANDBOX_CONCURRENCY=2
     volumes:
       - interviewer_media:/app/media
     networks:
@@ -87,15 +89,18 @@ services:
     container_name: interviewer_code_runner
     restart: always
     init: true            # reaps the orphaned children a fork bomb leaves behind (PID 1 is a Python server that does not)
+    environment:
+      # 8 throwaway uids = 8 submissions at once (a batch of tests holds ONE slot). Keep backend workers x STUDENT_SANDBOX_CONCURRENCY at or below this.
+      - RUNNER_UIDS=10001,10002,10003,10004,10005,10006,10007,10008
     networks:
       - runner_net
-    mem_limit: 3g
-    memswap_limit: 3g
-    cpus: 3.0
-    pids_limit: 512
+    mem_limit: 5g         # g++ needs ~300-500 MB per compile; 8 slots at once
+    memswap_limit: 5g
+    cpus: 4.0
+    pids_limit: 768       # 8 slots x (compiler: g++ + cc1plus + as + ld, or a run) + the per-uid RLIMIT_NPROC of 128 is the real fork-bomb cap
     read_only: true
     tmpfs:
-      - /tmp/runs:size=256m,mode=0755,noexec,nosuid
+      - /tmp/runs:size=256m,mode=0755,exec,nosuid      # "exec" must be explicit: Docker mounts tmpfs noexec by default, and compiled C / C++ programs run from here
     cap_drop: [ALL]
     cap_add: [SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE]
     security_opt:

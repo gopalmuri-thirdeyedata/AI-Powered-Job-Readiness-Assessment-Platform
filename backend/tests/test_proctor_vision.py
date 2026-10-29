@@ -54,7 +54,7 @@ def test_get_model_status_endpoint(auth):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ready"
-    assert "yolov8n.pt" in data["model_file"]
+    assert "yolov8n" in data["model_file"] and data["face_model"] in ("yunet", "unavailable")
     assert "person" in data["classes_supported"]
     assert "cell phone" in data["classes_supported"]
 

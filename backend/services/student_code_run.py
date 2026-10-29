@@ -8,11 +8,16 @@ error line numbers match what the student sees in the editor.
 from typing import Any, Dict, Optional
 
 from services import assessment_engine as engine
-from services import function_style, student_sandbox
+from services import coding_spec, function_style, student_sandbox
 
 
 def run_samples(problem: Dict[str, Any], code: str, language: str, *, driver: Optional[str] = None,
-                custom_input: Optional[str] = None, comparison: str = "text") -> Dict[str, Any]:
+                custom_input: Optional[str] = None, comparison: str = "text", spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if spec:
+        # Typed (LeetCode-style, any language) problem: the two examples and the student's own testcase run as ONE batch (compile once).
+        # A testcase that does not fit the parameters is a ValueError whose message tells the student what to fix.
+        custom = coding_spec.parse_custom_input(spec, custom_input) if custom_input is not None and custom_input.strip() else None
+        return engine.run_typed_samples(problem, spec, code, language, execute_batch=student_sandbox.run_batch, custom_values=custom)
     program = function_style.compose(code, driver) if language == "python" else code
     result = engine.run_sample_tests(problem, program, language, execute=student_sandbox.run, comparison=comparison)
     if custom_input is not None and custom_input.strip():

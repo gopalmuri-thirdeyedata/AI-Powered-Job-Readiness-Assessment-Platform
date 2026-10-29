@@ -71,6 +71,12 @@ export const candidateApi = {
             { headers: { ...jsonHeaders, 'X-Registration-Token': registrationToken } })).data,
 
     state: async (s) => (await axios.get(sessionUrl(s, 'state'), { headers: sessionHeaders(s) })).data,
+    // Reload / reopened tab: the session capability alone (the old lease died with the page) buys a NEW lease and the saved work back.
+    // { resumed, state, session_lease?, resume_count?, draft?, violations? }; resumed:false means the attempt is already over.
+    resume: async (s) => (await axios.post(sessionUrl(s, 'resume'), {}, { headers: { ...jsonHeaders, ...(s?.token ? { 'X-Session-Token': s.token } : {}) }, timeout: 20000 })).data,
+    // Ends the attempt when the integrity limits were exceeded (the server re-checks the numbers: 400 if they were not).
+    terminate: async (s, violations, reason) =>
+        (await axios.post(sessionUrl(s, 'terminate'), { reason: reason ?? null, violations: violations ?? [] }, { headers: sessionHeaders(s), timeout: 30000 })).data,
     heartbeat: async (s) => (await axios.post(sessionUrl(s, 'heartbeat'), {}, { headers: sessionHeaders(s), timeout: 10000 })).data,
     // Autosave; `violations` are client-reported proctoring events kept as evidence for the hiring team
     saveDraft: async (s, section, payload, violations) =>

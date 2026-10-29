@@ -29,6 +29,10 @@ MAX_SOURCE_BYTES = 64 * 1024
 MAX_OUTPUT_CHARS = 10 * 1024
 REQUEST_TIMEOUT_SECONDS = 30
 SUBMIT_TIMEOUT_SECONDS = 15
+# Batch mode (the in-house runner compiles once, then runs every test): limits are PER TEST, the request covers compile + all tests.
+BATCH_CPU_LIMIT_SECONDS = 3
+BATCH_WALL_LIMIT_SECONDS = 6
+BATCH_REQUEST_TIMEOUT_SECONDS = 75
 TIMEOUT_MESSAGE = f"Execution Timed Out ({CPU_TIME_LIMIT_SECONDS:.1f}s)"
 
 
@@ -220,7 +224,37 @@ def _execute_via_runner(language_key: str, code: str, stdin: str = ""):
     return _execute_remote(language_key, code, stdin, _runner_url(), "runner", False)
 
 
-def _execute_remote(language_key: str, code: str, stdin: str, api_url: str, circuit: str, authenticated: bool):
+def _interpret_batch(body, expected_count: int) -> dict:
+    """
+    Map the in-house runner's batch answer ({"status", "compile_output", "results": [one Judge0-shaped result per stdin]}) onto
+    {"status": "success", "results": [<one execute_code-shaped dict per test>]}. A compile error is one result for the whole
+    batch ({"status": "error", "results": []}); a sandbox fault in any test is a service_error for the whole batch.
+    """
+    if not isinstance(body, dict):
+        raise _Malformed("not an object")
+    status_obj = body.get("status")
+    if not isinstance(status_obj, dict) or not isinstance(status_obj.get("id"), int):
+        raise _Malformed("no status")
+    base = {"stdout": "", "stderr": "", "compile_output": "", "timed_out": False, "execution_time_ms": None, "raw": {}}
+    if status_obj["id"] == 6:
+        compile_output = _clip(str(body.get("compile_output") or ""))
+        return {**base, "status": "error", "output": compile_output or "Compilation Failed", "compile_output": compile_output, "results": []}
+    if status_obj["id"] != 3:
+        return {**base, "status": "service_error", "output": f"Code execution service unavailable ({status_obj.get('description', 'error')}).",
+                "retryable": False, "rate_limited": False, "retry_after": 0.0, "results": []}
+    raw_results = body.get("results")
+    if not isinstance(raw_results, list) or len(raw_results) != expected_count:
+        raise _Malformed("wrong number of results")
+    results = []
+    for item in raw_results:
+        one = _interpret(item)
+        if one.get("status") == "service_error":
+            return {**base, **one, "results": []}
+        results.append(one)
+    return {**base, "status": "success", "output": "", "results": results}
+
+
+def _execute_remote(language_key: str, code: str, stdin: str, api_url: str, circuit: str, authenticated: bool, stdins=None):
     """
     Executes code using a Judge0-compatible API at `api_url`.
 
@@ -228,6 +262,9 @@ def _execute_remote(language_key: str, code: str, stdin: str, api_url: str, circ
     string, plus `stdout`, `stderr`, `compile_output`, `timed_out` and `execution_time_ms`.
     `service_error` means the sandbox itself was unreachable/failed (not a candidate error): callers must never score it.
     A service_error carries `retryable` (True only when nothing was submitted), `rate_limited` and `retry_after`.
+
+    `stdins` (a list) selects the in-house runner's BATCH mode: compile once, run every input as its own process, and return
+    {"status": "success", "results": [...]} (see _interpret_batch). Only the in-house runner speaks it.
     """
     config = LANGUAGE_MAP.get(language_key)
     if not config:
@@ -250,26 +287,33 @@ def _execute_remote(language_key: str, code: str, stdin: str, api_url: str, circ
     headers = _request_headers(authenticated)
     wait = os.getenv("JUDGE0_WAIT", "true").lower() not in ("false", "0", "no")
 
+    batch = stdins is not None
     payload = {
         "source_code": code,
         "language_id": config["language_id"],
         "stdin": stdin or "",
-        "cpu_time_limit": CPU_TIME_LIMIT_SECONDS,
-        "wall_time_limit": WALL_TIME_LIMIT_SECONDS,
+        "cpu_time_limit": BATCH_CPU_LIMIT_SECONDS if batch else CPU_TIME_LIMIT_SECONDS,
+        "wall_time_limit": BATCH_WALL_LIMIT_SECONDS if batch else WALL_TIME_LIMIT_SECONDS,
         "memory_limit": MEMORY_LIMIT_KB
     }
+    if batch:
+        payload["stdins"] = [str(item or "") for item in stdins]
 
-    print(f"[{'Runner' if circuit == 'runner' else 'Judge0'}] Executing language_id={config['language_id']} on {api_url}")
+    print(f"[{'Runner' if circuit == 'runner' else 'Judge0'}] Executing language_id={config['language_id']} on {api_url}"
+          + (f" (batch of {len(payload['stdins'])})" if batch else ""))
 
     attempts = 0
     while True:
         attempts += 1
         try:
             # wait=true: Judge0 answers with the finished result; wait=false (or an instance that ignores wait) returns a token
-            response = requests.post(f"{api_url}?wait={'true' if wait else 'false'}", json=payload, headers=headers,
-                                     timeout=REQUEST_TIMEOUT_SECONDS)
+            response = requests.post(f"{api_url}?wait={'true' if (wait or batch) else 'false'}", json=payload, headers=headers,
+                                     timeout=BATCH_REQUEST_TIMEOUT_SECONDS if batch else REQUEST_TIMEOUT_SECONDS)
             response.raise_for_status()
             body = response.json()
+            if batch:
+                result = _interpret_batch(body, len(payload["stdins"]))
+                break
             token = body.get("token") if isinstance(body, dict) else None
             status_obj = body.get("status") if isinstance(body, dict) else None
             queued = isinstance(status_obj, dict) and status_obj.get("id") in QUEUE_STATUS_IDS
@@ -449,6 +493,39 @@ def execute_code(language_key: str, code: str, stdin: str = ""):
         if fallback.get("status") != "service_error":
             return fallback
     return result
+
+
+def _execute_batch_sequential(language_key: str, code: str, stdins) -> dict:
+    """Judge0 and the Gemini simulator have no batch API: one run per test. A compile error (or a sandbox fault) ends the batch at once."""
+    results = []
+    for stdin in stdins:
+        one = dict(execute_code(language_key, code, stdin) or {})
+        if one.get("status") == "service_error":
+            return {**one, "results": []}
+        if one.get("status") == "error":
+            return {**one, "compile_output": one.get("compile_output") or one.get("output") or "", "results": []}
+        results.append(one)
+    return {"status": "success", "output": "", "stdout": "", "stderr": "", "compile_output": "", "timed_out": False,
+            "execution_time_ms": None, "raw": {}, "results": results}
+
+
+def execute_batch(language_key: str, code: str, stdins) -> dict:
+    """
+    Compile `code` once and run it on every input in `stdins` (one process per input). Result:
+      {"status": "success", "results": [<execute_code-shaped dict per input, same order>]}
+      {"status": "error", "compile_output": ..., "results": []}        the code did not compile (the candidate's fault)
+      {"status": "service_error", ...}                                  the sandbox failed (never a candidate fault, never scored)
+    The in-house runner does this in ONE request (compile once). Without it, or if it is down, each input is run on its own
+    through execute_code(). A busy runner is reported as a retryable service_error rather than sent to the (slow) public Judge0.
+    """
+    stdins = [str(s or "") for s in stdins]
+    if get_execution_engine() != "gemini" and _runner_url():
+        result = _execute_remote(language_key, code, "", _runner_url(), "runner", False, stdins=stdins)
+        result.setdefault("results", [])
+        if result.get("status") != "service_error" or result.get("retryable") or result.get("rate_limited"):
+            return result
+        print("[Execution] In-house runner unavailable for a batch; falling back to one run per test")
+    return _execute_batch_sequential(language_key, code, stdins)
 
 
 # ==============================================================================

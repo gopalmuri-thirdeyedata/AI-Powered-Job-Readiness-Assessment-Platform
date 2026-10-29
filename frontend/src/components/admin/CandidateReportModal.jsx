@@ -204,7 +204,7 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
                                                 {sections.coding.details.problems.map((p) => (
                                                     <div key={p.id}>
                                                         <p className="font-semibold">{p.title}{p.score !== undefined && p.score !== null ? ` — ${p.score}%` : ''}{p.language ? <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">{p.language === 'java' ? 'Java' : 'Python'}</span> : null}</p>
-                                                        {p.total_tests !== undefined && <p className="text-xs text-slate-500 dark:text-slate-400">Hidden tests {p.passed_tests}/{p.total_tests} · {String(p.classification || '').replace(/_/g, ' ').toLowerCase()}</p>}
+                                                        {p.total_tests !== undefined && <p className="text-xs text-slate-500 dark:text-slate-400">Tests passed {p.passed_tests}/{p.total_tests}{p.tests ? ' (examples + hidden)' : ''} · {String(p.classification || '').replace(/_/g, ' ').toLowerCase()}</p>}
                                                         {p.message && <p className="text-xs text-red-600 dark:text-red-400 whitespace-pre-wrap">{p.message}</p>}
                                                         {p.code && <pre className="mt-1 rounded-lg bg-slate-100 dark:bg-slate-950 p-2 text-xs overflow-x-auto whitespace-pre-wrap">{p.code}</pre>}
                                                     </div>
