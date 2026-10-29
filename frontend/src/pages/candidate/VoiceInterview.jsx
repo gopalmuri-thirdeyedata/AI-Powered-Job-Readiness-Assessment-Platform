@@ -68,6 +68,8 @@ const VoiceInterview = () => {
     const [callState, setCallState] = useState("connecting"); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
     const [isMuted, setIsMuted] = useState(false);
     const [volume, setVolume] = useState(0); // 0 to 1 from Voice
+    const [userLevel, setUserLevel] = useState(0); // 0 to 1: how loud the candidate is right now (only while the mic is open for them)
+    const [userSpeaking, setUserSpeaking] = useState(false);
     const [micLevel, setMicLevel] = useState(0); // Local mic test volume
     const [timeRemaining, setTimeRemaining] = useState(null);
     const [isSubmitted, setIsSubmitted] = useState(false);
@@ -405,6 +407,20 @@ const VoiceInterview = () => {
                 setVolume(level);
             });
 
+            voice.on('mic-level', (level) => {
+                setUserLevel((prev) => (Math.abs(prev - level) < 0.04 ? prev : level));      // skip tiny changes: no re-render every 50 ms
+            });
+
+            voice.on('user-speech', (speaking) => {
+                setUserSpeaking(!!speaking);
+                if (speaking) setCallState('listening');
+            });
+
+            voice.on('listening', () => {
+                setUserSpeaking(false);
+                setCallState('listening');
+            });
+
             voice.on('message', (message) => {
                 if (message.type === 'transcript') {
                     const speaker = (message.role === 'assistant' || message.role === 'ai') ? 'ai' : 'user';
@@ -452,6 +468,8 @@ const VoiceInterview = () => {
             });
 
             voice.on('processing', () => {
+                setUserSpeaking(false);
+                setUserLevel(0);
                 setCallState("processing");
             });
 
@@ -1073,13 +1091,13 @@ const VoiceInterview = () => {
                     {callState === 'listening' && (
                         <div className="flex items-center gap-2 px-3.5 py-1 rounded-full bg-green-500/15 border border-green-500/30 text-green-400 text-xs font-bold">
                             <span className="w-2 h-2 rounded-full bg-green-400 animate-ping" />
-                            <span>Listening to You</span>
+                            <span>{isMuted ? 'Muted' : userSpeaking ? 'Hearing You' : 'Listening to You'}</span>
                         </div>
                     )}
                     {callState === 'processing' && (
                         <div className="flex items-center gap-2 px-3.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 text-xs font-semibold">
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Processing Response...</span>
+                            <span>Thinking...</span>
                         </div>
                     )}
                     {callState === 'completed' && (
@@ -1096,9 +1114,9 @@ const VoiceInterview = () => {
                     <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px]" title="Microphone Activity">
                         {isMuted ? <MicOff className="w-3.5 h-3.5 text-red-400" /> : <Mic className="w-3.5 h-3.5 text-emerald-400" />}
                         <div className="flex items-end gap-0.5 h-2.5 w-6">
-                            <div className={`w-1 rounded-full transition-all ${volume > 0.05 ? 'bg-emerald-400 h-2.5' : 'bg-slate-700 h-1'}`} />
-                            <div className={`w-1 rounded-full transition-all ${volume > 0.2 ? 'bg-emerald-400 h-2.5' : 'bg-slate-700 h-1'}`} />
-                            <div className={`w-1 rounded-full transition-all ${volume > 0.4 ? 'bg-emerald-400 h-2.5' : 'bg-slate-700 h-1'}`} />
+                            {[0.05, 0.2, 0.4].map((step) => (
+                                <div key={step} className={`w-1 rounded-full transition-all ${(callState === 'listening' && !isMuted ? userLevel : volume) > step ? 'bg-emerald-400 h-2.5' : 'bg-slate-700 h-1'}`} />
+                            ))}
                         </div>
                     </div>
 
@@ -1189,7 +1207,14 @@ const VoiceInterview = () => {
                         </div>
 
                         {/* 2. Candidate Camera Feed (Mirrored + YOLO Bounding Boxes) */}
-                        <div className="relative bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden flex items-center justify-center shadow-lg aspect-video md:aspect-auto">
+                        <div
+                            className={`relative bg-slate-950 rounded-2xl border overflow-hidden flex items-center justify-center shadow-lg aspect-video md:aspect-auto transition-all duration-200 ${
+                                callState === 'listening' && !isMuted
+                                    ? `border-indigo-400 ${userSpeaking ? 'ring-4 ring-emerald-400/60' : 'ring-2 ring-indigo-400/40 animate-pulse'}`
+                                    : 'border-slate-800'
+                            }`}
+                            style={callState === 'listening' && !isMuted && userSpeaking ? { boxShadow: `0 0 ${12 + userLevel * 40}px rgba(52, 211, 153, ${0.25 + userLevel * 0.5})` } : undefined}
+                        >
                             {cameraEnabled ? (
                                 <>
                                     <video
@@ -1251,9 +1276,22 @@ const VoiceInterview = () => {
                                             <span className="text-red-400 flex items-center gap-1">
                                                 <MicOff className="w-3 h-3" /> Muted
                                             </span>
+                                        ) : callState === 'listening' ? (
+                                            <span className="text-emerald-400 flex items-center gap-1.5">
+                                                <Mic className="w-3 h-3" /> {userSpeaking ? 'Hearing you' : 'Listening'}
+                                                <span className="flex items-end gap-0.5 h-3">
+                                                    {[0.08, 0.2, 0.35, 0.5, 0.7].map((step) => (
+                                                        <span key={step} className={`w-0.5 rounded-full transition-all ${userLevel > step ? 'bg-emerald-400 h-3' : 'bg-slate-600 h-1'}`} />
+                                                    ))}
+                                                </span>
+                                            </span>
+                                        ) : callState === 'processing' ? (
+                                            <span className="text-indigo-300 flex items-center gap-1">
+                                                <Loader2 className="w-3 h-3 animate-spin" /> Thinking
+                                            </span>
                                         ) : (
-                                            <span className="text-emerald-400 flex items-center gap-1">
-                                                <Mic className="w-3 h-3" /> Mic Live
+                                            <span className="text-slate-400 flex items-center gap-1">
+                                                <Mic className="w-3 h-3" /> Mic paused
                                             </span>
                                         )}
                                     </div>

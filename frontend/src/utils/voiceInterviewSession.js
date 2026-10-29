@@ -6,14 +6,14 @@ import { RealtimeCaptions } from './liveCaptions';
 //   start(config) / stop() / setMuted(bool) / setInputDevicesAsync({ audioDeviceId }) / removeAllListeners()
 // The turn-taking logic (UtteranceDetector) is pure and framework-free so it can be unit tested without a browser or a microphone.
 
-export const END_SILENCE_MS = 2200;        // pause that ends an answer: a real interviewer lets the candidate think and finish the thought
-export const END_SILENCE_FINISHED_MS = 1800;     // ... a little less when the last words already read as a finished sentence
-export const END_SILENCE_UNFINISHED_MS = 4000;   // ... and longer when the sentence is left hanging ("and", "because", a trailing comma)
+export const END_SILENCE_MS = 1300;        // pause that ends an answer (short, so the interviewer answers promptly; the longer waits below protect unfinished thoughts)
+export const END_SILENCE_FINISHED_MS = 800;      // ... a little less when the last words already read as a finished sentence
+export const END_SILENCE_UNFINISHED_MS = 2800;   // ... and longer when the sentence is left hanging ("and", "because", a trailing comma)
 export const MIN_SPEECH_MS = 400;          // shorter sounds (a cough, a click) are discarded, not sent
 export const MAX_UTTERANCE_MS = 90000;     // an answer is cut here and sent
-export const SPEECH_CONFIRM_MS = 120;      // sound must last this long to count as speech
+export const SPEECH_CONFIRM_MS = 90;       // sound must last this long to count as speech
 export const PRE_ROLL_RESET_MS = 3000;     // recording while nobody speaks is thrown away this often (keeps uploads small)
-export const REPLY_GUARD_MS = 350;         // the mic is ignored briefly after the interviewer stops (room echo)
+export const REPLY_GUARD_MS = 250;         // the mic is ignored briefly after the interviewer stops (room echo)
 export const CALIBRATE_MS = 600;           // the first moments of listening teach the detector how noisy the room is
 export const NOISE_FLOOR_CAP = 0.02;
 export const POLL_MS = 50;
@@ -392,6 +392,7 @@ export class VoiceInterviewSession {
         this.lastActivityAt = Date.now();
         this.beginRecording();
         this.resetCaptions();
+        this.emit('listening');           // the microphone is open for the candidate's answer
     }
 
     tick() {
@@ -399,13 +400,17 @@ export class VoiceInterviewSession {
         const now = Date.now();
         if (now - this.lastActivityAt > this.silenceTimeoutMs) { this.finish(); return; }
         if (this.muted) return;
-        const event = this.detector.push(this.micLevel(), now, endSilenceFor(this.userCaptionText));
+        const level = this.micLevel();
+        this.emit('mic-level', Math.min(1, level * 6));        // drives the "you are being heard" animation
+        const event = this.detector.push(level, now, endSilenceFor(this.userCaptionText));
         if (event === 'speech-start') {
             this.lastActivityAt = now;
+            this.emit('user-speech', true);
         } else if (event === 'speech-end') {
+            this.emit('user-speech', false);
             this.answerGiven();
         } else if (event === 'discard' || (!this.detector.speaking && now - this.recorderStartedAt > PRE_ROLL_RESET_MS)) {
-            if (event === 'discard') this.resetCaptions();       // a cough or click is not an answer: do not leave its caption on screen
+            if (event === 'discard') { this.emit('user-speech', false); this.resetCaptions(); }       // a cough or click is not an answer: do not leave its caption on screen
             this.beginRecording();       // nothing worth sending: start a fresh recording so silence is never uploaded
         }
     }
