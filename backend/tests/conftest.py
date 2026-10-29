@@ -113,3 +113,12 @@ def _score_interview_inline(monkeypatch):
     The background path has its own tests (test_roleready_background_eval.py)."""
     from services import roleready_service
     monkeypatch.setattr(roleready_service, "BACKGROUND_INTERVIEW_EVALUATION", False)
+
+
+@pytest.fixture(autouse=True)
+def _blueprint_reference_runs_locally(monkeypatch):
+    """Generated coding problems are verified by running Gemini's reference solution. In tests that happens in a local Python subprocess,
+    never in the real code sandbox (and never over the network)."""
+    from services import coding_problem_factory, jd_blueprint_service
+    monkeypatch.setattr(jd_blueprint_service, "_run_batch", coding_problem_factory.local_run_batch)
+    yield

@@ -85,9 +85,9 @@ def aware(dt):
 
 
 # ------------------------------------------------------------------------------ limits
-def test_every_new_student_round_has_the_canonical_20_minute_limit(db_session, setup_test_data):
+def test_every_new_student_round_has_its_canonical_limit_20_20_10_minutes(db_session, setup_test_data):
     s = new_session(db_session, setup_test_data)
-    assert {r.round_type: r.time_limit_minutes for r in rounds(db_session, s).values()} == {"APTITUDE": 20, "CODING": 20, "INTERVIEW": 20}
+    assert {r.round_type: r.time_limit_minutes for r in rounds(db_session, s).values()} == {"APTITUDE": 20, "CODING": 20, "INTERVIEW": 10}
 
 
 def test_both_workflows_import_the_same_canonical_constants():
@@ -162,11 +162,11 @@ def test_section_transitions_never_reset_the_overall_deadline(db_session, setup_
     clk.advance(60)                                                      # coding unlocked at +5m, started at +6m
     coding = client.post(url(s, "start-coding"), headers=h).json()
     assert coding["remaining_seconds"] == 1200 and aware(reload(db_session, s).overall_deadline_at) == overall
-    clk.advance(34 * 60)                                                 # +40m
+    clk.advance(44 * 60)                                                 # +50m
     assert client.post(url(s, "submit-coding"), headers=h, json={"solutions": {}}).status_code == 200
-    clk.advance(60)                                                      # interview starts at +41m: only 19 minutes of the 60 remain
+    clk.advance(60)                                                      # interview starts at +51m: only 9 of its 10 minutes fit in the 60
     interview = client.post(url(s, "start-interview"), headers=h).json()
-    assert interview["remaining_seconds"] == 19 * 60 and interview["overall_remaining_seconds"] == 19 * 60
+    assert interview["remaining_seconds"] == 9 * 60 and interview["overall_remaining_seconds"] == 9 * 60      # capped by the overall deadline
     assert aware(reload(db_session, s).overall_deadline_at) == overall
 
 

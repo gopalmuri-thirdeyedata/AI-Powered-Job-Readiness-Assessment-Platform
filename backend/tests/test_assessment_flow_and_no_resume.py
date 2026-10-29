@@ -191,18 +191,116 @@ def test_duplicate_tab_rejected_without_affecting_active_session(db, env, clk):
     assert h.session_row(db, started["session_uuid"]).current_state == "APTITUDE_IN_PROGRESS"
 
 
-def test_page_refresh_without_in_memory_lease_permanently_abandons(db, env, clk):
+def test_page_reload_without_the_lease_no_longer_ends_the_attempt_it_resumes(db, env, clk):
     started = new_started(env)
-    clk.advance(31)  # pre-refresh runtime is gone: heartbeats stopped > 30s ago
+    draft = aptitude_payload(db, started, correct=4)
+    assert client.put(h.sess_url(started, "draft"), headers=h.sh(started), json={"section": "aptitude", "payload": draft}).status_code == 200
+    clk.advance(31)  # the pre-reload runtime is gone: heartbeats stopped > 30s ago
     r = client.get(h.sess_url(started, "state"), headers=h.sh(started, lease=False))
-    assert r.status_code == 409 and "refresh" in r.json()["detail"].lower()
+    assert r.status_code == 409 and "reload the page to resume" in r.json()["detail"].lower()      # told what to do, nothing was ended
     row = h.session_row(db, started["session_uuid"])
-    assert row.current_state == "ABANDONED" and row.abandoned_at is not None and row.finalized_at is not None
-    # Even a request that still carries the old lease can never resume
-    for method, path in (("get", "state"), ("post", "heartbeat")):
-        assert getattr(client, method)(h.sess_url(started, path), headers=h.sh(started)).status_code == 409
-    rep = client.post(h.sess_url(started, "submit-aptitude"), headers=h.sh(started), json={"answers": {}})
-    assert rep.status_code == 409
+    assert row.current_state == "APTITUDE_IN_PROGRESS" and row.abandoned_at is None and row.finalized_at is None
+
+    res = client.post(h.sess_url(started, "resume"), headers={"X-Session-Token": started["session_token"]})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["resumed"] is True and body["session_lease"] and body["resume_count"] == 1
+    assert body["state"]["section"]["key"] == "aptitude" and body["state"]["section"]["remaining_seconds"] < 20 * 60     # the clock did not pause
+    assert body["draft"]["section"] == "aptitude" and body["draft"]["payload"]["answers"] == draft["answers"]            # saved work comes back
+    assert [e["type"] for e in body["violations"]] == [flow.RESUME_EVENT]                                                 # the reload is on record
+    fresh = {"X-Session-Token": started["session_token"], "X-Session-Lease": body["session_lease"]}
+    assert client.get(h.sess_url(started, "state"), headers=fresh).status_code == 200
+    assert client.post(h.sess_url(started, "heartbeat"), headers=fresh).status_code == 200
+    # the OLD lease is dead: an older window can never work on the same attempt
+    assert client.get(h.sess_url(started, "state"), headers=h.sh(started)).status_code == 409
+
+
+def test_resume_is_limited_and_each_resume_is_recorded(db, env, clk, monkeypatch):
+    monkeypatch.setattr(flow, "MAX_RESUMES", 2)
+    started = new_started(env)
+    head = {"X-Session-Token": started["session_token"]}
+    for n in (1, 2):
+        clk.advance(40)
+        r = client.post(h.sess_url(started, "resume"), headers=head)
+        assert r.status_code == 200 and r.json()["resume_count"] == n
+    clk.advance(40)
+    third = client.post(h.sess_url(started, "resume"), headers=head)
+    assert third.status_code == 409 and "cannot be resumed again" in third.json()["detail"]
+    assert h.session_row(db, started["session_uuid"]).current_state == "APTITUDE_IN_PROGRESS"
+
+
+def test_resume_needs_the_session_capability_and_never_revives_a_finished_attempt(db, env, clk):
+    started = new_started(env)
+    assert client.post(h.sess_url(started, "resume")).status_code == 401
+    assert client.post(h.sess_url(started, "resume"), headers={"X-Session-Token": "wrong"}).status_code == 403
+    assert client.post(f"/api/public/assessment/session/{'0' * 8}-0000-0000-0000-{'0' * 12}/resume", headers={"X-Session-Token": "x"}).status_code == 404
+    flow.abandon_session(db, h.session_row(db, started["session_uuid"]).id, "test")
+    r = client.post(h.sess_url(started, "resume"), headers={"X-Session-Token": started["session_token"]})
+    assert r.status_code == 200 and r.json()["resumed"] is False and r.json()["state"]["terminal"] is True and "session_lease" not in r.json()
+
+
+def test_a_deadline_that_passed_while_the_page_was_away_is_enforced_on_resume(db, env, clk):
+    started = new_started(env)
+    clk.advance(60 * 60 + 300)                      # far past the overall deadline and the arrival window
+    r = client.post(h.sess_url(started, "resume"), headers={"X-Session-Token": started["session_token"]})
+    assert r.status_code == 200 and r.json()["resumed"] is False and r.json()["state"]["terminal"] is True
+
+
+def tab_switch(n=1):
+    return [{"type": "Navigated away from assessment window (Tab Switch)", "strike": i + 1, "timestamp": f"2026-01-01T00:00:0{i}Z"} for i in range(n)]
+
+
+def other_events(n):
+    return [{"type": f"Face not visible in camera #{i}", "strike": i + 1, "timestamp": f"2026-01-01T00:01:0{i}Z"} for i in range(n)]
+
+
+def terminate(started, violations):
+    return client.post(h.sess_url(started, "terminate"), headers=h.sh(started), json={"reason": "test", "violations": violations})
+
+
+def test_the_second_tab_switch_disqualifies_and_submits_the_work_so_far(db, env, clk):
+    started = new_started(env)
+    draft = aptitude_payload(db, started, correct=6)
+    assert client.put(h.sess_url(started, "draft"), headers=h.sh(started), json={"section": "aptitude", "payload": draft, "violations": tab_switch(2)}).status_code == 200
+    one = terminate(started, tab_switch(1))                                          # one tab switch is only recorded
+    assert one.status_code == 400
+    assert h.session_row(db, started["session_uuid"]).current_state == "APTITUDE_IN_PROGRESS"
+    blur_only = terminate(started, tab_switch(1) + [{"type": "Application lost focus (Window Blur / Switch)", "strike": 2, "timestamp": "2026-01-01T00:00:09Z"}])
+    assert blur_only.status_code == 400                                                # a window losing focus is ignored: it is not a second tab switch
+    two = terminate(started, tab_switch(2))
+    assert two.status_code == 200, two.text
+    body = two.json()
+    assert body["terminated"] is True and body["disqualified"] is True and "disqualified" in body["message"].lower() and body["terminal"] is True
+    row = h.session_row(db, started["session_uuid"])
+    assert row.current_state == "ABANDONED"
+    assert row.final_report_data["sections"]["aptitude"]["score"] == pytest.approx(40.0)       # the saved draft was scored
+    assert row.final_report_data["sections"]["coding"]["status"] == "UNATTEMPTED"
+    log = db.query(models.ActivityLog).filter(models.ActivityLog.target == f"session:{started['session_uuid']}",
+                                              models.ActivityLog.action == "ASSESSMENT_DISQUALIFIED_TAB_SWITCH").first()
+    assert log is not None
+    # a finished attempt cannot be resumed or continued
+    assert client.post(h.sess_url(started, "resume"), headers={"X-Session-Token": started["session_token"]}).json()["resumed"] is False
+
+
+def test_more_than_five_integrity_events_end_the_assessment_and_the_resume_event_does_not_count(db, env, clk):
+    started = new_started(env)
+    reload_event = {"type": flow.RESUME_EVENT, "strike": 0, "timestamp": "2026-01-01T00:00:00Z"}
+    assert terminate(started, other_events(5) + [reload_event]).status_code == 400          # five events (+ a reload) is still allowed
+    assert h.session_row(db, started["session_uuid"]).current_state == "APTITUDE_IN_PROGRESS"
+    six = terminate(started, other_events(6) + [reload_event])
+    assert six.status_code == 200 and six.json()["terminated"] is True and six.json()["disqualified"] is False
+    assert "too many integrity events" in six.json()["message"]
+    assert h.session_row(db, started["session_uuid"]).current_state == "ABANDONED"
+    log = db.query(models.ActivityLog).filter(models.ActivityLog.target == f"session:{started['session_uuid']}",
+                                              models.ActivityLog.action == "ASSESSMENT_ENDED_INTEGRITY_LIMIT").first()
+    assert log is not None
+
+
+def test_terminate_needs_the_live_lease(db, env, clk):
+    started = new_started(env)
+    r = client.post(h.sess_url(started, "terminate"), headers=h.sh(started, lease=False), json={"violations": tab_switch(3)})
+    assert r.status_code == 409
+    assert h.session_row(db, started["session_uuid"]).current_state == "APTITUDE_IN_PROGRESS"
 
 
 def test_unload_beacon_is_advisory_and_never_abandons_by_itself(db, env):
@@ -338,9 +436,9 @@ def test_arrival_window_consumption_reduces_next_section_time(db, env, clk):
     assert r.status_code == 200
     section = r.json()["section"]
     assert section["key"] == "interview"
-    assert section["remaining_seconds"] == 1195  # 60m - 40m05s: the overall deadline is never extended
+    assert section["remaining_seconds"] == 600 and section["limit_minutes"] == 10   # the interview section is 10 minutes (40m05s + 10m is inside the 60m overall)
     row = h.session_row(db, started["session_uuid"])
-    assert row.current_section_deadline_at == row.overall_deadline_at
+    assert row.current_section_deadline_at == (t0 + timedelta(seconds=2405 + 600)).replace(tzinfo=None) < row.overall_deadline_at
 
 
 def test_near_global_deadline_submission_leaves_only_remaining_seconds(db, env, clk):
@@ -452,7 +550,9 @@ def test_drafts_are_scored_when_sitting_is_abandoned(db, env, clk):
     draft = aptitude_payload(db, started, correct=6)
     assert client.put(h.sess_url(started, "draft"), headers=h.sh(started), json={"section": "aptitude", "payload": draft}).status_code == 200
     clk.advance(45)
-    assert client.get(h.sess_url(started, "state"), headers=h.sh(started, lease=False)).status_code == 409
+    assert client.get(h.sess_url(started, "state"), headers=h.sh(started, lease=False)).status_code == 409      # a request alone no longer ends it ...
+    assert h.session_row(db, started["session_uuid"]).current_state == "APTITUDE_IN_PROGRESS"
+    flow.abandon_session(db, h.session_row(db, started["session_uuid"]).id, "heartbeat_silence", now=clk.now())    # ... the sweeper does, after the silence window
     row = h.session_row(db, started["session_uuid"])
     assert row.current_state == "ABANDONED"
     rep = row.final_report_data

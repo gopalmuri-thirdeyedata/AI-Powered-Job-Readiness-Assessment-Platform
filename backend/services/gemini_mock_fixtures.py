@@ -263,11 +263,73 @@ def sample_blueprint(role_title: str = "Backend Engineer") -> Dict[str, Any]:
             "coding_problems": coding, "interview_questions": interview}
 
 
+def sample_coding_problem(slot: int = 1) -> Dict[str, Any]:
+    """
+    What the coding-problem prompt returns (typed signature, 2 examples, 8 hidden-test candidates, a Python reference solution), as realistic
+    offline data. The reference solutions are correct, so these pass the same sandbox verification real Gemini output must pass.
+    """
+    if int(slot) == 2:
+        return {
+            "id": "C2", "title": "Longest Unique Substring", "difficulty": "Medium",
+            "description": "Given a string s, return the length of the longest substring that contains no repeated character.",
+            "constraints": ["0 <= s.length <= 100", "s consists of printable ASCII characters"],
+            "signature": {"name": "longestUniqueSubstring", "params": [{"name": "s", "type": "string"}], "returns": "int"},
+            "compare": "exact",
+            "examples": [
+                {"input": {"s": "abcabcbb"}, "expected": 3, "explanation": "The longest substring without repeats is \"abc\", length 3."},
+                {"input": {"s": "bbbbb"}, "expected": 1, "explanation": "Every substring of repeated letters has length 1."},
+            ],
+            "hidden_tests": [{"input": {"s": s}, "expected": e} for s, e in
+                             [("pwwkew", 3), ("", 0), ("a", 1), ("abba", 2), ("dvdf", 3), ("abcdef", 6), ("tmmzuxt", 5), ("aab", 2)]],
+            "reference_solution": (
+                "class Solution:\n"
+                "    def longestUniqueSubstring(self, s: str) -> int:\n"
+                "        last, start, best = {}, 0, 0\n"
+                "        for i, ch in enumerate(s):\n"
+                "            if ch in last and last[ch] >= start:\n"
+                "                start = last[ch] + 1\n"
+                "            last[ch] = i\n"
+                "            best = max(best, i - start + 1)\n"
+                "        return best\n"),
+        }
+    return {
+        "id": "C1", "title": "Pair With Target Sum", "difficulty": "Easy",
+        "description": ("Given an array of integers nums and an integer target, return the indices of the two numbers that add up to target. "
+                        "Exactly one such pair exists, and the same element may not be used twice."),
+        "constraints": ["2 <= nums.length <= 20", "-100 <= nums[i] <= 100", "Exactly one valid pair exists"],
+        "signature": {"name": "pairIndices", "params": [{"name": "nums", "type": "int[]"}, {"name": "target", "type": "int"}], "returns": "int[]"},
+        "compare": "exact",
+        "examples": [
+            {"input": {"nums": [2, 7, 11, 15], "target": 9}, "expected": [0, 1], "explanation": "nums[0] + nums[1] = 2 + 7 = 9, so return [0, 1]."},
+            {"input": {"nums": [3, 2, 4], "target": 6}, "expected": [1, 2], "explanation": "nums[1] + nums[2] = 2 + 4 = 6."},
+        ],
+        "hidden_tests": [{"input": {"nums": n, "target": t}, "expected": e} for n, t, e in
+                         [([3, 3], 6, [0, 1]), ([1, 2, 3, 4, 5], 9, [3, 4]), ([-1, -2, -3, -4, -5], -8, [2, 4]), ([0, 4, 3, 0], 0, [0, 3]),
+                          ([5, 75, 25], 100, [1, 2]), ([1, 5, 1, 5], 10, [1, 3]), ([10, 20, 30], 50, [1, 2]), ([4, 6], 10, [0, 1])]],
+        "reference_solution": (
+            "class Solution:\n"
+            "    def pairIndices(self, nums: List[int], target: int) -> List[int]:\n"
+            "        seen = {}\n"
+            "        for i, x in enumerate(nums):\n"
+            "            if target - x in seen:\n"
+            "                return [seen[target - x], i]\n"
+            "            seen[x] = i\n"
+            "        return []\n"),
+    }
+
+
 def get_mock_response(prompt: str, json_mode: bool = True) -> Dict[str, Any]:
     if not json_mode:
-        return {"text": "Mock Gemini response."}
+        return {"text": "Thanks, that is clear. Can you tell me more about how you would measure the improvement? Please walk me through it step by step."}
 
     p = prompt.lower()
+    if "aptitude answer check" in p:                              # the independent answer check of the blueprint's aptitude questions
+        import re as _re
+        keys = ["A", "B", "C", "D"]
+        ids = _re.findall(r"\[(A\d+)\]", prompt)
+        return {"answers": [{"id": qid, "answer": keys[int(qid[1:]) % 4]} for qid in ids]}     # sample_blueprint(): correct = keys[i % 4]
+    if "leetcode-style coding problem" in p:                      # one coding problem of the JD blueprint
+        return sample_coding_problem(2 if "slot 2 of" in p else 1)
     if "jd assessment blueprint" in p:
         return sample_blueprint()
     if "technical hiring bar-raiser" in p:

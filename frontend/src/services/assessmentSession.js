@@ -2,9 +2,10 @@
 //
 //  * registration token  -> sessionStorage (per share link), cleared once the attempt starts
 //  * rules acknowledgement flag -> sessionStorage (per share link); the SERVER enforces it again when the attempt is started
-//  * session uuid + token -> sessionStorage (identifies the sitting; survives reload but is useless without the lease)
+//  * session uuid + token -> sessionStorage (identifies the sitting; survives a reload). On a reload the page sends it to POST .../resume,
+//                            which hands back a NEW lease and the saved work, so the SAME attempt continues.
 //  * session LEASE        -> module memory ONLY. It is never written to localStorage, sessionStorage, cookies or the URL.
-//                            A reload (or a duplicated tab) therefore loses it, which is what makes "no resume" enforceable.
+//                            A reload (or a duplicated tab) loses it; the tab that resumes last owns the lease, so one window works on one attempt.
 //
 // Nothing candidate-related is ever written to localStorage.
 

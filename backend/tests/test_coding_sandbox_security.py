@@ -211,8 +211,9 @@ def test_unsupported_language_and_oversized_code_rejected(db, env, monkeypatch):
 def test_run_code_rate_limited_per_session(db, env, monkeypatch):
     h.install_local_sandbox(monkeypatch)
     s = coding_session(db, env)
-    codes = [run(s).status_code for _ in range(7)]
-    assert codes[:5] == [200] * 5 and codes[5:] == [429, 429]
+    limit = flow.run_code_limiter.limit if hasattr(flow.run_code_limiter, "limit") else 10      # 10 Run presses a minute (RUN_CODE_LIMIT_PER_MINUTE)
+    codes = [run(s).status_code for _ in range(limit + 2)]
+    assert codes[:limit] == [200] * limit and codes[limit:] == [429, 429]
 
 
 def test_a_full_waiting_line_returns_429_and_a_free_line_serves_the_run(db, env, monkeypatch):

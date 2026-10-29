@@ -220,6 +220,29 @@ def fallback_evaluate_five_technical_questions(
     }
 
 
+MAX_CONVERSATION_CHARS = 16000
+
+
+def _conversation_text(transcript: Optional[List[Dict[str, Any]]]):
+    """The spoken conversation as "Interviewer: ... / Candidate: ..." lines (capped) and how many words the candidate said."""
+    lines, words, total = [], 0, 0
+    for turn in (transcript or []):
+        if not isinstance(turn, dict):
+            continue
+        text = re.sub(r"\s+", " ", str(turn.get("text") or "")).strip()
+        if not text or text.lower().startswith("candidate completed voice interview"):
+            continue
+        candidate = turn.get("role") in ("user", "candidate")
+        if candidate:
+            words += len(text.split())
+        line = f"{'Candidate' if candidate else 'Interviewer'}: {text}"
+        total += len(line) + 1
+        if total > MAX_CONVERSATION_CHARS:
+            break
+        lines.append(line)
+    return "\n".join(lines), words
+
+
 def evaluate_five_technical_questions(
     questions: List[Dict[str, Any]],
     answers: List[Dict[str, Any]],
@@ -320,6 +343,10 @@ def evaluate_five_technical_questions(
             ]
         }
 
+    # The whole spoken conversation, in order: the interview is adaptive, so what the candidate showed is judged from all of it, not only from
+    # the prepared questions that happened to be reached.
+    transcript_text, candidate_words = _conversation_text(transcript)
+
     # 2. Build multi-question evaluation prompt for Gemini
     formatted_questions_block = ""
     for idx, item in enumerate(cleaned_answers):
@@ -333,7 +360,7 @@ QUESTION {idx + 1} (ID: {item['question_id']}):
 - Category: {item['category']}
 - Question: {item['question']}
 - Specific Evaluation Criteria: {item['evaluation_criteria']}
-- Candidate Answer: {item['response'] or '(No direct answer provided)'}
+- Candidate Answer: {item['response'] or ('(Not reached: this prepared question was never asked in the conversation)' if transcript_text else '(No direct answer provided)')}
 - Follow-up Exchanges:{fu_text or ' (None)'}
 """
 
@@ -346,18 +373,29 @@ TARGET ROLE & JD REQUIREMENTS:
 CANDIDATE RESUME SUMMARY:
 {resume_summary if resume_summary else "Not provided"}
 
-INTERVIEW QUESTIONS & COMPLETE RESPONSES:
+FULL CONVERSATION (the interview was adaptive and spoken, in order; this is the complete evidence):
+{transcript_text or '(not available: use the per-question answers below)'}
+
+PREPARED QUESTIONS & THE ANSWERS MAPPED TO THEM:
 {formatted_questions_block}
 
+SCORING PRINCIPLES (read first):
+- Judge what the candidate actually demonstrated anywhere in the conversation (their introduction, how they describe their own projects, follow-up answers and
+  answers to prepared questions). Their own project explanations are valid technical evidence.
+- A prepared question marked "Not reached" was simply never asked. Do NOT score it zero and do NOT penalize the candidate for it: give it status "not_assessed".
+- The overall, technical_depth and communication scores must reflect the evidence that exists. If the conversation is short or has little technical content, say
+  "limited evidence" in the summary and score what was shown fairly; never return 0 for a candidate who spoke and answered.
+- Score 0 only when the candidate gave no meaningful answers at all.
+
 EVALUATION INSTRUCTIONS:
-1. Evaluate each of the 5 questions individually against its specific evaluation criteria and candidate answer + follow-ups.
+1. Evaluate each of the 5 questions individually against its specific evaluation criteria and candidate answer + follow-ups (use "not_assessed" when not reached).
 2. For each question:
    - Identify what the candidate explained correctly (demonstrated_strengths).
    - Identify what was missing or technically inaccurate (knowledge_gaps).
    - Quote exact phrases from the answer as proof (evidence).
    - Provide concrete, actionable advice for improvement (actionable_advice).
    - Assign an accurate score from 0.0 to 100.0.
-   - Assign a status: "correct" (>=80), "partially_correct" (50-79), "incorrect" (1-49), "incomplete" (1-49), or "unanswered" (0).
+   - Assign a status: "correct" (>=80), "partially_correct" (50-79), "incorrect" (1-49), "incomplete" (1-49), "unanswered" (0, asked but not answered), or "not_assessed" (never asked).
    - Do NOT penalize accents, speaking pace, or minor conversational grammar.
    - Do NOT reward confident delivery that lacks technical substance.
    - For behavioral questions, evaluate actual decisions, actions, and measurable outcomes (STAR).
@@ -462,6 +500,16 @@ Return ONLY strictly valid JSON matching this exact structure:
                         "actionable_advice": "Review trade-offs.",
                         "evaluation_criteria": item["evaluation_criteria"]
                     })
+
+        if transcript_text:
+            reached = {item["question_id"]: bool(item["response"] or item["follow_ups"]) for item in cleaned_answers}
+            for qe in parsed_q_evals:
+                if not reached.get(qe["question_id"]):          # asked never: not a failure, simply not scored
+                    qe.update(status="not_assessed", score=0.0, assessed=False, demonstrated_strengths=[], knowledge_gaps=[], evidence="", actionable_advice="",
+                              explanation="This prepared question was not reached in the conversation, so it does not count against the candidate.")
+            # What a short conversation can prove is limited: the score may not exceed what the amount of speech supports (50 words: 44, 100: 58, 250+: no cap).
+            cap = 30.0 + 70.0 * min(1.0, candidate_words / 250.0)
+            score, tech_score, comm_score = min(score, cap), min(tech_score, cap), min(comm_score, cap)
 
         return {
             "score": score,

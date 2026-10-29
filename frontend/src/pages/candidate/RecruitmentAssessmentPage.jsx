@@ -5,10 +5,22 @@ import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment';
 import { candidateApi, errorMessage } from '../../services/recruitmentApi';
 import { createRecruitmentAssessmentApi } from '../../services/assessmentApi';
 import {
-    clearAcknowledgement, clearLease, clearSession, getLease, hasAcknowledged, hasStudentAccess, loadRegistration, loadSession,
+    clearAcknowledgement, clearLease, clearSession, hasAcknowledged, hasStudentAccess, loadRegistration, loadSession, setLease,
 } from '../../services/assessmentSession';
 
 const HEARTBEAT_MS = 15000;
+const RELOAD_WARNING = 'Reloading is allowed, but the timer keeps running and the reload is recorded.';
+
+// One resume request per reload: React StrictMode runs effects twice in development, and every resume issues a new lease and is recorded.
+let resumeInFlight = null;
+const resumeOnce = (stored) => {
+    if (!resumeInFlight || resumeInFlight.uuid !== stored.uuid) {
+        const promise = candidateApi.resume({ uuid: stored.uuid, token: stored.token });
+        resumeInFlight = { uuid: stored.uuid, promise };
+        promise.finally(() => setTimeout(() => { if (resumeInFlight?.promise === promise) resumeInFlight = null; }, 3000)).catch(() => {});
+    }
+    return resumeInFlight.promise;
+};
 const card = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs';
 
 const Screen = ({ icon: Icon, title, children, tone = 'muted' }) => (
@@ -27,7 +39,8 @@ const Screen = ({ icon: Icon, title, children, tone = 'muted' }) => (
  * The sections themselves (aptitude, Monaco coding, voice interview, timers, drafts, proctoring) are the Student Platform's
  * shared AssessmentWorkspace. This page supplies only what is specific to accountless candidates:
  *   - the capability adapter (registration -> attempt -> session capability + in-memory lease),
- *   - the 15-second heartbeat that proves this tab is the live sitting (the no-resume rule is enforced by the SERVER),
+ *   - the resume after a reload: the session identity in sessionStorage buys a new lease and the saved work back (POST .../resume),
+ *   - the 15-second heartbeat that proves this tab is the live sitting (an older tab loses its lease: one window per attempt),
  *   - the interrupted / closed / submitted screens.
  * Nothing here starts a timer: the explicit Start Assessment click inside the workspace does, on the server.
  */
@@ -39,6 +52,7 @@ const RecruitmentAssessmentPage = () => {
     const [message, setMessage] = useState('');
     const [outcome, setOutcome] = useState(null);
     const [handle, setHandle] = useState(null);      // { uuid, token, lease } once the attempt exists
+    const [resume, setResume] = useState(null);      // the server's /resume answer when this page load continues an attempt
     const apiRef = useRef(null);
 
     const block = useCallback((msg) => { clearLease(); setMessage(msg); setPhase('blocked'); }, []);
@@ -49,7 +63,8 @@ const RecruitmentAssessmentPage = () => {
         setPhase('closed');
     }, [shareToken]);
 
-    // ---- boot: a reload after the attempt began can never resume it; ask the server so it records and reports the truth
+    // ---- boot: a reload does NOT end the sitting. The identity in sessionStorage asks the server to resume it (new lease, saved work,
+    //      recorded events); the candidate then repeats the camera check and continues in the current section.
     useEffect(() => {
         let alive = true;
         const stored = loadSession();
@@ -60,12 +75,15 @@ const RecruitmentAssessmentPage = () => {
                 setMeta(data);
                 if (!hasRegistration && stored && (!stored.shareToken || stored.shareToken === shareToken)) {
                     try {
-                        const state = await candidateApi.state({ uuid: stored.uuid, token: stored.token, lease: getLease() });
+                        const res = await resumeOnce(stored);
                         if (!alive) return;
-                        if (state?.terminal) close(state);
-                        else block('Your assessment sitting is not active in this window. An attempt cannot be resumed after a reload.');
+                        if (!res?.resumed) { close(res?.state); return; }          // already over: the server's message explains
+                        setLease(res.session_lease);                                // the new lease lives in memory only
+                        setHandle({ uuid: stored.uuid, token: stored.token, lease: res.session_lease });
+                        setResume(res);
+                        setPhase('ready');
                     } catch (err) {
-                        if (alive) block(errorMessage(err, 'Your assessment sitting is not active in this window. An attempt cannot be resumed after a reload.'));
+                        if (alive) block(errorMessage(err, 'Your assessment could not be resumed in this window. Please contact the hiring team.'));
                     }
                     return;
                 }
@@ -86,7 +104,8 @@ const RecruitmentAssessmentPage = () => {
     // One adapter for the whole sitting (it owns the in-memory attempt handle); created once the link's public metadata is known.
     const api = useMemo(() => (meta ? createRecruitmentAssessmentApi({
         shareToken, meta, onSession: (s) => setHandle({ ...s }),
-    }) : null), [meta, shareToken]);
+        resume: resume && handle ? { handle: { uuid: handle.uuid, token: handle.token, lease: handle.lease }, state: resume.state } : null,
+    }) : null), [meta, shareToken, resume]);   // eslint-disable-line react-hooks/exhaustive-deps
     apiRef.current = api;
 
     // ---- heartbeat: only the tab that holds the in-memory lease can send it; the server decides interruption from it
@@ -104,10 +123,10 @@ const RecruitmentAssessmentPage = () => {
         return () => clearInterval(id);
     }, [handle, phase, block, close]);
 
-    // ---- no-resume guard: warn before the tab is closed or reloaded (the server enforces the rule regardless)
+    // ---- unload guard: a reload is allowed (it resumes), but it is recorded and the timer keeps running
     useEffect(() => {
         if (!handle || phase !== 'ready') return undefined;
-        const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
+        const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = RELOAD_WARNING; return RELOAD_WARNING; };
         window.addEventListener('beforeunload', onBeforeUnload);
         return () => window.removeEventListener('beforeunload', onBeforeUnload);
     }, [handle, phase]);
@@ -132,10 +151,11 @@ const RecruitmentAssessmentPage = () => {
     }
     if (phase === 'closed') {
         const done = ['COMPLETED', 'EVALUATION_PENDING'].includes(outcome?.state);
+        const ended = outcome?.disqualified ? 'You have been disqualified' : outcome?.terminated ? 'Assessment ended' : 'Assessment closed';
         // A signed-in student continues to their own completion page; other candidates keep this screen.
         if (done && hasStudentAccess(shareToken)) return <Navigate to={`/assessment/join/${shareToken}/complete`} replace />;
         return (
-            <Screen icon={done ? CheckCircle2 : Clock} title={done ? 'Assessment submitted' : 'Assessment closed'} tone={done ? 'ok' : 'muted'}>
+            <Screen icon={done ? CheckCircle2 : Clock} title={done ? 'Assessment submitted' : ended} tone={done ? 'ok' : 'muted'}>
                 {done
                     ? 'Thank you. Your responses have been received and will be reviewed by the hiring team. You may close this window.'
                     : (message || 'The assessment time limit has ended. Your saved work has been submitted for review.')}
@@ -149,9 +169,11 @@ const RecruitmentAssessmentPage = () => {
             api={api}
             mode="recruitment"
             skipInstructions
+            watermark={handle?.uuid ? `Session ${String(handle.uuid).slice(0, 8)}` : ''}
             proctoringPolicy="flag"
             onFinished={onFinished}
             onBackToInstructions={handle ? null : () => navigate(`/assessment/join/${shareToken}/instructions`)}
+            resumeInfo={resume}
         />
     );
 };

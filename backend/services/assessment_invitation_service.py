@@ -56,7 +56,7 @@ def _instructions() -> List[str]:
     return [
         f"The assessment has three timed sections, always in this order: Aptitude ({blueprint.APTITUDE_COUNT} multiple-choice questions), "
         f"Coding ({blueprint.CODING_COUNT} programming problems) and a voice-based AI Technical Interview ({blueprint.INTERVIEW_COUNT} questions).",
-        f"Each section has a {policy.SECTION_MINUTES}-minute timer and the whole assessment has a {policy.OVERALL_MINUTES}-minute limit. "
+        f"Aptitude and Coding have a {policy.SECTION_MINUTES}-minute timer each, the Technical Interview has {policy.section_minutes('INTERVIEW')} minutes, and the whole assessment has a {policy.OVERALL_MINUTES}-minute limit. "
         "Nothing is timed until you select Start Assessment.",
         "You have one attempt. It cannot be paused or restarted.",
         "Use a laptop or desktop computer with a modern browser, a working camera and microphone, and a stable internet connection.",

@@ -239,28 +239,37 @@ Used when the data must be kept across the Clerk removal / recruitment-workflow 
 
 ---
 
-## 2A. Code Runner (in-house Python and Java execution)
+## 2A. Code Runner (in-house Python, Java, C++ and C execution)
 
-Candidate code (the coding round, Python and Java only) runs in the `code_runner` service from `code-runner/` FIRST: there is no per-run
+Candidate code (the coding round: Python, Java, C++ and C) runs in the `code_runner` service from `code-runner/` FIRST: there is no per-run
 cost, and nothing leaves the host. **Judge0 is the fallback.** The runner answers the same `POST /submissions?wait=true` API the Judge0
 adapter (`backend/services/judge0_service.py`) already uses, and the adapter tries it first when `CODE_RUNNER_URL` is set. Only a *service*
 failure falls back to Judge0 (runner unreachable, busy, 5xx, invalid answer, internal error). A candidate's own compile error, runtime error,
 time limit or wrong answer is a real result and is returned as it is, never re-run. If both are down the attempt is flagged
 `EVALUATION_PENDING`, never scored. Each target has its own circuit breaker, so a dead runner does not block Judge0.
 
+**Batch mode (2026-10-29).** The LeetCode-style coding problems (typed signature, starter code for all four languages) are graded in ONE request per
+problem: `POST /submissions?wait=true` with `"stdins": [...]` compiles once, runs every test as its own process (own CPU/wall/memory limit) and
+returns one result per test. A whole batch holds ONE of the runner's slots, so a submission costs the same turn with 2 tests or 10. After 2 time-limit
+results (or 40 s of tests) the remaining tests are returned as "not run: time limit exceeded earlier", so an infinite loop cannot hold a slot for long.
+`"stdins": []` compiles only. Requests without `stdins` behave exactly as before (older Python-only problems and Judge0 compatibility). Language ids:
+71/70 Python, 62 Java, 54 C++ (`g++ -O2 -std=gnu++17`, precompiled `<bits/stdc++.h>` in `/opt/pch`), 50 C (`gcc -O2 -std=gnu11`).
+
 **How it is isolated**
 - Its own container on the private `runner_net` network (`internal: true`): no internet and no route to the host. Only the backend is attached.
-- Read-only root filesystem; `/tmp/runs` is a 256 MB tmpfs (`noexec,nosuid`). Memory 3 GB, 3 CPUs, 512 processes.
+- Read-only root filesystem; `/tmp/runs` is a 256 MB tmpfs (`exec,nosuid`: compiled C / C++ programs run from it; **`exec` must be written explicitly, Docker mounts a tmpfs `noexec` by default and every compiled binary then fails with "Permission denied"**). Memory 5 GB, 4 CPUs, 768 processes.
 - `cap_drop: ALL`, then only `SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE` (each one was tested: without any of them the runner either fails
   every run or cannot stop a sleeping program). `no-new-privileges`, and `init: true` so the orphans of a fork bomb are reaped.
-- Each run is a throwaway numeric uid (10001-10006, so at most 6 runs at once) in its own `0700` directory, with RLIMIT cpu / memory / file size /
-  open files / processes, its own process group (killed on timeout) and output cut at 64 KB. When all six slots are busy for 5 s the runner
-  answers HTTP 429 with `Retry-After: 1`; the backend adapter retries.
+- Each run is a throwaway numeric uid (10001-10008, set by `RUNNER_UIDS`, so at most 8 submissions at once) in its own `0700` directory, with RLIMIT cpu / memory / file size /
+  open files / processes, its own process group (killed on timeout, and any leftover process of that uid is killed afterwards) and output cut at 64 KB per test. When all
+  eight slots are busy for 10 s the runner answers HTTP 429 with `Retry-After: 1`; the backend adapter retries.
+- Compiling has its own limits (20 s wall, 15 s CPU, 32 MB file size, 1 GB address space). Native code (C / C++) is arbitrary machine code run as that
+  unprivileged uid; the layers above (uid, 0700 directory, no network, dropped capabilities, read-only root, process limits, Docker's default seccomp profile) are what contain it.
 - **Not provided:** it is an ordinary hardened container shared by every run, with no per-run filesystem snapshot. Use it for invited
   candidates and keep it on the private network.
 
-**Settings:** `docker-compose.prod.yml` sets the backend's `CODE_RUNNER_URL=http://code_runner:2358/submissions`, `CODE_EXECUTION_ENGINE=judge0`
-and `SANDBOX_MAX_CONCURRENCY=2` (4 workers x 2 = 8; keep it at or below the 6 slots). The fallback target is `JUDGE0_API_URL` in
+**Settings:** `docker-compose.prod.yml` sets the backend's `CODE_RUNNER_URL=http://code_runner:2358/submissions`, `CODE_EXECUTION_ENGINE=judge0`,
+`SANDBOX_MAX_CONCURRENCY=2` and `STUDENT_SANDBOX_CONCURRENCY=2` (4 workers x 2 = 8 = the runner's 8 slots; keep it at or below them). The fallback target is `JUDGE0_API_URL` in
 `backend/.env` (the public `ce.judge0.com` by default, or your own Judge0; add `JUDGE0_AUTH_TOKEN` there only if that Judge0 needs one). The
 runner never receives the Judge0 token. The backend does not wait for the runner to be healthy to start, so a broken runner cannot take the
 backend down.
@@ -275,9 +284,15 @@ Safe test run (on your own machine, never on server2): start the container with 
 `docker exec -i <container> python3 - http://127.0.0.1:2358 < code-runner/tests/smoke.py` (25 checks: limits, memory, fork bomb, output flood,
 no network, no reading other runs, read-only filesystem, 20 parallel requests).
 
-**Known limits:** Python and Java only (standard library, no pip or Maven). All of a question's test cases run in one program with one
-overall time limit. A Java candidate must not write their own `import` lines: the generated wrapper already imports `java.util.*` and pastes
-the candidate code after its own classes.
+**Measured on a developer laptop** (Docker Desktop, container limited to 4 CPUs; server2 will differ, measure there): C++ compile of a hello world 0.18 s with the
+precompiled header vs about 1.0 s without; a 7-test batch takes Python 0.16 s, C 0.12 s, C++ 0.39 s, Java 1.6-1.9 s when alone. Simultaneous 7-test C++ batches: 16 in about 4 s, 32 in
+7-10 s, 40 in about 9 s without failures. Simultaneous Java batches: 16 in 17-21 s, and with 40 at once some get HTTP 429 after the 10 s slot wait (Java costs about 1.5 CPU-seconds per
+submission, the others far less). Memory peak of the container across the whole smoke suite: 455-689 MB. If many students will choose Java, give the runner more CPUs and uids.
+`bash scripts/build-images.sh code_runner` rebuilds the runner image after a change to `code-runner/`.
+
+**Known limits:** Python, Java, C++ and C (standard library only, no pip, Maven or extra libraries). Typed (LeetCode-style) problems run as one batch per problem with
+per-test time limits; older blueprints' stdin/stdout problems still run one test per request and stay Python-only. Candidates may write their own `import` / `#include` lines: the hidden
+program already imports `java.util.*`, `<bits/stdc++.h>` and the standard C headers. Testing guide: `docs/coding-round-testing-guide.md`.
 
 **Rollback** (no rebuild): remove `CODE_RUNNER_URL` from the backend's environment so only Judge0 is used (or set
 `CODE_EXECUTION_ENGINE=gemini` for a demo), then `docker compose -f docker-compose.prod.yml up -d --no-build --no-deps backend`.
@@ -508,6 +523,17 @@ On 2026-10-13 all build cache was wiped on server2 with `docker builder prune -a
 ---
 
 ## 5. Build Time and Image Size Improvements (for the team)
+
+**Update 2026-10-29: proctoring no longer uses PyTorch / ultralytics.** `backend/services/proctor_service.py` now runs YOLOv8n through **ONNX Runtime** and adds the
+**YuNet face detector** (via OpenCV). The two model files ship in the repository (`backend/models/yolov8n.onnx` 12.7 MB and
+`backend/models/face_detection_yunet_2023mar.onnx` 0.2 MB) and are copied into the image with the source, so nothing is downloaded at build or start. Reasons and
+numbers: the old "face not visible" alarm was really "YOLO found no whole person", which fired constantly on ordinary laptop-webcam framing (it is a body detector); a face
+detector fixes that, and ONNX Runtime cuts per-frame time from about 92 ms (320x240, PyTorch, 2 threads) to about 27 ms for a 640x480 frame with both detectors on the developer
+laptop (not measured on server2). `requirements.txt` now lists `onnxruntime==1.20.1` instead of `ultralytics`; `backend/Dockerfile` has no torch install and no
+OpenCV swap any more. **The next backend deploy therefore rebuilds the base image (requirements changed), about 4-6 minutes, and the image becomes much smaller.** Sections 5.1, 5.2
+and the PyTorch notes below describe the previous setup and are kept for history. Settings (environment): `PROCTOR_YOLO_WIDTH` (default 448; 320 fastest, 640 most sensitive to small
+phones), `PROCTOR_THREADS` (default 2), `PROCTOR_FACE_WIDTH` (default 320). The browser now sends 640x480 frames (was 320x240). `RUN_CODE_LIMIT_PER_MINUTE` (default 10, was a fixed 5) sets
+the Run presses allowed per candidate per minute. Testing guide: `docs/proctoring-testing-guide.md`.
 
 Measured on server2: `interviewer-platform-backend` is **10.5 GB**. The comparable `pjs-global-demo-backend` is 3.8 GB, and most other apps on the server are 0.1 to 2 GB. The frontend runtime image is only 98 MB, but `npm ci` is slow because of unused dependencies. Neither Dockerfile has a `.dockerignore`.
 

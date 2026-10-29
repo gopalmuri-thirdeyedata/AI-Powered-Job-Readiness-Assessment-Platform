@@ -3,7 +3,7 @@
 #   bash scripts/build-images.sh                 # every service
 #   bash scripts/build-images.sh frontend        # only the services you name (extra flags such as --no-cache are passed through)
 #
-# The backend's dependencies (system packages, PyTorch, requirements.txt, the proctoring model) live in a tagged "base" image. Its tag is
+# The backend's dependencies (system packages, requirements.txt: ONNX Runtime + OpenCV for proctoring, no PyTorch) live in a tagged "base" image. Its tag is
 # a hash of requirements.txt plus the dependency part of backend/Dockerfile, and it is built only when no image with that tag exists. So a
 # code-only deploy takes seconds and cannot be slowed down by a pruned build cache: `docker builder prune` removes cache, not tagged images.
 # Old base tags are left in place; remove the ones you no longer need with `docker rmi`.

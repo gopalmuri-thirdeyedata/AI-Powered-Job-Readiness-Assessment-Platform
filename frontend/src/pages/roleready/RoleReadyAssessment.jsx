@@ -38,13 +38,19 @@ import {
     Binary,
     FileText,
     Settings,
+    Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Counter } from '../../components/home/primitives';
 import { StepHighlight, PopIn, Stagger, StaggerItem, SlideSwap, ProgressBar, Enter } from '../../components/roleready-ui/assessmentMotion';
 import { Editor } from '@monaco-editor/react';
 import AssessmentCodingWorkspace from '../../components/coding/AssessmentCodingWorkspace';
+import CodingTopBar from '../../components/coding/CodingTopBar';
+import { FOCUS_WARNING, MAX_INTEGRITY_EVENTS, decideRecruitmentAction, restoreFromResume } from '../../utils/integrityPolicy';
+import ProtectionLayer from '../../components/ProtectionLayer';
+import useAssessmentProtection, { PROTECTION_TEST_MODE } from '../../hooks/useAssessmentProtection';
 import { useWorkspaceTheme } from '../../components/coding/workspaceParts';
+import { DEFAULT_LANGUAGE, customInputFor, defaultLanguage, languageLabel, problemLanguages, starterFor } from '../../utils/codingLanguages';
 import { AiLiveCaption, UserLiveCaption } from '../../components/interview/LiveCaptionBubbles';
 import useAssessmentFullscreen from '../../hooks/useAssessmentFullscreen';
 import useFaceProctoring from '../../hooks/useFaceProctoring';
@@ -94,12 +100,12 @@ const SUBMIT_TIPS = [
     'Busy sandbox? Running every hidden test can take up to a minute.',
 ];
 
-// Canonical limits (services/assessment_policy.py): 20 minutes per section, 60 minutes overall. These are only the display
+// Canonical limits (services/assessment_policy.py): 20 minutes for Aptitude and Coding, 10 for the Interview, 60 overall. These are only the display
 // placeholder shown until the server answers; the countdown is always re-hydrated from the server's remaining_seconds.
 const ROUND_DURATIONS = {
     aptitude: 20 * 60,
     coding: 20 * 60,
-    interview: 20 * 60
+    interview: 10 * 60
 };
 const DRAFT_DEBOUNCE_MS = 4000;
 
@@ -200,7 +206,7 @@ const ProctorCameraFeed = ({
             </div>
 
             {/* Video Viewport: Responsive aspect ratio with centered object-cover and mirror transform */}
-            <div className="relative w-full aspect-video rounded-xl bg-slate-950 overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center">
+            <div className="relative w-full aspect-video rounded-xl bg-slate-950 overflow-hidden border border-slate-200 dark:border-[#3a3a3a] shadow-inner flex items-center justify-center">
                 <video
                     ref={videoRef}
                     autoPlay
@@ -289,6 +295,8 @@ const ProctorCameraFeed = ({
  *   onBackToInstructions  recruitment only: returns to the Exam Instructions page (the student-style rules card is never shown to candidates)
  *   retestSection      'aptitude' | 'coding' | 'interview' | null. An administrator-assigned section retest: the sitting starts directly in
  *                      that one section (the server unlocks nothing else) and finishes as soon as it is submitted.
+ *   resumeInfo         recruitment only: a reloaded sitting ({ state, draft, violations } from POST .../resume). The attempt already exists: the
+ *                      candidate repeats the camera check, then lands in the CURRENT section with timers, saved work and events restored.
  */
 export const AssessmentWorkspace = ({
     sessionUuid,
@@ -299,6 +307,8 @@ export const AssessmentWorkspace = ({
     onFinished = null,
     onBackToInstructions = null,
     retestSection = null,
+    watermark = '',
+    resumeInfo = null,
 }) => {
     const navigate = useNavigate();
     const isRecruitment = mode === 'recruitment';
@@ -325,7 +335,8 @@ export const AssessmentWorkspace = ({
     const [micStatus, setMicStatus] = useState('checking');       // 'checking' | 'allowed' | 'denied' | 'unavailable'
     const [modelStatus, setModelStatus] = useState('checking');   // 'checking' | 'ready' | 'error'
     const [cameraStream, setCameraStream] = useState(null);
-    const [instructionsAccepted, setInstructionsAccepted] = useState(false);
+    const [instructionsAccepted, setInstructionsAccepted] = useState(!!resumeInfo);   // a resumed candidate accepted them before the reload
+    const resumeRestore = useMemo(() => (resumeInfo ? restoreFromResume(resumeInfo) : null), [resumeInfo]);
     const [isStartingAssessment, setIsStartingAssessment] = useState(false);
 
     // Stream Refs
@@ -345,6 +356,7 @@ export const AssessmentWorkspace = ({
     const lastViolationTimeRef = useRef(0);
     const terminalFiredRef = useRef(false);
     const warningBannerTimerRef = useRef(null);
+    const endAttemptRef = useRef(null);   // endRecruitmentAttempt of the latest render (the handler below is memoised)
 
     // ── Universal Violation Handler (3-Warning Escalation) ────────────
     const handleAnyViolation = useCallback((reason) => {
@@ -369,14 +381,22 @@ export const AssessmentWorkspace = ({
         if (warningBannerTimerRef.current) clearTimeout(warningBannerTimerRef.current);
 
         if (proctoringPolicy === 'flag') {
-            // Recruitment: record the event for the hiring team and keep the sitting alive. A client-side event alone is never
-            // treated as a verdict (no termination, no score forfeiture).
+            // Recruitment policy: switching tabs more than once disqualifies, and more than MAX_INTEGRITY_EVENTS events of any kind end the
+            // attempt (utils/integrityPolicy; the server re-checks both numbers). The reload marker of a resume is in the list but never counts.
             violationsRef.current = [...violationsRef.current, violationEntry];
+            const decision = decideRecruitmentAction(violationsRef.current, reason);
+            if (decision.action === 'terminate') {
+                endAttemptRef.current?.(decision, violationsRef.current);
+                return;
+            }
+            const focusWarning = decision.action === 'warn_focus';
             setWarningBanner({
-                message: `Integrity event ${count}: ${reason}. It has been recorded and will be shared with the hiring team. Please stay in fullscreen on this assessment tab.`,
-                level: count >= MAX_MALPRACTICE_WARNINGS ? 'critical' : 'warning'
+                message: focusWarning
+                    ? `Integrity event ${count}/${MAX_INTEGRITY_EVENTS}: ${reason}. ${FOCUS_WARNING}`
+                    : `Integrity event ${count}/${MAX_INTEGRITY_EVENTS}: ${reason}. It has been recorded and will be shared with the hiring team. More than ${MAX_INTEGRITY_EVENTS} events end the assessment.`,
+                level: focusWarning || count >= MAX_INTEGRITY_EVENTS - 1 ? 'critical' : 'warning'
             });
-            warningBannerTimerRef.current = setTimeout(() => setWarningBanner(null), 8000);
+            warningBannerTimerRef.current = setTimeout(() => setWarningBanner(null), focusWarning ? 15000 : 8000);
             return;
         }
 
@@ -409,6 +429,24 @@ export const AssessmentWorkspace = ({
         }
         violationsRef.current = [...violationsRef.current, violationEntry];
     }, [currentStage, proctoringPolicy]);
+
+    // ── Content protection: cover the page when the window is not in front, block copying / pasting / printing / screenshot keys ──
+    // Recruitment records every attempt as an integrity event. For students (three strikes end the attempt) an attempt only shows a notice,
+    // so an accidental Ctrl+C can never cost anyone their assessment.
+    const onProtectionEvent = useCallback((reason) => {
+        if (proctoringPolicy === 'flag') {
+            handleAnyViolation(reason);
+            return;
+        }
+        if (warningBannerTimerRef.current) clearTimeout(warningBannerTimerRef.current);
+        setWarningBanner({ message: `${reason}. This was noted.`, level: 'warning' });
+        warningBannerTimerRef.current = setTimeout(() => setWarningBanner(null), 6000);
+    }, [proctoringPolicy, handleAnyViolation]);
+    const { obscured: pageObscured, protectionOn } = useAssessmentProtection({
+        enabled: ['aptitude', 'coding', 'interview'].includes(currentStage) && !sessionData?.is_completed,
+        onEvent: onProtectionEvent,
+    });
+    const watermarkText = watermark || (sessionUuid && sessionUuid !== 'recruitment' ? `Session ${String(sessionUuid).slice(0, 8)}` : '');
 
     // ── Silent Real-Time YOLOv8n Vision Proctoring ────────────────────
     const {
@@ -462,7 +500,10 @@ export const AssessmentWorkspace = ({
             }
         };
 
+        // Recruitment ignores a lost window focus completely (no event, no banner, no count): only a real tab switch above counts.
+        // Students keep the old behaviour.
         const handleWindowBlur = () => {
+            if (proctoringPolicy === 'flag') return;
             handleAnyViolation("Application lost focus (Window Blur / Switch)");
         };
 
@@ -473,7 +514,7 @@ export const AssessmentWorkspace = ({
             document.removeEventListener("visibilitychange", handleVisibilityChange);
             window.removeEventListener("blur", handleWindowBlur);
         };
-    }, [currentStage, sessionData?.is_completed, handleAnyViolation]);
+    }, [currentStage, sessionData?.is_completed, handleAnyViolation, proctoringPolicy]);
 
     // ── Round Timers ─────────────────────────────────────────────────
     const [timeLeft, setTimeLeft] = useState(ROUND_DURATIONS.aptitude);
@@ -534,8 +575,11 @@ export const AssessmentWorkspace = ({
     const [codingProblems, setCodingProblems] = useState([]);
     const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
     const [workspaceTheme, toggleWorkspaceTheme] = useWorkspaceTheme();   // dark like LeetCode, or light
-    const selectedLanguage = 'python'; // Python only, for students and shared-link candidates alike
-    const [codeSolutions, setCodeSolutions] = useState({}); // { [probId]: { code: string, language: string } }
+    // Language per problem: a problem with typed params and several `starter_code` languages lets the candidate choose (shared-link and
+    // student assessments alike); any other problem is Python only, as it always was.
+    const [codeSolutions, setCodeSolutions] = useState({}); // { [probId]: { code: string, language: string } }: the CURRENT language and code; this is what is run, saved and submitted
+    const codeBuffersRef = useRef({});                      // { [probId]: { [language]: code } }: the code left behind in the other languages, so switching never loses work
+    const [customFields, setCustomFields] = useState({});   // { [probId]: string[] }: the candidate's own testcase, one JSON value per parameter
     const [codeOutput, setCodeOutput] = useState(null);
     const [isRunningCode, setIsRunningCode] = useState(false);
     const [isSubmittingCoding, setIsSubmittingCoding] = useState(false);
@@ -555,6 +599,8 @@ export const AssessmentWorkspace = ({
     const [voiceCallStatus, setVoiceCallStatus] = useState('idle'); // 'idle' | 'connecting' | 'active' | 'ended' | 'error'
     const [voiceSpeakingState, setVoiceSpeakingState] = useState('connecting'); // 'connecting' | 'ai_speaking' | 'listening' | 'processing' | 'completed'
     const [voiceVolume, setVoiceVolume] = useState(0);
+    const [voiceUserLevel, setVoiceUserLevel] = useState(0);        // 0..1: how loud the candidate is while the mic is open for them
+    const [voiceUserSpeaking, setVoiceUserSpeaking] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState([]);
     const [liveCaption, setLiveCaption] = useState('');          // what the candidate is saying right now (replaced by the server's transcript)
     const [captionsUnavailable, setCaptionsUnavailable] = useState(false);
@@ -645,7 +691,10 @@ export const AssessmentWorkspace = ({
 
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { width: { ideal: 640 }, height: { ideal: 480 } },
-                audio: true
+                // This stream stays open for the whole sitting only for the camera; its microphone is just the permission check. With the
+                // browser defaults it would run echo cancellation / noise suppression / automatic gain next to the interview's own microphone
+                // and make the speaker volume pump up and down, so all three are off here.
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
             });
 
             streamRef.current = stream;
@@ -745,7 +794,16 @@ export const AssessmentWorkspace = ({
             }
 
             // Restore correct round state
-            if (data.current_state === 'NOT_STARTED') {
+            if (resumeInfo && resumeRestore) {
+                // A reloaded sitting: the events already recorded come back (the Events counter and the limits continue, a reload never resets
+                // them; the reload marker stays in the list that goes back to the server but is not counted), then the camera is checked again.
+                violationsRef.current = resumeRestore.violations;
+                setViolations(resumeRestore.violations);
+                totalViolationsRef.current = resumeRestore.counted;
+                setViolationCount(resumeRestore.counted);
+                setCurrentStage('device_check');
+                initHardware();
+            } else if (data.current_state === 'NOT_STARTED') {
                 if (skipInstructions) {
                     // Recruitment: the instructions were read and acknowledged on the previous page; go straight to the device check.
                     setCurrentStage('device_check');
@@ -775,16 +833,16 @@ export const AssessmentWorkspace = ({
         } finally {
             setIsLoading(false);
         }
-    }, [api, finishAssessment, initHardware, skipInstructions, syncTiming]);
+    }, [api, finishAssessment, initHardware, skipInstructions, syncTiming, resumeInfo, resumeRestore]);
 
     useEffect(() => {
         fetchSession();
     }, [fetchSession]);
 
     // ── Round 1: Aptitude Operations ─────────────────────────────────
-    const loadAptitude = async () => {
+    const loadAptitude = async (preloaded = null) => {
         try {
-            const res = await api.startAptitude();
+            const res = preloaded || await api.startAptitude();
             setAptitudeQuestions(res.questions || []);
             setRoundStartTime(Date.now());
             syncTiming(res);
@@ -834,9 +892,9 @@ export const AssessmentWorkspace = ({
     };
 
     // ── Round 2: Coding Operations ───────────────────────────────────
-    const loadCoding = async () => {
+    const loadCoding = async (preloaded = null) => {
         try {
-            const res = await api.startCoding();
+            const res = preloaded || await api.startCoding();
             const probs = res.problems || [];
             setCodingProblems(probs);
             setRoundStartTime(Date.now());
@@ -844,10 +902,8 @@ export const AssessmentWorkspace = ({
 
             const initialSols = {};
             probs.forEach(p => {
-                initialSols[String(p.id)] = {
-                    code: p.starter_code?.python || `# Write your Python solution for ${p.title}\ndef solve():\n    pass\n`,
-                    language: 'python'
-                };
+                const language = defaultLanguage(p);
+                initialSols[String(p.id)] = { code: starterFor(p, language), language };
             });
             setCodeSolutions(prev => ({ ...initialSols, ...prev }));
         } catch (err) {
@@ -856,43 +912,54 @@ export const AssessmentWorkspace = ({
     };
 
     const handleCodeChange = (probId, newCode) => {
-        setCodeSolutions(prev => ({
-            ...prev,
-            [String(probId)]: {
-                code: newCode,
-                language: selectedLanguage
-            }
-        }));
+        setCodeSolutions(prev => {
+            const key = String(probId);
+            return { ...prev, [key]: { code: newCode, language: prev[key]?.language || DEFAULT_LANGUAGE } };
+        });
     };
 
+    // Switching language parks the current code in its buffer and brings back that language's own buffer (or its starter the first time).
+    const handleLanguageChange = (probId, language) => {
+        const key = String(probId);
+        const problem = codingProblems.find((p) => String(p.id) === key);
+        if (!problem || !problemLanguages(problem).includes(language) || isRunningCode) return;
+        setCodeSolutions(prev => {
+            const current = prev[key];
+            if (current?.language === language) return prev;
+            const buffers = codeBuffersRef.current[key] || (codeBuffersRef.current[key] = {});
+            if (current) buffers[current.language] = current.code;
+            return { ...prev, [key]: { code: buffers[language] ?? starterFor(problem, language), language } };
+        });
+        setCodeOutput(null);
+    };
+
+    // Reset restores the starter of the CURRENT language only; the other languages' code is left alone.
     const handleResetCode = () => {
         if (!codingProblems[currentProblemIndex]) return;
         const activeProb = codingProblems[currentProblemIndex];
         const probId = String(activeProb.id);
-        const starter = activeProb.starter_code?.python || '';
+        const language = codeSolutions[probId]?.language || defaultLanguage(activeProb);
+        const starter = starterFor(activeProb, language);
 
-        setCodeSolutions(prev => ({
-            ...prev,
-            [probId]: {
-                code: starter,
-                language: selectedLanguage
-            }
-        }));
+        if (codeBuffersRef.current[probId]) delete codeBuffersRef.current[probId][language];
+        setCodeSolutions(prev => ({ ...prev, [probId]: { code: starter, language } }));
         setCodeOutput(null);
     };
 
     const runCodeRef = useRef(() => {});
+    const runningRef = useRef(false);   // a synchronous guard: Ctrl + ' and the Run button can fire in the same tick, before isRunningCode re-renders
     const handleRunCode = async () => {
-        if (!codingProblems[currentProblemIndex]) return;
+        if (!codingProblems[currentProblemIndex] || runningRef.current) return;
         const activeProb = codingProblems[currentProblemIndex];
         const probId = String(activeProb.id);
-        const sol = codeSolutions[probId] || { code: "", language: selectedLanguage };
+        const sol = codeSolutions[probId] || { code: "", language: defaultLanguage(activeProb) };
 
+        runningRef.current = true;
         setIsRunningCode(true);
         setCodeOutput(null);
 
         try {
-            const res = await api.runCode(probId, sol.code, sol.language || selectedLanguage);
+            const res = await api.runCode(probId, sol.code, sol.language || DEFAULT_LANGUAGE, customInputFor(activeProb, customFields[probId]));
             setCodeOutput(res);
         } catch (err) {
             console.error("Run code error:", err);
@@ -902,6 +969,7 @@ export const AssessmentWorkspace = ({
                 error: errorMessage(err, "Execution failed in sandboxed container.")
             });
         } finally {
+            runningRef.current = false;
             setIsRunningCode(false);
         }
     };
@@ -1008,7 +1076,26 @@ export const AssessmentWorkspace = ({
 
             voice.on('processing', () => {
                 if (!current()) return;
+                setVoiceUserSpeaking(false);
+                setVoiceUserLevel(0);
                 setVoiceSpeakingState('processing');
+            });
+
+            voice.on('listening', () => {
+                if (!current()) return;
+                setVoiceUserSpeaking(false);
+                setVoiceSpeakingState('listening');
+            });
+
+            voice.on('mic-level', (level) => {
+                if (!current()) return;
+                setVoiceUserLevel((prev) => (Math.abs(prev - level) < 0.04 ? prev : level));     // no re-render for tiny changes
+            });
+
+            voice.on('user-speech', (speaking) => {
+                if (!current()) return;
+                setVoiceUserSpeaking(!!speaking);
+                if (speaking) setVoiceSpeakingState('listening');
             });
 
             voice.on('caption', (caption) => {
@@ -1029,11 +1116,12 @@ export const AssessmentWorkspace = ({
                 setCurrentSpeaker('ai');
             });
 
-            const addEntry = (role, text) => {
+            const addEntry = (role, text, q) => {
                 const newEntry = {
                     id: Date.now() + Math.random(),
                     role,
                     text,
+                    ...(Number.isInteger(q) ? { q } : {}),         // which prepared question this line asked (hidden tag from the server)
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 };
                 setVoiceTranscript(prev => [...prev, newEntry]);
@@ -1042,7 +1130,7 @@ export const AssessmentWorkspace = ({
             };
             const flushInterviewerLines = () => {
                 setAiCaption(null);
-                pendingAiRef.current.splice(0).forEach((line) => addEntry('ai', line));
+                pendingAiRef.current.splice(0).forEach((line) => addEntry('ai', line.text, line.q));
             };
 
             voice.on('speech-end', () => {
@@ -1066,13 +1154,14 @@ export const AssessmentWorkspace = ({
                         setLiveCaption('');                  // the real transcript replaces the live one
                         addEntry('user', msg.transcript);
                     } else {
-                        pendingAiRef.current.push(msg.transcript);       // shown word by word while spoken, then added to the transcript
+                        pendingAiRef.current.push({ text: msg.transcript, q: msg.questionNo });       // shown word by word while spoken, then added to the transcript
                     }
 
                     // Automatically detect progression across questions
                     if (role === 'ai') {
                         setInterviewQuestions(qs => {
                             const lower = (msg.transcript || "").toLowerCase();
+                            if (Number.isInteger(msg.questionNo) && msg.questionNo >= 1 && msg.questionNo <= qs.length) setCurrentInterviewIndex(msg.questionNo - 1);
                             qs.forEach((q, idx) => {
                                 if (
                                     lower.includes(`question ${idx + 1}`) || 
@@ -1183,7 +1272,9 @@ export const AssessmentWorkspace = ({
             active_follow_up_prompt: null
         }));
 
-        let currentQIdx = 0;
+        // -1 = the conversation before the first prepared question (introduction, getting to know the candidate): it belongs to no question.
+        // The server tags the reply that starts a prepared question (item.q), so the split no longer depends on the interviewer saying "Question N".
+        let currentQIdx = -1;
         const numberWordMap = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
 
         for (const item of (transcript || [])) {
@@ -1197,7 +1288,9 @@ export const AssessmentWorkspace = ({
                 const ordMatch = lower.match(/\b(first|second|third|fourth|fifth)\s+question\b/i);
 
                 let detectedIdx = null;
-                if (qNumMatch && qNumMatch[1]) {
+                if (Number.isInteger(item.q) && item.q >= 1) {
+                    detectedIdx = item.q - 1;
+                } else if (qNumMatch && qNumMatch[1]) {
                     detectedIdx = parseInt(qNumMatch[1], 10) - 1;
                 } else if (ordMatch && ordMatch[1]) {
                     detectedIdx = (numberWordMap[ordMatch[1].toLowerCase()] || 1) - 1;
@@ -1211,13 +1304,13 @@ export const AssessmentWorkspace = ({
                     currentQIdx = detectedIdx;
                     buckets[currentQIdx].dialogue.push(`Interviewer: ${text}`);
                     buckets[currentQIdx].active_follow_up_prompt = null;
-                } else {
+                } else if (currentQIdx >= 0) {
                     buckets[currentQIdx].dialogue.push(`Interviewer: ${text}`);
                     if (text.includes('?') || lower.includes('could you') || lower.includes('can you') || lower.includes('tell me more') || lower.includes('elaborate')) {
                         buckets[currentQIdx].active_follow_up_prompt = text;
                     }
                 }
-            } else if (item.role === 'user') {
+            } else if (item.role === 'user' && currentQIdx >= 0) {
                 buckets[currentQIdx].dialogue.push(`Candidate: ${text}`);
                 if (buckets[currentQIdx].active_follow_up_prompt) {
                     buckets[currentQIdx].follow_ups.push({
@@ -1328,6 +1421,63 @@ export const AssessmentWorkspace = ({
         }
     };
 
+    // ── Resume: continue the SAME attempt in the section that is running (nothing is started, no deadline is created) ──
+    const enterResumedSection = async () => {
+        const section = await api.resumeSection();                       // straight from the server state, server-clock timers
+        const updated = await api.getSession();
+        setSessionData(updated);
+        syncTiming(section);
+        const key = section.key;
+        const r = resumeRestore;
+        if (key === 'aptitude') {
+            setCurrentStage('aptitude');
+            setTimeLeft(typeof section.remaining_seconds === 'number' ? section.remaining_seconds : ROUND_DURATIONS.aptitude);
+            setAptitudeAnswers(r.aptitudeAnswers);
+            setAptitudeQuestions(section.questions || []);
+            setRoundStartTime(Date.now());
+        } else if (key === 'coding') {
+            setCurrentStage('coding');
+            setTimeLeft(typeof section.remaining_seconds === 'number' ? section.remaining_seconds : ROUND_DURATIONS.coding);
+            for (const [pid, buf] of Object.entries(r.buffers)) codeBuffersRef.current[pid] = { ...buf };
+            await loadCoding(section);
+            setCodeSolutions((prev) => ({ ...prev, ...r.solutions }));      // the candidate's own code and language win over the starters
+        } else {
+            setCurrentStage('interview');
+            setTimeLeft(typeof section.remaining_seconds === 'number' ? section.remaining_seconds : ROUND_DURATIONS.interview);
+            if (r.transcript.length) setVoiceTranscript(r.transcript); else setInterviewResponses(r.interviewResponses);
+            loadInterview();                                                 // the conversation starts again; the saved answers stay
+        }
+    };
+
+    // ── Recruitment: end the attempt (disqualified for switching tabs twice, or more than MAX_INTEGRITY_EVENTS events) ──
+    // The work so far is flushed first (the server scores the active section from the saved draft), then the server is asked to end the attempt
+    // and re-checks the numbers; its message is what the candidate reads on the closed screen.
+    const endRecruitmentAttempt = async (decision, list) => {
+        if (terminalFiredRef.current) return;
+        terminalFiredRef.current = true;
+        clearTimeout(voiceConnectTimerRef.current);
+        disposeVoice(voiceRef.current);
+        voiceRef.current = null;
+        setWarningBanner({
+            message: decision.disqualified
+                ? 'You switched tabs more than once. Your assessment is being ended.'
+                : `More than ${MAX_INTEGRITY_EVENTS} integrity events were recorded. Your assessment is being ended.`,
+            level: 'terminal'
+        });
+        try {
+            await Promise.race([Promise.resolve(api.saveDraft(currentStage, buildDraftPayload(), list)), new Promise((resolve) => setTimeout(resolve, 4000))]);
+        } catch { /* the draft is best effort; the server still scores what it has */ }
+        try {
+            await api.terminateAttempt(list, decision.reason);
+            if (cameraStream) { try { cameraStream.getTracks().forEach((t) => t.stop()); } catch { /* already stopped */ } }
+            finishAssessment('terminated');
+        } catch (err) {
+            terminalFiredRef.current = false;                           // not ended (network, or the server disagreed): the next event asks again
+            setWarningBanner({ message: errorMessage(err, 'The assessment could not be ended right now.'), level: 'critical' });
+        }
+    };
+    endAttemptRef.current = endRecruitmentAttempt;
+
     // ── Handle Start Assessment Action ───────────────────────────────
     const handleStartAssessment = async () => {
         if (!instructionsAccepted || cameraStatus !== 'allowed') return;
@@ -1343,6 +1493,11 @@ export const AssessmentWorkspace = ({
             if (!isFsVerified) {
                 setLaunchError("Fullscreen mode could not be verified by your browser. Please ensure fullscreen permissions are allowed and click Retry.");
                 setIsStartingAssessment(false);
+                return;
+            }
+
+            if (resumeInfo && resumeRestore) {
+                await enterResumedSection();
                 return;
             }
 
@@ -1384,16 +1539,19 @@ export const AssessmentWorkspace = ({
 
     // ── Draft autosave: partial work is scored by the server if the section or the whole assessment ends before submission ──
     const submittingAny = isSubmittingApt || isSubmittingCoding || isSubmittingInterview;
+    // What the server keeps for the active section: scored if the section ends first, and handed back by a resume after a reload.
+    const buildDraftPayload = () => {
+        if (currentStage === 'aptitude') return { answers: aptitudeAnswers };
+        if (currentStage === 'coding') return { solutions: codeSolutions };
+        return {
+            answers: segmentInterviewTranscript(interviewQuestions, voiceTranscript, interviewResponses),
+            transcript: voiceTranscript.map(({ role, text }) => ({ role, text })),
+        };
+    };
     useEffect(() => {
         if (!['aptitude', 'coding', 'interview'].includes(currentStage) || submittingAny || sessionData?.is_completed) return undefined;
         const timer = setTimeout(() => {
-            let payload = null;
-            if (currentStage === 'aptitude') payload = { answers: aptitudeAnswers };
-            else if (currentStage === 'coding') payload = { solutions: codeSolutions };
-            else payload = {
-                answers: segmentInterviewTranscript(interviewQuestions, voiceTranscript, interviewResponses),
-                transcript: voiceTranscript.map(({ role, text }) => ({ role, text })),
-            };
+            const payload = buildDraftPayload();
             Promise.resolve(api.saveDraft(currentStage, payload, violations)).catch(() => {});   // best effort; never blocks the candidate
         }, DRAFT_DEBOUNCE_MS);
         return () => clearTimeout(timer);
@@ -1429,9 +1587,14 @@ export const AssessmentWorkspace = ({
         );
     }
 
+    // The coding workspace fills the window like LeetCode: no global header, no page padding, panels flush to the edges with a small gutter.
+    const codingWorkspaceActive = currentStage === 'coding' && !codingSubmitResult && !!sessionData?.coding_unlocked;
+    const codingDark = codingWorkspaceActive && workspaceTheme === 'dark';
+
     return (
         <MotionConfig reducedMotion="user">
-        <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans selection:bg-emerald-100 selection:text-emerald-900 select-none">
+        <div className={`min-h-screen ${codingDark ? 'bg-[#0f0f0f]' : 'bg-[#F8FAFC]'} ${codingWorkspaceActive ? 'lg:h-[100dvh] lg:overflow-hidden' : ''} text-slate-900 flex flex-col font-sans selection:bg-emerald-100 selection:text-emerald-900 select-none`}>
+            <ProtectionLayer obscured={pageObscured} watermark={watermarkText} protectionOn={protectionOn} testMode={PROTECTION_TEST_MODE} />
             <AssessmentLoadingOverlay
                 open={isSubmittingApt}
                 title="Evaluating your aptitude round"
@@ -1498,6 +1661,7 @@ export const AssessmentWorkspace = ({
             {/* =========================================================== */}
             {/* COMPACT TOP BAR: BRAND, STEPPER, TIMER & PROCTOR STATUS */}
             {/* =========================================================== */}
+            {!codingWorkspaceActive && (
             <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3 flex-shrink-0 z-30 shadow-xs">
                 <div className="w-full max-w-[1700px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
                     {/* Left: PrepWin Brand & Target Position */}
@@ -1617,12 +1781,13 @@ export const AssessmentWorkspace = ({
                                         : 'bg-red-50 text-red-700 border-red-300 animate-pulse motion-reduce:animate-none'
                             }`}>
                                 <Shield className="w-3.5 h-3.5" />
-                                <span>{strikeLimit ? `Warnings: ${violationCount}/${strikeLimit}` : `Integrity events: ${violationCount}`}</span>
+                                <span>{strikeLimit ? `Warnings: ${violationCount}/${strikeLimit}` : `Events ${violationCount}/${MAX_INTEGRITY_EVENTS}`}</span>
                             </div>
                         )}
                     </div>
                 </div>
             </header>
+            )}
 
             {/* Malpractice Warning Banner (Non-Blocking Alert) */}
             {warningBanner && currentStage !== 'instructions' && currentStage !== 'device_check' && (
@@ -1643,7 +1808,9 @@ export const AssessmentWorkspace = ({
             {/* =========================================================== */}
             {/* MAIN WORKSPACE: FULL VIEWPORT (~85-95% WIDTH) */}
             {/* =========================================================== */}
-            <main className="flex-1 w-full max-w-[1700px] mx-auto p-4 sm:p-6 lg:p-8 overflow-y-auto">
+            <main className={codingWorkspaceActive
+                ? 'flex-1 min-h-0 w-full flex flex-col p-2 overflow-y-auto'
+                : 'flex-1 w-full max-w-[1700px] mx-auto p-4 sm:p-6 lg:p-8 overflow-y-auto'}>
                 {/* --------------------------------------------------------- */}
                 {/* STAGE 1: ASSESSMENT INSTRUCTIONS */}
                 {/* --------------------------------------------------------- */}
@@ -1706,7 +1873,7 @@ export const AssessmentWorkspace = ({
                                 {[
                                     { label: 'Round 1', mins: '20 Mins', title: 'Aptitude & Reasoning', Icon: BrainCircuit, desc: 'Role-tailored domain logic, psychometrics, and quantitative problem solving questions. Counts for one third of your overall score.', hover: 'hover:border-emerald-300 hover:shadow-emerald-100', lab: 'text-emerald-700', pill: 'bg-emerald-100 text-emerald-800', ic: 'text-emerald-600' },
                                     { label: 'Round 2', mins: '20 Mins', title: 'Sandboxed Coding', Icon: Code2, desc: 'Real coding problems executed in an isolated runtime container against public and hidden test cases.', hover: 'hover:border-cyan-300 hover:shadow-cyan-100', lab: 'text-cyan-700', pill: 'bg-cyan-100 text-cyan-800', ic: 'text-cyan-600' },
-                                    { label: 'Round 3', mins: '20 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
+                                    { label: 'Round 3', mins: '10 Mins', title: 'Technical Interview', Icon: MessageSquare, desc: 'Conversational voice / defense questions synthesized directly from your JD and resume background.', hover: 'hover:border-amber-300 hover:shadow-amber-100', lab: 'text-amber-700', pill: 'bg-amber-100 text-amber-800', ic: 'text-amber-600' },
                                 ].map((r, i) => (
                                     <Enter
                                         key={r.label}
@@ -1948,14 +2115,26 @@ export const AssessmentWorkspace = ({
                                         Fullscreen Confirmation & Launch
                                     </h3>
 
+                                    {resumeInfo && (
+                                        <div id="resume-notice" className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 leading-relaxed space-y-1.5">
+                                            <strong className="block font-bold">Your assessment is still running</strong>
+                                            <p>
+                                                The page was reloaded and the reload has been recorded. The timer did not stop: continue from the {resumeRestore?.sectionKey || 'current'} section.
+                                                Your saved answers and your recorded integrity events ({resumeRestore?.counted ?? 0}/{MAX_INTEGRITY_EVENTS}) are restored. Check your camera, then choose Resume.
+                                            </p>
+                                            {resumeRestore?.sectionKey === 'interview' && (
+                                                <p className="font-semibold">The interview conversation starts again from the beginning; the answers already saved are kept.</p>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs text-slate-700 leading-relaxed space-y-2">
                                         <strong className="text-emerald-900 block font-bold">Fullscreen Proctoring Environment:</strong>
                                         <p>
-                                            When you click <strong>Start Assessment & Enter Fullscreen</strong>, your browser will switch to locked fullscreen mode.
+                                            When you click <strong>{resumeInfo ? 'Resume Assessment & Enter Fullscreen' : 'Start Assessment & Enter Fullscreen'}</strong>, your browser will switch to locked fullscreen mode.
                                         </p>
                                         <p>
                                             {isRecruitment
-                                                ? 'Leaving fullscreen, switching tabs or windows, or other people or devices appearing in your camera view are recorded as integrity events for the hiring team. They do not end your assessment. A 10-second countdown recovery window is provided for accidental fullscreen exits.'
+                                                ? `Leaving fullscreen, switching tabs, or other people or devices appearing in your camera view are recorded as integrity events for the hiring team. Switching to another tab more than once disqualifies you, and more than ${MAX_INTEGRITY_EVENTS} integrity events end your assessment. A 10-second countdown recovery window is provided for accidental fullscreen exits.`
                                                 : 'Any attempt to exit fullscreen, switch tabs, or use external monitors will trigger an integrity warning. A 10-second countdown recovery window is provided for accidental exits.'}
                                         </p>
                                     </div>
@@ -1981,7 +2160,7 @@ export const AssessmentWorkspace = ({
 
                                 {/* Acceptance Checkbox & Launch Actions */}
                                 <div className="space-y-4 pt-4 border-t border-slate-100">
-                                    <label className={`flex items-start gap-3 cursor-pointer select-none p-3 rounded-xl border transition-all duration-300 ${instructionsAccepted ? 'bg-emerald-50 border-emerald-300 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'}`}>
+                                    {!resumeInfo && <label className={`flex items-start gap-3 cursor-pointer select-none p-3 rounded-xl border transition-all duration-300 ${instructionsAccepted ? 'bg-emerald-50 border-emerald-300 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'}`}>
                                         <input
                                             type="checkbox"
                                             checked={instructionsAccepted}
@@ -1994,7 +2173,7 @@ export const AssessmentWorkspace = ({
                                         {instructionsAccepted && (
                                             <PopIn className="ml-auto shrink-0"><CheckCircle className="w-5 h-5 text-emerald-600" /></PopIn>
                                         )}
-                                    </label>
+                                    </label>}
 
                                     <div className="flex flex-col sm:flex-row items-center gap-3">
                                         {(!isRecruitment || onBackToInstructions) && (
@@ -2033,7 +2212,7 @@ export const AssessmentWorkspace = ({
                                                 </>
                                             ) : (
                                                 <>
-                                                    <span>Start Assessment & Enter Fullscreen</span>
+                                                    {resumeInfo ? <span>Resume Assessment & Enter Fullscreen</span> : <span>Start Assessment & Enter Fullscreen</span>}
                                                     <ArrowRight className="w-4 h-4" />
                                                 </>
                                             )}
@@ -2216,7 +2395,7 @@ export const AssessmentWorkspace = ({
                                                 ? 'bg-amber-50 text-amber-800 border-amber-300' 
                                                 : 'bg-red-50 text-red-800 border-red-300'
                                     }`}>
-                                        {strikeLimit ? `${violationCount}/${strikeLimit} Strikes` : `${violationCount} recorded`}
+                                        {strikeLimit ? `${violationCount}/${strikeLimit} Strikes` : `${violationCount}/${MAX_INTEGRITY_EVENTS} events`}
                                     </span>
                                 </div>
                                 {strikeLimit && <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
@@ -2232,12 +2411,12 @@ export const AssessmentWorkspace = ({
                                         }`} 
                                     />
                                 </div>}
-                                {/* Recruitment ('flag' policy) never ends a sitting on a browser event: no strikes, no "terminated" wording. */}
+                                {/* Recruitment ('flag' policy): events are shared with the hiring team; switching tabs twice, or more than MAX_INTEGRITY_EVENTS events, ends the attempt. */}
                                 {!strikeLimit && (
                                     <p className="text-[11px] text-slate-500 leading-tight">
                                         {violationCount === 0
                                             ? "No integrity events detected."
-                                            : "Integrity events are recorded for the hiring team. Your assessment continues; please stay in fullscreen on this tab."}
+                                            : `Integrity events are recorded for the hiring team. Switching tabs twice, or more than ${MAX_INTEGRITY_EVENTS} events, ends your assessment.`}
                                     </p>
                                 )}
                                 {strikeLimit && (
@@ -2305,7 +2484,7 @@ export const AssessmentWorkspace = ({
                 {/* STAGE 3: ROUND 2 — SANDBOXED CODING (SPLIT WORKSPACE) */}
                 {/* ───────────────────────────────────────────────────────── */}
                 {currentStage === 'coding' && (
-                    <div className="space-y-4 flex flex-col min-h-0">
+                    <div className={`flex flex-col min-h-0 ${codingWorkspaceActive ? 'lg:flex-1' : 'space-y-4'}`}>
                         {codingSubmitResult ? (
                             <div id="coding-submitted-card" className="bg-white rounded-2xl border border-emerald-200 shadow-sm max-w-2xl w-full mx-auto my-4 p-6 sm:p-8 space-y-5">
                                 <div className="flex items-start gap-3">
@@ -2376,98 +2555,76 @@ export const AssessmentWorkspace = ({
                                 <p className="text-xs text-slate-600">Complete and submit the Aptitude Round to unlock this challenge.</p>
                             </div>
                         ) : (
-                            <div className={`space-y-2 rounded-2xl ${workspaceTheme === 'dark' ? 'dark bg-[#0f0f0f] p-2 sm:p-3' : ''}`} data-workspace-theme={workspaceTheme}>
-                                {/* Students: one slim bar (title, problems, camera thumbnail, submit) so the workspace gets the screen */}
-                                    <div className="bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#2f2f2f] rounded-xl px-4 py-2.5 shadow-sm dark:shadow-none">
-                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                                            <div className="min-w-0 flex-1 sm:flex-none order-1">
-                                                <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                                    <Code2 className="w-5 h-5 text-cyan-600 shrink-0" />
-                                                    <span className="truncate">Round 2: Practical Coding</span>
-                                                </h2>
-                                                <p className="hidden sm:block text-[11px] text-slate-500 mt-0.5">Solve each problem, run the public tests, then submit everything to unlock the interview.</p>
+                            <div className={`flex flex-col gap-2 lg:flex-1 lg:min-h-[520px] ${workspaceTheme === 'dark' ? 'dark' : ''}`} data-workspace-theme={workspaceTheme}>
+                                {/* ONE compact bar: problems | Run + Submit | timers + camera (the page's global header is hidden while this workspace is open) */}
+                                <CodingTopBar
+                                    problems={codingProblems}
+                                    index={currentProblemIndex}
+                                    onSelect={(idx) => { setCurrentProblemIndex(idx); setCodeOutput(null); }}
+                                    onRun={handleRunCode}
+                                    running={isRunningCode}
+                                    onSubmit={handleSubmitCoding}
+                                    submitting={isSubmittingCoding}
+                                    submitLabel={isSubmittingCoding ? "Evaluating Tests..." : (codingSubmitError ? "Retry Submission" : "Submit All & Unlock Interview")}
+                                    submitShortLabel={isSubmittingCoding ? 'Evaluating…' : (codingSubmitError ? 'Retry' : 'Submit')}
+                                    status={(
+                                        <>
+                                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-xs font-bold border transition-colors duration-500 ${
+                                                timeLeft <= 120
+                                                    ? `bg-red-50 text-red-700 border-red-300 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/40 ${timeLeft <= 60 ? 'animate-pulse motion-reduce:animate-none' : ''}`
+                                                    : timeLeft <= 300
+                                                        ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/40'
+                                                        : 'bg-slate-50 text-slate-800 border-slate-200 dark:bg-[#282828] dark:text-slate-100 dark:border-[#3a3a3a]'
+                                            }`}>
+                                                <Clock className={`w-3.5 h-3.5 ${timeLeft <= 120 ? 'text-red-500' : timeLeft <= 300 ? 'text-amber-500' : 'text-emerald-500'}`} />
+                                                <span aria-label="Section time remaining">{formatTimer(timeLeft)}</span>
                                             </div>
-
-                                            <div className="order-3 sm:order-2 flex items-center gap-1 bg-slate-100 dark:bg-[#2b2b2b] p-1 rounded-xl border border-slate-200 dark:border-[#2f2f2f] max-w-full overflow-x-auto [&>*]:shrink-0">
-                                                {codingProblems.map((prob, idx) => (
-                                                    <button
-                                                        key={prob.id}
-                                                        type="button"
-                                                        onClick={() => { setCurrentProblemIndex(idx); setCodeOutput(null); }}
-                                                        className={`relative isolate min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                                                            currentProblemIndex === idx ? 'text-cyan-700 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                                                        }`}
-                                                    >
-                                                        {currentProblemIndex === idx && (
-                                                            <motion.span
-                                                                layoutId="pw-problem-tab"
-                                                                className="absolute inset-0 -z-10 rounded-lg bg-white dark:bg-[#3a3a3a] border border-slate-200 dark:border-transparent shadow-xs"
-                                                                transition={{ type: 'spring', stiffness: 420, damping: 36 }}
-                                                            />
-                                                        )}
-                                                        Problem {idx + 1}
-                                                    </button>
-                                                ))}
+                                            {overallLeft !== null && (
+                                                <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-xs font-bold border bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#282828] dark:text-slate-300 dark:border-[#3a3a3a]" title="Time left for the whole assessment (60 minutes)">
+                                                    <span className="text-[10px] uppercase tracking-wider text-slate-400">Total</span>
+                                                    <span aria-label="Overall time remaining">{formatTimer(overallLeft)}</span>
+                                                </div>
+                                            )}
+                                            <div className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap ${
+                                                violationCount === 0
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30'
+                                                    : violationCount === 1
+                                                        ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/40 animate-pulse motion-reduce:animate-none'
+                                                        : 'bg-red-50 text-red-700 border-red-300 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/40 animate-pulse motion-reduce:animate-none'
+                                            }`}>
+                                                <Shield className="w-3.5 h-3.5" />
+                                                <span>{strikeLimit ? `Warnings ${violationCount}/${strikeLimit}` : `Events ${violationCount}/${MAX_INTEGRITY_EVENTS}`}</span>
                                             </div>
+                                        </>
+                                    )}
+                                    camera={(
+                                        <ProctorCameraFeed
+                                            stream={cameraStream || proctorStream}
+                                            detections={detections}
+                                            faceBoxes={faceBoxes}
+                                            personCount={personCount}
+                                            suspectLabel={suspectLabel}
+                                            isModelActive={isModelActive}
+                                            detectionStatus={detectionStatus}
+                                            violationCount={violationCount} limit={strikeLimit}
+                                            compact={true}
+                                            thumb={true}
+                                        />
+                                    )}
+                                />
 
-                                            <div className="hidden sm:block sm:flex-1 sm:order-3" aria-hidden="true" />
-
-                                            <div className="order-2 sm:order-8 w-28 sm:w-36 shrink-0">
-                                                <ProctorCameraFeed
-                                                    stream={cameraStream || proctorStream}
-                                                    detections={detections}
-                                                    faceBoxes={faceBoxes}
-                                                    personCount={personCount}
-                                                    suspectLabel={suspectLabel}
-                                                    isModelActive={isModelActive}
-                                                    detectionStatus={detectionStatus}
-                                                    violationCount={violationCount} limit={strikeLimit}
-                                                    compact={true}
-                                                    thumb={true}
-                                                />
-                                            </div>
-
-                                            <button
-                                                type="button"
-                                                disabled={isRunningCode}
-                                                onClick={handleRunCode}
-                                                title="Run (Ctrl + ')"
-                                                className="order-4 flex-1 sm:flex-none min-h-[44px] px-4 rounded-xl border border-cyan-200 dark:border-[#3a3a3a] bg-cyan-50 dark:bg-[#2b2b2b] hover:bg-cyan-100 dark:hover:bg-[#3a3a3a] text-cyan-800 dark:text-slate-100 text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-all active:scale-[0.97] shrink-0"
-                                            >
-                                                <Play className="w-4 h-4" />
-                                                <span>{isRunningCode ? 'Running…' : 'Run'}</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                disabled={isSubmittingCoding}
-                                                onClick={handleSubmitCoding}
-                                                className="order-5 flex-[2] sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed"
-                                            >
-                                                {isSubmittingCoding ? "Evaluating Tests..." : (codingSubmitError ? "Retry Submission" : "Submit All & Unlock Interview")}
-                                            </button>
-
-                                            {/* Run and Submit sit together in the middle (like LeetCode's top bar); the camera is apart, behind a divider */}
-                                            <div className="hidden sm:block sm:flex-1 sm:order-6" aria-hidden="true" />
-                                            <div className="hidden sm:block sm:order-7 w-px h-14 bg-slate-200 dark:bg-[#3a3a3a]" aria-hidden="true" />
-                                        </div>
-
-                                        {codingSubmitError && !isSubmittingCoding && (
-                                            <div role="alert" className="mt-3 flex items-start gap-2.5 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-800">
-                                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                                                <span>{codingSubmitError}</span>
-                                            </div>
-                                        )}
+                                {codingSubmitError && !isSubmittingCoding && (
+                                    <div role="alert" className="shrink-0 flex items-start gap-2.5 rounded-lg bg-rose-50 border border-rose-200 px-3.5 py-2 text-xs text-rose-800">
+                                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                        <span>{codingSubmitError}</span>
                                     </div>
-
+                                )}
 
                                 {codingProblems.length > 0 && (() => {
                                     const activeProblem = codingProblems[currentProblemIndex] || codingProblems[0];
                                     const probId = String(activeProblem.id);
-                                    const curSol = codeSolutions[probId] || { 
-                                        code: activeProblem.starter_code?.python || "", 
-                                        language: selectedLanguage 
-                                    };
+                                    const activeLanguage = defaultLanguage(activeProblem);
+                                    const curSol = codeSolutions[probId] || { code: starterFor(activeProblem, activeLanguage), language: activeLanguage };
 
                                         const ranWithResults = codeOutput && (codeOutput.test_results || []).length > 0;
                                         return (
@@ -2477,8 +2634,16 @@ export const AssessmentWorkspace = ({
                                                 key={probId}
                                                 problem={activeProblem}
                                                 code={curSol.code}
+                                                language={curSol.language}
+                                                onLanguageChange={(lang) => handleLanguageChange(probId, lang)}
+                                                customFields={customFields[probId]}
+                                                onCustomFieldsChange={(fields) => setCustomFields((prev) => {
+                                                    const next = { ...prev };
+                                                    if (fields === undefined) delete next[probId]; else next[probId] = fields;
+                                                    return next;
+                                                })}
                                                 onCodeChange={(val) => handleCodeChange(probId, val)}
-                                                onReset={() => { if (window.confirm('Reset to the starter code? Your current code will be replaced.')) handleResetCode(); }}
+                                                onReset={() => { if (window.confirm(`Reset to the starter code? Your current ${languageLabel(curSol.language)} code will be replaced.`)) handleResetCode(); }}
                                                 onRun={handleRunCode}
                                                 running={isRunningCode}
                                                 result={ranWithResults ? codeOutput : null}
@@ -2519,11 +2684,17 @@ export const AssessmentWorkspace = ({
                                         <div className="text-sm text-gray-400">
                                             Time: <span className="font-mono text-white text-lg font-bold">{formatTimer(timeLeft)}</span>
                                         </div>
-                                        {currentSpeaker && (
-                                            <div className={`text-xs px-2.5 py-1 rounded font-semibold ${
-                                                currentSpeaker === 'ai' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                                        {voiceCallStatus === 'active' && (
+                                            <div data-testid="voice-state" className={`text-xs px-2.5 py-1 rounded font-semibold flex items-center gap-1.5 ${
+                                                voiceSpeakingState === 'ai_speaking' ? 'bg-blue-500/20 text-blue-400'
+                                                    : voiceSpeakingState === 'processing' ? 'bg-indigo-500/20 text-indigo-300'
+                                                        : voiceIsMuted ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'
                                             }`}>
-                                                {currentSpeaker === 'ai' ? 'AI Speaking' : 'You Speaking'}
+                                                {voiceSpeakingState === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}
+                                                {voiceSpeakingState === 'ai_speaking' ? 'AI Speaking'
+                                                    : voiceSpeakingState === 'processing' ? 'Thinking...'
+                                                        : voiceIsMuted ? 'Muted'
+                                                            : voiceUserSpeaking ? 'Hearing You' : 'Your Turn - Listening'}
                                             </div>
                                         )}
                                     </div>
@@ -2571,7 +2742,16 @@ export const AssessmentWorkspace = ({
                                     {/* RIGHT PANEL - Candidate Camera + Live Transcript (Image 2) */}
                                     <div className="w-full md:w-[380px] lg:w-[420px] bg-[#0f0f0f] flex flex-col border-t md:border-t-0 md:border-l border-gray-800 shrink-0">
                                         {/* Candidate Camera (Aspect Video) */}
-                                        <div className="relative bg-black aspect-video overflow-hidden">
+                                        <div
+                                            data-testid="candidate-tile"
+                                            className={`relative bg-black aspect-video overflow-hidden transition-all duration-200 ${
+                                                voiceCallStatus === 'active' && voiceSpeakingState === 'listening' && !voiceIsMuted
+                                                    ? (voiceUserSpeaking ? 'ring-4 ring-inset ring-emerald-400/70' : 'ring-2 ring-inset ring-indigo-400/60 animate-pulse')
+                                                    : ''
+                                            }`}
+                                            style={voiceCallStatus === 'active' && voiceSpeakingState === 'listening' && !voiceIsMuted && voiceUserSpeaking
+                                                ? { boxShadow: `inset 0 0 ${16 + voiceUserLevel * 48}px rgba(52, 211, 153, ${0.2 + voiceUserLevel * 0.5})` } : undefined}
+                                        >
                                             {cameraStream || proctorStream ? (
                                                 <>
                                                     <ProctorCameraFeed
@@ -2589,14 +2769,29 @@ export const AssessmentWorkspace = ({
                                                         <User className="w-3.5 h-3.5 text-emerald-400" />
                                                         <span>You</span>
                                                     </div>
-                                                    {currentSpeaker === 'user' && (
-                                                        <div className="absolute bottom-3 left-3 bg-green-500 px-3 py-1 rounded-full text-xs font-semibold z-10 text-white shadow-md">
-                                                            Speaking...
-                                                        </div>
-                                                    )}
-                                                    {currentSpeaker === 'ai' && (
-                                                        <div className="absolute bottom-3 left-3 bg-gray-700/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-medium z-10 text-slate-300 border border-white/10">
-                                                            Listening...
+                                                    {voiceCallStatus === 'active' && (
+                                                        <div data-testid="mic-badge" className={`absolute bottom-3 left-3 px-3 py-1 rounded-full text-xs font-semibold z-10 shadow-md flex items-center gap-2 border border-white/10 ${
+                                                            voiceIsMuted ? 'bg-red-500/90 text-white'
+                                                                : voiceSpeakingState === 'listening' ? (voiceUserSpeaking ? 'bg-green-500 text-white' : 'bg-indigo-500/90 text-white')
+                                                                    : voiceSpeakingState === 'processing' ? 'bg-indigo-900/90 text-indigo-200'
+                                                                        : 'bg-gray-700/90 backdrop-blur-sm text-slate-300 font-medium'
+                                                        }`}>
+                                                            {voiceIsMuted ? <MicOff className="w-3.5 h-3.5" />
+                                                                : voiceSpeakingState === 'processing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                    : <Mic className="w-3.5 h-3.5" />}
+                                                            <span>
+                                                                {voiceIsMuted ? 'Muted'
+                                                                    : voiceSpeakingState === 'listening' ? (voiceUserSpeaking ? 'Hearing you...' : 'Listening...')
+                                                                        : voiceSpeakingState === 'processing' ? 'Thinking...'
+                                                                            : 'Mic paused'}
+                                                            </span>
+                                                            {voiceSpeakingState === 'listening' && !voiceIsMuted && (
+                                                                <span className="flex items-end gap-0.5 h-3">
+                                                                    {[0.08, 0.2, 0.35, 0.5, 0.7].map((step) => (
+                                                                        <span key={step} className={`w-0.5 rounded-full transition-all ${voiceUserLevel > step ? 'bg-white h-3' : 'bg-white/30 h-1'}`} />
+                                                                    ))}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </>
@@ -2842,7 +3037,7 @@ export const AssessmentWorkspace = ({
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-slate-500">Integrity Violations:</span>
-                                        <span className="font-semibold text-emerald-700">{violationCount} recorded</span>
+                                        <span className="font-semibold text-emerald-700">{strikeLimit ? `${violationCount} recorded` : `${violationCount}/${MAX_INTEGRITY_EVENTS} events`}</span>
                                     </div>
                                 </div>
 

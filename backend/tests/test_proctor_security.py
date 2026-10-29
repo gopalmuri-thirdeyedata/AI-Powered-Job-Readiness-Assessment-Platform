@@ -346,7 +346,7 @@ def test_public_status_is_minimal(setup_test_data):
 
 def test_authenticated_status_keeps_diagnostic_detail(student):
     data = client.get(STATUS, headers=student).json()
-    assert data["status"] == "ready" and "yolov8n.pt" in data["model_file"]
+    assert data["status"] == "ready" and "yolov8n" in data["model_file"]
     assert "person" in data["classes_supported"] and "cell phone" in data["classes_supported"]
 
 

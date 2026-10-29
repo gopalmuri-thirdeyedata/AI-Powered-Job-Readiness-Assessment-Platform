@@ -6,17 +6,18 @@ import { RealtimeCaptions } from './liveCaptions';
 //   start(config) / stop() / setMuted(bool) / setInputDevicesAsync({ audioDeviceId }) / removeAllListeners()
 // The turn-taking logic (UtteranceDetector) is pure and framework-free so it can be unit tested without a browser or a microphone.
 
-export const END_SILENCE_MS = 2200;        // pause that ends an answer: a real interviewer lets the candidate think and finish the thought
-export const END_SILENCE_FINISHED_MS = 1800;     // ... a little less when the last words already read as a finished sentence
-export const END_SILENCE_UNFINISHED_MS = 4000;   // ... and longer when the sentence is left hanging ("and", "because", a trailing comma)
+export const END_SILENCE_MS = 1300;        // pause that ends an answer (short, so the interviewer answers promptly; the longer waits below protect unfinished thoughts)
+export const END_SILENCE_FINISHED_MS = 800;      // ... a little less when the last words already read as a finished sentence
+export const END_SILENCE_UNFINISHED_MS = 2800;   // ... and longer when the sentence is left hanging ("and", "because", a trailing comma)
 export const MIN_SPEECH_MS = 400;          // shorter sounds (a cough, a click) are discarded, not sent
 export const MAX_UTTERANCE_MS = 90000;     // an answer is cut here and sent
-export const SPEECH_CONFIRM_MS = 120;      // sound must last this long to count as speech
+export const SPEECH_CONFIRM_MS = 90;       // sound must last this long to count as speech
 export const PRE_ROLL_RESET_MS = 3000;     // recording while nobody speaks is thrown away this often (keeps uploads small)
-export const REPLY_GUARD_MS = 350;         // the mic is ignored briefly after the interviewer stops (room echo)
+export const REPLY_GUARD_MS = 250;         // the mic is ignored briefly after the interviewer stops (room echo)
 export const CALIBRATE_MS = 600;           // the first moments of listening teach the detector how noisy the room is
-export const NOISE_FLOOR_CAP = 0.02;
+export const NOISE_FLOOR_CAP = 0.01;       // keeps the speech threshold at or below 0.03 even if the candidate started talking during calibration
 export const POLL_MS = 50;
+export const PLAYBACK_WATCHDOG_MS = 45000;    // one spoken chunk never takes this long; past it the audio is treated as finished
 const MIN_THRESHOLD = 0.015;
 
 // Words that cannot end a thought: the candidate is still going.
@@ -132,11 +133,12 @@ const audioError = (message) => {
 };
 
 /** The multipart body of one voice turn (shared by the student and the recruitment candidate API). */
-export const buildVoiceTurnForm = ({ blob, history = [], opening = false } = {}) => {
+export const buildVoiceTurnForm = ({ blob, history = [], opening = false, hint = '' } = {}) => {
     const form = new FormData();
     if (blob) form.append('audio', blob, 'answer.webm');
     form.append('history', JSON.stringify(history));
     form.append('opening', opening ? 'true' : 'false');
+    if (hint) form.append('hint', String(hint).slice(0, 2400));     // the live-caption text (optional)
     return form;
 };
 
@@ -196,6 +198,7 @@ export class VoiceInterviewSession {
     removeAllListeners() { this.listeners = {}; }
 
     emit(event, payload) {
+        if (event === 'caption' && payload?.role === 'user') this.lastUserCaption = String(payload.text || '');      // sent with the recording so the reply can start early
         if (event === 'caption' && payload?.role === 'user') this.userCaptionText = payload.text || '';      // the words heard so far decide how long to wait
         for (const handler of this.listeners[event] || []) {
             try { handler(payload); } catch (e) { console.error(`[voice] ${event} handler failed`, e); }
@@ -255,7 +258,7 @@ export class VoiceInterviewSession {
     // ── Microphone ───────────────────────────────────────────────────────────────
     async openMic() {
         this.stream?.getTracks().forEach((t) => t.stop());
-        const constraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+        const constraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };      // automatic gain makes the volume pump up and down
         if (this.audioDeviceId) constraints.deviceId = { exact: this.audioDeviceId };
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
         this.stream.getAudioTracks().forEach((t) => { t.enabled = !this.muted; });
@@ -390,6 +393,8 @@ export class VoiceInterviewSession {
         this.lastActivityAt = Date.now();
         this.beginRecording();
         this.resetCaptions();
+        this.emit('listening');           // the microphone is open for the candidate's answer
+        try { console.debug('[voice] listening', { noiseFloor: Number(this.detector.noiseFloor.toFixed(4)), threshold: Number(speechThreshold(this.detector.noiseFloor).toFixed(4)), muted: this.muted }); } catch { /* no console */ }
     }
 
     tick() {
@@ -397,25 +402,30 @@ export class VoiceInterviewSession {
         const now = Date.now();
         if (now - this.lastActivityAt > this.silenceTimeoutMs) { this.finish(); return; }
         if (this.muted) return;
-        const event = this.detector.push(this.micLevel(), now, endSilenceFor(this.userCaptionText));
+        const level = this.micLevel();
+        this.emit('mic-level', Math.min(1, level * 6));        // drives the "you are being heard" animation
+        const event = this.detector.push(level, now, endSilenceFor(this.userCaptionText));
         if (event === 'speech-start') {
             this.lastActivityAt = now;
+            this.emit('user-speech', true);
         } else if (event === 'speech-end') {
+            this.emit('user-speech', false);
             this.answerGiven();
         } else if (event === 'discard' || (!this.detector.speaking && now - this.recorderStartedAt > PRE_ROLL_RESET_MS)) {
-            if (event === 'discard') this.resetCaptions();       // a cough or click is not an answer: do not leave its caption on screen
+            if (event === 'discard') { this.emit('user-speech', false); this.resetCaptions(); }       // a cough or click is not an answer: do not leave its caption on screen
             this.beginRecording();       // nothing worth sending: start a fresh recording so silence is never uploaded
         }
     }
 
     async answerGiven() {
+        const hint = (this.lastUserCaption || '').trim();             // what the live captions heard: the server only uses it if its own transcript agrees
         this.state = 'processing';
         this.stopCaptions();             // the caption stays on screen until the server's transcript replaces it
         this.emit('processing');
         try {
             const blob = await this.endRecording();
             if (this.closed) return;
-            if (this.turnStream && blob && blob.size && await this.streamAnswer(blob)) return;
+            if (this.turnStream && blob && blob.size && await this.streamAnswer(blob, hint)) return;
             const result = blob && blob.size ? await this.requestTurn({ blob, history: this.history }) : null;
             if (this.closed) return;
             if (!result || !result.user_text) { this.startListening(); return; }      // no speech recognised: keep listening
@@ -432,14 +442,16 @@ export class VoiceInterviewSession {
      * @returns {Promise<boolean>} true when the turn was handled here; false when the stream failed before anything was heard,
      *   so the caller can repeat the exchange with the plain request (nothing was recorded twice).
      */
-    async streamAnswer(blob) {
+    async streamAnswer(blob, hint = '') {
+        const sentAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        this.lastTurnTiming = {};            // how long the candidate really waited (answer sent -> first words of the reply arrive); shown in the console only
         let heard = false;
         let spoke = false;
         let spokenSoFar = '';
         let playback = Promise.resolve();
         this.abortController = typeof AbortController === 'undefined' ? null : new AbortController();
         try {
-            for await (const event of this.turnStream({ blob, history: this.history }, { signal: this.abortController?.signal })) {
+            for await (const event of this.turnStream({ blob, history: this.history, hint }, { signal: this.abortController?.signal })) {
                 if (this.closed) return true;
                 if (event.type === 'transcript') {
                     if (!event.user_text) { this.startListening(); return true; }       // no speech recognised: keep listening
@@ -449,6 +461,7 @@ export class VoiceInterviewSession {
                 } else if (event.type === 'audio') {
                     if (!spoke) {
                         spoke = true;
+                        this.lastTurnTiming.first_audio_wait_ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - sentAt);
                         this.state = 'speaking';
                         this.stopCaptions({ clear: true });
                         this.rtCaptions?.warm();
@@ -461,9 +474,11 @@ export class VoiceInterviewSession {
                     playback = playback.then(() => (this.closed ? undefined : this.play(chunk, caption)));
                     playback.catch(() => {});       // surfaced below when awaited; never an unhandled rejection meanwhile
                 } else if (event.type === 'done') {
+                    this.lastTurnTiming.server = event.timings;
+                    try { console.debug('[voice] turn timing', this.lastTurnTiming); } catch { /* no console */ }
                     if (event.reply_text) {
-                        this.history.push({ role: 'ai', text: event.reply_text });
-                        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: event.reply_text });
+                        this.history.push({ role: 'ai', text: event.reply_text, ...(Number.isInteger(event.question_no) ? { q: event.question_no } : {}) });
+                        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: event.reply_text, questionNo: Number.isInteger(event.question_no) ? event.question_no : undefined });
                     }
                 } else if (event.type === 'error') {
                     const err = new Error(event.message || 'The interviewer is unavailable right now.');
@@ -505,9 +520,9 @@ export class VoiceInterviewSession {
         this.rtCaptions?.warm();                  // ready before the candidate's turn: the first words are not delayed
         this.lastActivityAt = Date.now();
         const text = result.reply_text || '';
-        this.history.push({ role: 'ai', text });
+        this.history.push({ role: 'ai', text, ...(Number.isInteger(result.question_no) ? { q: result.question_no } : {}) });
         this.emit('speech-start');
-        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: text });
+        this.emit('message', { type: 'transcript', transcriptType: 'final', role: 'assistant', transcript: text, questionNo: Number.isInteger(result.question_no) ? result.question_no : undefined });
         await this.play(base64ToBlob(result.audio_base64, result.mime), { prefix: '', text });
         if (this.closed) return;
         this.emit('speech-end');
@@ -528,10 +543,20 @@ export class VoiceInterviewSession {
                 });
                 if (player.readyState >= 1) announce(); else player.addEventListener('loadedmetadata', announce, { once: true });
             }
-            const done = () => { clearInterval(this.volumeTimer); URL.revokeObjectURL(url); this.emit('volume-level', 0); };
+            let settled = false;
+            const done = () => { settled = true; clearTimeout(watchdog); clearInterval(this.volumeTimer); URL.revokeObjectURL(url); this.emit('volume-level', 0); };
+            // If the browser never reports the end of the audio (suspended audio engine, a stalled stream), carry on instead of hanging the turn.
+            const watchdog = setTimeout(() => {
+                if (settled) return;
+                console.warn('[voice] interviewer audio did not finish in time; continuing');
+                try { player.pause(); } catch { /* ignore */ }
+                done();
+                resolve();
+            }, PLAYBACK_WATCHDOG_MS);
             player.onended = () => { done(); resolve(); };
             player.onerror = () => { done(); reject(audioError('Interviewer audio could not be played. Choose Retry Connection.')); };
             try {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
                 const source = this.ctx.createMediaElementSource(player);
                 const analyser = this.ctx.createAnalyser();
                 analyser.fftSize = 512;

@@ -82,7 +82,7 @@ export default function useMicrophone({ enabled = true } = {}) {
                 // hears the raw signal; automatic gain keeps a low input volume usable.
                 echoCancellation: false,
                 noiseSuppression: false,
-                autoGainControl: true,
+                autoGainControl: false,
             },
         });
 

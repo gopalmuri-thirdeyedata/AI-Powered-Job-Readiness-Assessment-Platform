@@ -38,7 +38,7 @@ from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter, client_
 router = APIRouter(prefix="/api/proctor", tags=["Proctoring"])
 
 # The browser sends one frame every 3 s (20 / minute); the ceiling leaves headroom for two overlapping hooks and retries.
-FRAME_LIMIT_PER_MINUTE = int(os.getenv("PROCTOR_FRAMES_PER_MINUTE", "40"))
+FRAME_LIMIT_PER_MINUTE = int(os.getenv("PROCTOR_FRAMES_PER_MINUTE", "60"))
 MAX_BODY_BYTES = MAX_BASE64_CHARS + 4096
 MAX_CONCURRENT_INFERENCES = max(1, int(os.getenv("PROCTOR_MAX_CONCURRENT", "4")))
 

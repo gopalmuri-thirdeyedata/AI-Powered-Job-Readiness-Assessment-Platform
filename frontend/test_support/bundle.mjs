@@ -14,6 +14,8 @@ const fakeAxiosPlugin = {
     name: 'fake-axios',
     setup(b) {
         b.onResolve({ filter: /^axios$/ }, () => ({ path: path.join(here, 'fakeAxios.mjs') }));
+        // Monaco needs a browser (and a CommonJS require of react); tests only need to see which language / path the editor was given
+        b.onResolve({ filter: /^@monaco-editor\/react$/ }, () => ({ path: path.join(here, 'fakeMonaco.mjs') }));
     },
 };
 

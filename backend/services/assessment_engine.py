@@ -17,12 +17,15 @@ INPUTS are sent to the sandbox, one test at a time, and expected outputs are com
 import ast
 import concurrent.futures
 import json
+import random
+import re
 import threading
 import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from services import coding_evaluation
+from services import coding_spec
 from services import interview_evaluation
 from services import function_style
 from services import judge0_service
@@ -195,29 +198,180 @@ def run_sample_tests(problem: Dict[str, Any], code: str, language: str, *, execu
     }
 
 
-def evaluate_coding(problems: List[Dict[str, Any]], hidden_keys: Dict[str, Any], solutions: Optional[Dict[str, Any]], *,
-                    execute: Optional[Execute] = None, concurrency: int = CODING_TEST_CONCURRENCY) -> Dict[str, Any]:
+ExecuteBatch = Callable[[str, str, List[str]], Dict[str, Any]]
+
+
+def run_typed_samples(problem: Dict[str, Any], spec: Dict[str, Any], code: str, language: str, *,
+                      execute_batch: Optional[ExecuteBatch] = None, custom_values: Optional[List[Any]] = None) -> Dict[str, Any]:
     """
-    Evaluate submitted solutions against the confidential hidden tests (the student platform's section logic):
-    the section score is hidden tests passed / hidden tests total, as a percentage. An empty solution scores zero
+    Ephemeral run of a typed problem against its PUBLIC examples (and the student's own testcase): one batch, compile once. Nothing is stored
+    or scored. Raises SandboxBusy / SandboxUnavailable like run_sample_tests. The response has the shape the shared coding UI renders.
+    """
+    execute_batch = execute_batch or _default_execute_batch
+    lang = coding_spec.normalize_language(language)
+    cases: List[Dict[str, Any]] = []
+    for example in (problem.get("public_test_cases") or [])[:SAMPLE_TESTS_SHOWN]:
+        args = [json.loads(a) for a in example.get("args") or []]
+        cases.append({"id": example.get("id"), "values": args, "expected": json.loads(example.get("expected_output")), "custom": False})
+    if custom_values is not None:
+        cases.append({"id": "custom", "values": custom_values, "expected": None, "custom": True})
+    for case in cases:
+        case["stdin"] = coding_spec.encode_input(spec, case["values"])
+        case["input"] = coding_spec.display_input(spec, case["values"])
+
+    marker = coding_spec.new_marker()
+    program, shift = coding_spec.compose(spec, lang, code, marker)
+    res = _batch_with_retry(execute_batch, lang, program, [c["stdin"] for c in cases])
+    compile_error = res.get("status") == "error"
+    compile_text = _typed_error_text(lang, res, code, spec, shift) if compile_error else ""
+    outputs = res.get("results") or []
+    results = []
+    for index, case in enumerate(cases):
+        one = outputs[index] if index < len(outputs) else {}
+        entry = {"id": case["id"], "input": case["input"], "expected_output": None if case["custom"] else json.dumps(case["expected"], separators=(",", ":")),
+                 "actual_output": "", "error": None, "error_type": None, "timed_out": bool(one.get("timed_out")),
+                 "execution_time_ms": one.get("execution_time_ms"), "passed": None if case["custom"] else False, "stdout": ""}
+        if case["custom"]:
+            entry["custom"] = True
+        if compile_error:
+            entry.update(error=compile_text, error_type="Compilation Error")
+        else:
+            cls = judge0_service.classify_execution(one)
+            raw = _trim(one.get("stdout"))
+            if cls == judge0_service.OK:
+                found, value, own = coding_spec.parse_result(raw, marker)
+                entry["stdout"] = own
+                if found:
+                    entry["actual_output"] = json.dumps(value, separators=(",", ":"))
+                    if not case["custom"]:
+                        entry["passed"] = coding_spec.compare_values(spec, value, case["expected"])
+                else:
+                    entry.update(error="The program did not return a result. Make sure your function returns its answer and does not exit early.",
+                                 error_type="Runtime Error")
+            else:
+                text = coding_spec.fix_error_lines(lang, _trim(one.get("stderr")) or _trim(one.get("output")), shift)
+                _, _, own = coding_spec.parse_result(raw, marker)
+                entry.update(stdout=own, error=text or None, error_type="Time Limit Exceeded" if cls == judge0_service.TIME_LIMIT_EXCEEDED else "Runtime Error")
+        results.append(entry)
+
+    graded = [r for r in results if not r.get("custom")]
+    all_passed = bool(graded) and all(r["passed"] for r in graded)
+    first = results[0] if results else {}
+    return {
+        "status": "success", "language": lang, "all_passed": all_passed, "sample_test_passed": all_passed,
+        "stdout": first.get("actual_output", ""), "stderr": first.get("error") or "", "error_type": first.get("error_type"),
+        "execution_time_ms": first.get("execution_time_ms"), "expected_output": first.get("expected_output", ""),
+        "actual_output": first.get("actual_output", ""), "test_results": results,
+    }
+
+
+def _default_execute_batch(language: str, code: str, stdins: List[str]) -> Dict[str, Any]:
+    return judge0_service.execute_batch(language, code, stdins)
+
+
+def _batch_with_retry(execute_batch: ExecuteBatch, language: str, program: str, stdins: List[str]) -> Dict[str, Any]:
+    """
+    One batch (compile + every test). A saturated sandbox is waited out briefly, never penalized; a failure that says nothing was
+    submitted (`retryable`) is retried; anything else that is a sandbox fault raises SandboxUnavailable (nothing is scored).
+    Returns a result whose status is "success" (per-test results) or "error" (the code did not compile).
+    """
+    for attempt in range(BUSY_RETRIES):
+        last = attempt == BUSY_RETRIES - 1
+        try:
+            res = execute_batch(language, program, stdins)
+        except SandboxBusy:
+            if last:
+                raise SandboxUnavailable("sandbox saturated")
+            time.sleep(BUSY_RETRY_DELAY)
+            continue
+        if res.get("status") == "service_error":
+            if res.get("retryable") and not last:
+                time.sleep(min(float(res.get("retry_after") or 0.5), 2.0))
+                continue
+            raise SandboxUnavailable(res.get("output") or "sandbox unavailable")
+        return res
+    raise SandboxUnavailable("sandbox saturated")
+
+
+run_batch_with_retry = _batch_with_retry     # public name for the blueprint verifier (services.coding_problem_factory)
+
+
+def _typed_error_text(language: str, res: Dict[str, Any], code: str, spec: Dict[str, Any], shift: int) -> str:
+    raw = _trim(res.get("compile_output")) or _trim(res.get("stderr")) or _trim(res.get("output"))
+    return coding_spec.friendly_compile_error(language, coding_spec.fix_error_lines(language, raw, shift), code, spec) or ""
+
+
+def _grade_typed(spec: Dict[str, Any], language: str, code: str, tests: List[Dict[str, Any]], execute_batch: ExecuteBatch) -> Dict[str, Any]:
+    """Run one student solution over every graded test with a single batch; returns {passed, classification, message, tests: [...]}."""
+    marker = coding_spec.new_marker()
+    program, shift = coding_spec.compose(spec, language, code, marker)
+    res = _batch_with_retry(execute_batch, language, program, [t["input"] for t in tests])
+    if res.get("status") == "error":
+        message = _typed_error_text(language, res, code, spec, shift)[:2048]
+        return {"passed": 0, "classification": judge0_service.COMPILATION_ERROR, "message": message,
+                "tests": [{"id": t.get("id"), "passed": False, "example": bool(t.get("example")), "status": judge0_service.COMPILATION_ERROR} for t in tests]}
+    passed, worst, message, detail = 0, judge0_service.OK, "", []
+    for test, one in zip(tests, res.get("results") or []):
+        cls = judge0_service.classify_execution(one)
+        ok = False
+        text = ""
+        if cls == judge0_service.OK:
+            found, value, _ = coding_spec.parse_result(_trim(one.get("stdout")), marker)
+            if found:
+                ok = coding_spec.compare_values(spec, value, test["expected"])
+            else:
+                cls, text = judge0_service.RUNTIME_ERROR, "The program did not return a result."
+        else:
+            text = _trim(one.get("stderr")) or _trim(one.get("output"))
+        passed += 1 if ok else 0
+        if cls != judge0_service.OK and worst == judge0_service.OK:
+            worst, message = cls, coding_spec.fix_error_lines(language, text, shift)[:2048]
+        detail.append({"id": test.get("id"), "passed": ok, "example": bool(test.get("example")), "status": cls})
+    return {"passed": passed, "classification": worst, "message": message, "tests": detail}
+
+
+def evaluate_coding(problems: List[Dict[str, Any]], hidden_keys: Dict[str, Any], solutions: Optional[Dict[str, Any]], *,
+                    execute: Optional[Execute] = None, concurrency: int = CODING_TEST_CONCURRENCY,
+                    execute_batch: Optional[ExecuteBatch] = None) -> Dict[str, Any]:
+    """
+    Evaluate submitted solutions against the confidential tests (the student platform's section logic):
+    the section score is tests passed / tests total, as a percentage. An empty solution scores zero
     without touching the sandbox. Raises SandboxUnavailable if the sandbox cannot be reached (nothing is scored).
 
     problems    = the client-safe problem list (ids, titles)
-    hidden_keys = {pid: {"hidden_test_cases": [{"input", "expected_output"}], "comparison": "text"|"json"}}
-    solutions   = {pid: {"code": str, "language": "python"|"java"}}
+    hidden_keys = {pid: {"hidden_test_cases": [...], "comparison": "text"|"json"}} for stdin/stdout problems, or
+                  {pid: {"spec": <coding_spec signature>, "hidden_test_cases": [{"input": <stdin>, "expected": <value>, "example": bool}]}}
+                  for typed (LeetCode-style, any language) problems: those run as ONE batch (compile once) per problem.
+    solutions   = {pid: {"code": str, "language": "python"|"java"|"cpp"|"c"}}
     """
     execute = execute or _default_execute
+    execute_batch = execute_batch or _default_execute_batch
     solutions = solutions or {}
     jobs: List[Tuple[int, str, str, str, str, str]] = []   # (problem index, expected, mode, language, code, stdin)
+    typed_jobs: List[Tuple[int, Dict[str, Any], str, str, List[Dict[str, Any]]]] = []   # (problem index, spec, language, code, tests)
     plans: List[Tuple[Dict[str, Any], str, str, int]] = []
     total_hidden = 0
     for prob in problems or []:
         pid = str(prob.get("id"))
         sol = solutions.get(pid) or {}
         code = sol.get("code", "") or ""
-        lang = normalize_language(sol.get("language"))
         info = hidden_keys.get(pid) or {}
         hidden = info.get("hidden_test_cases", [])
+        spec = info.get("spec")
+        if spec:
+            try:
+                lang = coding_spec.normalize_language(sol.get("language"))
+            except ValueError:
+                lang = "python"
+            plans.append((prob, pid, lang, len(hidden)))
+            total_hidden += len(hidden)
+            if code.strip():
+                typed_jobs.append((len(plans) - 1, spec, lang, code, hidden))
+            continue
+        try:
+            lang = normalize_language(sol.get("language"))
+        except ValueError:
+            lang = "python"        # a language this problem does not offer is graded as Python, as the draft normalization does
         mode = info.get("comparison", "text")
         plans.append((prob, pid, lang, len(hidden)))
         total_hidden += len(hidden)
@@ -258,19 +412,32 @@ def evaluate_coding(problems: List[Dict[str, Any]], hidden_keys: Dict[str, Any],
                 worst[idx] = cls
                 message[idx] = (_trim(res.get("compile_output")) or _trim(res.get("stderr")) or _trim(res.get("output")))[:2048]
 
+    # Typed problems: one batch per problem (compile once, run every test). Problems run side by side; each batch takes one sandbox turn.
+    typed_results: Dict[int, Dict[str, Any]] = {}
+    if typed_jobs:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(typed_jobs)))) as pool:
+            outcomes = list(pool.map(lambda j: _grade_typed(j[1], j[2], j[3], j[4], execute_batch), typed_jobs))
+        for job, outcome in zip(typed_jobs, outcomes):
+            typed_results[job[0]] = outcome
+
     problem_results = []
     passed_total = 0
     for idx, (prob, pid, lang, prob_total) in enumerate(plans):
-        passed = passed_by_problem[idx]
+        typed = typed_results.get(idx)
+        passed = typed["passed"] if typed else passed_by_problem[idx]
         passed_total += passed
-        code_present = any(j[0] == idx for j in jobs)
-        problem_results.append({
+        code_present = typed is not None or any(j[0] == idx for j in jobs)
+        classification = typed["classification"] if typed else worst.get(idx, judge0_service.OK if code_present else "NO_SUBMISSION")
+        item = {
             "problem_id": pid, "title": prob.get("title"), "language": lang,
             "passed_tests": passed, "total_tests": prob_total,
             "score": (passed / prob_total * 100) if prob_total > 0 else 0.0,
-            "classification": worst.get(idx, judge0_service.OK if code_present else "NO_SUBMISSION"),
-            "message": message.get(idx, ""),
-        })
+            "classification": classification,
+            "message": typed["message"] if typed else message.get(idx, ""),
+        }
+        if typed:
+            item["tests"] = typed["tests"]       # pass / fail per test (ids and verdicts only: never inputs or expected values)
+        problem_results.append(item)
     score = (passed_total / total_hidden * 100) if total_hidden > 0 else 0.0     # pooled hidden tests, full precision
     return {"score": score, "problems": problem_results, "total_hidden_tests": total_hidden, "passed_hidden_tests": passed_total}
 
@@ -342,7 +509,7 @@ def normalize_submission(section: str, payload: Optional[Dict[str, Any]], questi
             if len(code.encode("utf-8")) > MAX_CODE_BYTES:
                 raise ValueError("Code exceeds the 64 KB submission limit.")
             try:
-                lang = normalize_language(sol.get("language"))
+                lang = coding_spec.normalize_language(sol.get("language"))       # python | java | cpp | c (a problem decides which it offers)
             except ValueError:
                 lang = "python"
             solutions[str(pid)] = {"language": lang, "code": code}
@@ -428,6 +595,78 @@ def _java_starter(params: List[str]) -> str:
             "    }\n}\n")
 
 
+def _adapt_typed_problem(p: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    A v2 blueprint problem (typed signature, 2 examples + 5 hidden tests) -> (what the browser gets, what stays on the server).
+    The browser gets the starter code of EVERY language, the signature, and only the 2 examples. The server keeps the spec and all 7
+    graded tests (the 2 examples and the 5 hidden ones); expected values and the reference solution never leave it.
+    """
+    pid = str(p["id"])
+    spec = coding_spec.validate_spec({**p["signature"], "compare": p.get("compare")})
+    names = [prm["name"] for prm in spec["params"]]
+
+    def values_of(case: Dict[str, Any]) -> List[Any]:
+        data = case["input"]
+        return [data[n] for n in names] if isinstance(data, dict) else list(data)
+
+    public, graded = [], []
+    explanations = p.get("examples") or []
+    for i, case in enumerate(p["public_test_cases"]):
+        values = coding_spec.check_args(spec, values_of(case))
+        expected = coding_spec.check_value(case["expected"], spec["returns"], "expected")
+        explanation = (case.get("explanation") or (explanations[i].get("explanation") if i < len(explanations) and isinstance(explanations[i], dict) else "")) or ""
+        public.append({"id": f"{pid}-p{i + 1}", "input": coding_spec.display_input(spec, values), "args": coding_spec.display_values(spec, values),
+                       "expected_output": json.dumps(expected, separators=(",", ":")), "explanation": explanation})
+        graded.append({"id": f"{pid}-p{i + 1}", "input": coding_spec.encode_input(spec, values), "expected": expected, "example": True})
+    for i, case in enumerate(p["hidden_test_cases"]):
+        values = coding_spec.check_args(spec, values_of(case))
+        expected = coding_spec.check_value(case["expected"], spec["returns"], "expected")
+        graded.append({"id": f"{pid}-h{i + 1}", "input": coding_spec.encode_input(spec, values), "expected": expected, "example": False})
+    constraints = p.get("constraints") or []
+    client = {
+        "id": pid, "title": p["title"], "difficulty": p.get("difficulty", "Medium"), "description": p["description"],
+        "input_format": "", "output_format": "",
+        "constraints": "\n".join(constraints) if isinstance(constraints, list) else str(constraints),
+        "function_name": spec["name"], "params": spec["params"], "returns": spec["returns"],
+        "languages": list(coding_spec.LANGUAGES), "starter_code": coding_spec.all_starters(spec),
+        "public_test_cases": public,
+    }
+    return client, {"spec": spec, "comparison": "typed", "hidden_test_cases": graded}
+
+
+# An option that points at other options ("both A and B", "all of the above", "option C") stops being true when the options are reordered.
+_OPTION_REFERENCE = re.compile(r"\b(?i:all|none|both|neither)\s+(?i:of)\s+(?i:the\s+)?(?i:above|these|them|those)\b|\b(?i:both|and|or|option|choice|answer)\s+\(?[A-D]\)?(?![A-Za-z])|(?<![A-Za-z])[A-D]\s+(?i:and|or)\s+[A-D](?![A-Za-z])|(?<![A-Za-z])[A-D]\s*&\s*[A-D](?![A-Za-z])")
+
+
+def shuffle_aptitude(client: List[Dict[str, Any]], keys: Dict[str, Any], rng=None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    A different aptitude paper for every candidate: the questions come in a random order and each question's options in a random order
+    (relabelled A-D in the order shown), and the server-side answer key is remapped to match, so scoring is unchanged. Candidates sitting
+    side by side or sharing answers in a chat cannot match "question 3 is C". A question whose options refer to each other keeps its option order.
+    """
+    rng = rng or random.SystemRandom()
+    questions = [dict(q) for q in client]
+    new_keys = {qid: dict(info) for qid, info in keys.items()}
+    for q in questions:
+        options = list(q.get("options") or [])
+        qid = str(q.get("id"))
+        if len(options) != 4 or qid not in new_keys or any(_OPTION_REFERENCE.search(str(o.get("text", ""))) for o in options):
+            continue
+        order = list(range(4))
+        rng.shuffle(order)
+        original_correct = str(new_keys[qid].get("correct_key", "")).strip().upper()
+        shuffled, new_correct = [], original_correct
+        for position, source in enumerate(order):
+            letter = "ABCD"[position]
+            shuffled.append({"key": letter, "text": options[source]["text"]})
+            if options[source]["key"] == original_correct:
+                new_correct = letter
+        q["options"] = shuffled
+        new_keys[qid]["correct_key"] = new_correct
+    rng.shuffle(questions)
+    return questions, new_keys
+
+
 def adapt_blueprint(bp: Dict[str, Any]) -> Dict[str, Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
     """
     Convert a validated recruitment blueprint into the student round formats, so the shared components and evaluators
@@ -447,6 +686,11 @@ def adapt_blueprint(bp: Dict[str, Any]) -> Dict[str, Tuple[List[Dict[str, Any]],
     code_keys: Dict[str, Any] = {}
     for p in bp["coding_problems"]:
         pid = str(p["id"])
+        if p.get("signature"):
+            client, keys = _adapt_typed_problem(p)
+            code_client.append(client)
+            code_keys[pid] = keys
+            continue
         params = _solve_params(p)
         public = [{"id": f"{pid}-p{i + 1}", "input": _stdin_for(c["input"], params), "expected_output": _expected_text(c["expected"])}
                   for i, c in enumerate(p["public_test_cases"])]

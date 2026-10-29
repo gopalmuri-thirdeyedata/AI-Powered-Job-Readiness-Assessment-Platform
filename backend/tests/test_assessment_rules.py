@@ -269,7 +269,7 @@ def test_aptitude_unanswered_score_zero_and_wrong_answers_do_not_lose_marks(db, 
 
 
 # ============================================================ interruptions
-def test_reload_without_the_lease_ends_the_attempt_and_a_live_second_tab_does_not(db, env, clock):
+def test_reload_resumes_the_attempt_and_a_live_second_tab_does_not_take_it(db, env, clock):
     started = start(env)
     client.post(h.sess_url(started, "heartbeat"), headers=h.sh(started))
     clock.advance(5)
@@ -277,14 +277,24 @@ def test_reload_without_the_lease_ends_the_attempt_and_a_live_second_tab_does_no
     assert second_tab.status_code == 409 and "another window" in second_tab.json()["detail"]
     assert session_state(db, started) == "APTITUDE_IN_PROGRESS"                         # the live sitting is untouched
     assert state(started).status_code == 200
-    clock.advance(sweeper.HEARTBEAT_ABANDON_SECONDS + 5)                               # the original page is gone (refresh / closed)
+    clock.advance(sweeper.HEARTBEAT_ABANDON_SECONDS - 20)                              # the original page was reloaded (heartbeats stopped, not yet abandoned)
     reloaded = state(started, lease=False)
-    assert reloaded.status_code == 409 and "cannot be resumed" in reloaded.json()["detail"]
+    assert reloaded.status_code == 409 and "reload the page to resume" in reloaded.json()["detail"].lower()
+    assert session_state(db, started) == "APTITUDE_IN_PROGRESS"                         # a reload no longer ends the attempt
+    resumed = client.post(h.sess_url(started, "resume"), headers={"X-Session-Token": started["session_token"]})
+    assert resumed.status_code == 200 and resumed.json()["resumed"] is True
+    assert state(started).status_code == 409                                           # the pre-reload lease is dead
+
+
+def test_a_sitting_nobody_returns_to_is_ended_by_the_sweeper_after_the_silence_window(db, env, clock):
+    started = start(env)
+    clock.advance(sweeper.HEARTBEAT_ABANDON_SECONDS + 5)                               # the page is gone and nobody resumed
+    assert sweeper.sweep_once(worker_id="rules-test-silence", now=clock.now())
     assert session_state(db, started) == "ABANDONED"
-    assert state(started).status_code == 409                                           # even the old lease cannot resume it
     row = h.session_row(db, started["session_uuid"])
     assert row.final_report_data["overall_score"] is None and row.final_report_data["complete"] is False
-    assert "permanently" in text_of("answering") and "cannot be resumed" in text_of("answering")
+    assert "resume" in text_of("answering").lower() and "more than 5 integrity events" in text_of("answering")
+    assert "disqualified" in text_of("answering")
 
 
 def test_silence_for_the_stated_window_ends_the_attempt_but_keeps_saved_work(db, env, clock):

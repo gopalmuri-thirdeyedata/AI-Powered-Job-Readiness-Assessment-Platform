@@ -16,7 +16,8 @@ const proctorRouterFile = fs.readFileSync(path.join(__dirname, '..', 'backend', 
 describe('RoleReady Person Detection, Device Monitoring & Fullscreen Enforcement Suite', () => {
 
     test('1. Backend YOLO model configures CPU-optimized yolov8n with person and cell phone classes', () => {
-        assert.ok(proctorServiceFile.includes("yolov8n.pt"), "Backend proctor service must point to yolov8n.pt model");
+        assert.ok(proctorServiceFile.includes("yolov8n.onnx"), "Backend proctor service must point to the yolov8n.onnx model (ONNX Runtime)");
+        assert.ok(proctorServiceFile.includes("face_detection_yunet"), "Backend proctor service must also use the YuNet face detector");
         assert.ok(proctorServiceFile.includes("0:  'person'"), "Class 0 must be person");
         assert.ok(proctorServiceFile.includes("67: 'cell phone'"), "Class 67 must be cell phone");
         assert.ok(proctorServiceFile.includes("get_model_status"), "Service must expose get_model_status");
@@ -30,10 +31,10 @@ describe('RoleReady Person Detection, Device Monitoring & Fullscreen Enforcement
         assert.ok(proctorServiceFile.includes("phone_detected"), "Frame analysis must detect phone");
     });
 
-    test('3. useFaceProctoring hook connects to /api/proctor/analyze-frame with 3000ms loop', () => {
+    test('3. useFaceProctoring hook connects to /api/proctor/analyze-frame with 2000ms loop', () => {
         assert.ok(proctorHookFile.includes('/api/proctor/analyze-frame'), "Hook must post to /api/proctor/analyze-frame");
-        assert.ok(proctorHookFile.includes('CHECK_INTERVAL_MS = 3000'), "Hook must run on 3000ms interval");
-        assert.ok(proctorHookFile.includes('NO_PERSON_THRESHOLD = 3'), "Hook must use 3 consecutive checks (~9s) before no_person strike");
+        assert.ok(proctorHookFile.includes('CHECK_INTERVAL_MS = 2000'), "Hook must run on 2000ms interval");
+        assert.ok(proctorHookFile.includes('NO_PERSON_THRESHOLD = 3'), "Hook must use 3 net missed checks (~6s) before no_person strike");
     });
 
     test('4. useFaceProctoring returns detections, faceBoxes, personCount, and model status', () => {

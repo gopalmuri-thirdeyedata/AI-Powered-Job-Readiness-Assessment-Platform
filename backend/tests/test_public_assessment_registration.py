@@ -42,7 +42,7 @@ def test_public_assessment_metadata_safe(env):
     body = r.json()
     assert set(body) == {"title", "role", "company_name", "organization_name", "description_snippet", "sections", "total_duration_minutes", "rules"}
     assert body["total_duration_minutes"] == 60
-    assert [s["minutes"] for s in body["sections"]] == [20, 20, 20]
+    assert [s["minutes"] for s in body["sections"]] == [20, 20, 10]
     text = json.dumps(body).lower()
     for forbidden in ("correct_key", "hidden_test", "blueprint", "registration", "share_token", '"id"', "organization_id"):
         assert forbidden not in text

@@ -17,6 +17,7 @@ Key properties
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta
@@ -32,7 +33,7 @@ from services import assessment_clock as clock
 from services import assessment_engine as engine
 from services import assessment_policy as policy
 from services import jd_blueprint_service as blueprints
-from services import function_style, judge0_service, student_code_run, student_sandbox
+from services import coding_spec, function_style, judge0_service, student_code_run, student_sandbox
 from services import share_link_policy as link_policy
 from services import elevenlabs_service
 from services.rate_limiter import ConcurrencyGate, SlidingWindowLimiter
@@ -52,11 +53,25 @@ HEARTBEAT_INTERVAL_SECONDS = 15
 MAX_ANSWER_CHARS = engine.MAX_INTERVIEW_ANSWER_CHARS
 MAX_VIOLATION_EVENTS = 200
 RULES_VERSION = 1
+# More than this many integrity events (tab switches, no face, phone, second person, ...) ends the assessment and submits the work so far.
+MAX_INTEGRITY_EVENTS = max(1, int(os.getenv("ASSESSMENT_MAX_INTEGRITY_EVENTS", "5")))
+# A reload / reopened tab resumes the same attempt (same timers, saved work restored). Each resume is recorded; this many are allowed per attempt.
+MAX_RESUMES = max(0, int(os.getenv("ASSESSMENT_MAX_RESUMES", "5")))
+RESUME_EVENT = "Page reloaded (assessment resumed)"
+# Switching to another tab more than this many times disqualifies: the assessment ends and the work so far is submitted.
+MAX_TAB_SWITCHES = max(0, int(os.getenv("ASSESSMENT_MAX_TAB_SWITCHES", "1")))
+_FOCUS_EVENT_MARKERS = ("tab switch",)          # a real tab switch only: a window losing focus (a notification, a click elsewhere) is ignored
+DISQUALIFIED_MESSAGE = ("You left the assessment window more than once, so the assessment was ended and you are disqualified. "
+                        "The work you had completed so far was submitted for review.")
+INTEGRITY_ENDED_MESSAGE = ("Your assessment was ended because too many integrity events were recorded. "
+                           "The work you had completed so far was submitted for review.")
 
 TERMINAL_STATES = ("COMPLETED", "TIMED_OUT", "ABANDONED", "INFRASTRUCTURE_FAILURE", "MANUAL_REVIEW_REQUIRED",
                    "EVALUATION_PENDING", "REVOKED_RETRIED")
 
-run_code_limiter = SlidingWindowLimiter(limit=5, window_seconds=60)
+# Run presses per candidate per minute (a Run compiles and runs the examples; one batch costs the sandbox roughly 0.1-1 s). It was a fixed 5, which a
+# candidate iterating on a solution hits within a minute. RUN_CODE_LIMIT_PER_MINUTE overrides it.
+run_code_limiter = SlidingWindowLimiter(limit=max(1, int(os.getenv("RUN_CODE_LIMIT_PER_MINUTE", "10"))), window_seconds=60)
 run_code_gate = ConcurrencyGate(limit=2)
 voice_init_limiter = SlidingWindowLimiter(limit=4, window_seconds=60)   # each call rebuilds the interview and stores its prompt
 voice_turn_limiter = SlidingWindowLimiter(limit=40, window_seconds=60)  # each turn calls two billable voice APIs and Gemini
@@ -126,7 +141,10 @@ def applicable_deadline(session: models.RoleReadySession) -> datetime:
 # ==============================================================================
 def build_round_payloads(bp: Dict[str, Any]) -> Dict[str, Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
     """Returns {SECTION: (client_safe_payload, server_only_keys)} in the student round formats; secrets stay server-side."""
-    return engine.adapt_blueprint(bp)
+    payloads = engine.adapt_blueprint(bp)
+    apt_client, apt_keys = payloads["APTITUDE"]
+    payloads["APTITUDE"] = engine.shuffle_aptitude(apt_client, apt_keys)     # a different paper for every candidate (the key is remapped)
+    return payloads
 
 
 def _load_blueprint_for_registration(db: Session, job: models.JobDescription, reg: models.CandidateRegistration) -> Dict[str, Any]:
@@ -254,7 +272,7 @@ def start_assessment(db: Session, share_token: str, registration_token: Optional
             first = section == "APTITUDE"
             db.add(models.RoleReadyRoundAttempt(
                 session_id=session.id, round_type=section, round_order=order,
-                status="IN_PROGRESS" if first else "PENDING", time_limit_minutes=SECTION_MINUTES,
+                status="IN_PROGRESS" if first else "PENDING", time_limit_minutes=policy.section_minutes(section),
                 questions_payload=client_payload, server_keys_payload=server_payload,
                 started_at=_db_dt(now) if first else None,
             ))
@@ -356,14 +374,130 @@ def load_session(db: Session, session_uuid: str, session_token: Optional[str], l
     if require_lease and not _hash_matches(lease_token, session.active_lease_hash):
         now = clock.now()
         hb = clock.aware(session.last_heartbeat_at)
+        db.rollback()
         if hb is not None and (now - hb).total_seconds() <= FRESH_HEARTBEAT_SECONDS:
             # A live sitting exists elsewhere: reject WITHOUT touching it (accidental duplicate tabs cannot sabotage it).
-            db.rollback()
             raise _http(409, "Active assessment sitting detected in another window. Simultaneous multi-tab access is prohibited.")
-        db.rollback()
-        abandon_session(db, probe_pk, "lease_missing", now=now)
-        raise _http(409, "Session interrupted. Page refresh detected. In accordance with strict recruitment integrity rules, assessments cannot be resumed after a reload.")
+        # The page lost its in-memory lease (a reload, or the connection dropped). Nothing is ended here: the page calls /resume, which hands
+        # it a new lease. (A sitting nobody returns to is finalized by the sweeper once the heartbeat has been silent long enough.)
+        raise _http(409, "This window is not connected to the assessment (the page was reloaded or the connection was lost). Reload the page to resume where you left off.")
     return session
+
+
+def _events_of(rounds):
+    """Every recorded proctoring event of the sitting, in round order."""
+    out = []
+    for name in SECTION_ORDER:
+        rnd = rounds.get(name)
+        if rnd is not None and isinstance(rnd.proctoring_violations, list):
+            out.extend(e for e in rnd.proctoring_violations if isinstance(e, dict))
+    return out
+
+
+def resume_session(db: Session, session_uuid: str, session_token: Optional[str], viewer=None) -> Dict[str, Any]:
+    """
+    Reload / reopened tab: hand the sitting a NEW lease so the candidate continues the same attempt. Needs only the session capability (the
+    old lease died with the page). The clock does not pause (deadlines are server side), the saved draft and the recorded events come back,
+    and the resume is itself recorded as an event for the hiring team (it does not count toward the integrity limit; MAX_RESUMES caps it).
+    The tab that resumes wins: an older tab loses its lease, so two windows can never work on one attempt.
+    """
+    probe = db.query(models.RoleReadySession).filter(
+        models.RoleReadySession.session_uuid == session_uuid,
+        models.RoleReadySession.workflow_type == WORKFLOW_TYPE,
+    ).first()
+    if probe is None:
+        raise _http(404, "Assessment session not found.")
+    if not session_token:
+        raise _http(401, "Session capability required.")
+    if not _hash_matches(session_token, probe.session_capability_hash):
+        raise _http(403, "Invalid session capability.")
+    if viewer is not None and probe.registration_id:
+        owner = db.query(models.CandidateRegistration.student_user_id).filter(
+            models.CandidateRegistration.id == probe.registration_id).scalar()
+        if owner is not None and viewer() != owner:
+            db.rollback()
+            raise _http(401, "Sign in with your student account to continue this assessment.")
+    pk = probe.id
+    now = clock.now()
+    if probe.current_state in IN_PROGRESS_STATES:
+        probe = _enforce_expiry(db, probe, now)          # a deadline that passed while the page was away ends the section / attempt as usual
+    if probe.current_state not in IN_PROGRESS_STATES:
+        out = build_state(db, probe, now)
+        db.rollback()
+        return {"resumed": False, "state": out}
+
+    db.rollback()
+    session = lock_session(db, pk)
+    if session.current_state not in IN_PROGRESS_STATES:
+        out = build_state(db, session, now)
+        db.rollback()
+        return {"resumed": False, "state": out}
+    rounds = get_rounds(db, pk)
+    past = sum(1 for e in _events_of(rounds) if e.get("type") == RESUME_EVENT)
+    if past >= MAX_RESUMES:
+        db.rollback()
+        raise _http(409, f"This assessment has already been reloaded {MAX_RESUMES} times and cannot be resumed again.")
+    active = SECTION_FOR_STATE[session.current_state]
+    lease = secrets.token_urlsafe(24)
+    session.active_lease_hash = sha256_hex(lease)
+    session.last_heartbeat_at = _db_dt(now)
+    event = {"type": RESUME_EVENT, "strike": 0, "timestamp": now.isoformat()}
+    existing = list(rounds[active].proctoring_violations or []) if isinstance(rounds[active].proctoring_violations, list) else []
+    rounds[active].proctoring_violations = (existing + [event])[-MAX_VIOLATION_EVENTS:]
+    db.commit()
+
+    rounds = get_rounds(db, pk)
+    session = db.query(models.RoleReadySession).filter(models.RoleReadySession.id == pk).populate_existing().first()
+    draft = {k: v for k, v in (rounds[active].submission_payload or {}).items() if k in ("answers", "solutions", "transcript")}
+    out = {"resumed": True, "session_uuid": session_uuid, "session_lease": lease, "resume_count": past + 1,
+           "state": build_state(db, session, now), "draft": {"section": active.lower(), "payload": draft},
+           "violations": _events_of(rounds)[:MAX_VIOLATION_EVENTS]}
+    db.rollback()
+    return out
+
+
+def is_focus_event(event_type: str) -> bool:
+    """Switching to another browser tab (a window merely losing focus is not an event any more)."""
+    low = (event_type or "").lower()
+    return any(marker in low for marker in _FOCUS_EVENT_MARKERS)
+
+
+def terminate_for_integrity(db: Session, session: models.RoleReadySession, violations: Any) -> Dict[str, Any]:
+    """
+    Stop the assessment and submit what exists when EITHER the candidate left the assessment window more than MAX_TAB_SWITCHES times
+    (disqualified) OR more than MAX_INTEGRITY_EVENTS integrity events of any kind were recorded. The server checks the events it is given
+    (resume events never count), keeps them as evidence, scores the active section from the saved draft (like any interrupted sitting) and
+    marks the sections not reached as unattempted.
+    """
+    cleaned = _clean_violations(violations)
+    counted = [v for v in cleaned if v["type"] != RESUME_EVENT]
+    count = len(counted)
+    switches = sum(1 for v in counted if is_focus_event(v["type"]))
+    disqualified = switches > MAX_TAB_SWITCHES
+    if not disqualified and count <= MAX_INTEGRITY_EVENTS:
+        db.rollback()
+        raise _http(400, f"The assessment ends only after more than {MAX_TAB_SWITCHES} tab switches or more than {MAX_INTEGRITY_EVENTS} integrity events; "
+                         f"{switches} tab switches and {count} events were reported.")
+    pk, session_uuid, org_id = session.id, session.session_uuid, session.organization_id
+    active = SECTION_FOR_STATE[session.current_state]
+    rnd = get_rounds(db, pk)[active]
+    if rnd.status == "IN_PROGRESS":
+        resumes = [e for e in _events_of({active: rnd}) if e.get("type") == RESUME_EVENT]
+        rnd.proctoring_violations = (cleaned + [e for e in resumes if e not in cleaned])[:MAX_VIOLATION_EVENTS]
+        db.commit()
+    db.rollback()
+    terminalize_session(db, pk, "ABANDONED", reason="disqualified_tab_switch" if disqualified else "integrity_limit_exceeded")
+    db.add(models.ActivityLog(user_id=None, organization_id=org_id, target=f"session:{session_uuid}",
+                              action="ASSESSMENT_DISQUALIFIED_TAB_SWITCH" if disqualified else "ASSESSMENT_ENDED_INTEGRITY_LIMIT",
+                              details=json.dumps({"events": count, "tab_switches": switches, "event_limit": MAX_INTEGRITY_EVENTS, "tab_switch_limit": MAX_TAB_SWITCHES})))
+    db.commit()
+    fresh = db.query(models.RoleReadySession).filter(models.RoleReadySession.id == pk).populate_existing().first()
+    out = build_state(db, fresh)
+    db.rollback()
+    out["message"] = DISQUALIFIED_MESSAGE if disqualified else INTEGRITY_ENDED_MESSAGE
+    out["terminated"] = True
+    out["disqualified"] = disqualified
+    return out
 
 
 def authorize_proctoring(db: Session, session_uuid: Optional[str], session_token: Optional[str]) -> int:
@@ -413,6 +547,7 @@ def build_state(db: Session, session: models.RoleReadySession, now: Optional[dat
             "started_at": _iso(rounds[section].started_at),
             "deadline_at": deadline.isoformat(),
             "remaining_seconds": max(0, int((deadline - now).total_seconds())),
+            "limit_minutes": policy.section_minutes(section),
             "questions": rounds[section].questions_payload,
         }
     else:
@@ -547,17 +682,19 @@ def run_code(db: Session, session: models.RoleReadySession, problem_id: str, lan
         raise _http(408, "Assessment round deadline reached. No further work permitted.")
     rnd = get_rounds(db, session.id)["CODING"]
     problem = next((p for p in (rnd.questions_payload or []) if str(p.get("id")) == str(problem_id)), None)
-    comparison = ((rnd.server_keys_payload or {}).get(str(problem_id)) or {}).get("comparison", "text")
-    driver = ((rnd.server_keys_payload or {}).get(str(problem_id)) or {}).get("driver")
+    problem_keys = (rnd.server_keys_payload or {}).get(str(problem_id)) or {}
+    comparison = problem_keys.get("comparison", "text")
+    driver = problem_keys.get("driver")
+    spec = problem_keys.get("spec")      # typed (LeetCode-style) problem: Python, Java, C++ and C
     session_pk = session.id
     db.rollback()  # never hold a DB lock while the sandbox runs
     if problem is None:
         raise _http(404, "Problem not found.")
     try:
-        lang = engine.normalize_language(language)
+        lang = coding_spec.normalize_language(language) if spec else engine.normalize_language(language)
     except ValueError as exc:
         raise _http(400, str(exc))
-    if lang != "python":
+    if lang != "python" and not spec:
         raise _http(400, PYTHON_ONLY_DETAIL)
     if len((code or "").encode("utf-8")) > engine.MAX_CODE_BYTES:
         raise _http(400, "Code exceeds the 64 KB submission limit.")
@@ -568,7 +705,9 @@ def run_code(db: Session, session: models.RoleReadySession, problem_id: str, lan
     if not run_code_gate.acquire(session_pk):
         raise _http(429, "A code run is already in progress.")
     try:
-        result = student_code_run.run_samples(problem, code, lang, driver=driver, custom_input=custom_input, comparison=comparison)
+        result = student_code_run.run_samples(problem, code, lang, driver=driver, custom_input=custom_input, comparison=comparison, spec=spec)
+    except ValueError as exc:            # the student's own testcase does not fit the parameters
+        raise _http(400, str(exc))
     except engine.SandboxBusy:
         raise _http(429, "The code runner is busy. Please retry in a few seconds.")
     except engine.SandboxUnavailable:
@@ -635,7 +774,7 @@ def voice_init(db: Session, session: models.RoleReadySession) -> Dict[str, Any]:
         "voiceConfig": voice_config,
         "questions": client_questions,
         "role": role, "company": company or "Target Company", "candidateName": candidate_name,
-        "duration": SECTION_MINUTES,
+        "duration": policy.section_minutes("INTERVIEW"),
         "started_at": started_at, "deadline_at": deadline.isoformat(), "remaining_seconds": remaining,
         "server_time": now.isoformat(),
     }
@@ -669,10 +808,10 @@ def voice_turn(db: Session, session: models.RoleReadySession, audio, content_typ
         raise _http(exc.status_code, exc.public_message)
 
 
-def voice_turn_stream(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool):
+def voice_turn_stream(db: Session, session: models.RoleReadySession, audio, content_type: str, history, opening: bool, hint: str = ""):
     """The same exchange as voice_turn, as a stream of events so the first sentence is spoken early (all gating runs before the first byte)."""
     voice_session = _voice_turn_session(db, session)
-    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening)
+    return elevenlabs_service.run_turn_stream(voice_session, audio=audio, content_type=content_type, history=history, opening=opening, hint=hint)
 
 
 caption_token_limiter = SlidingWindowLimiter(limit=8, window_seconds=60)      # one token per connection; reconnects are rare
@@ -721,7 +860,7 @@ def evaluate_round(db: Session, session: models.RoleReadySession, rnd: models.Ro
         try:
             return {"status": "EVALUATED", **engine.evaluate_coding(rnd.questions_payload or [], keys,
                                                                      function_style.compose_solutions(keys, submission.get("solutions")),
-                                                                     execute=_sandboxed_execute)}
+                                                                     execute=_sandboxed_execute, execute_batch=student_sandbox.run_batch)}
         except engine.SandboxUnavailable:
             return {"status": "EVALUATION_PENDING", "score": None, "pending_reason": "Sandbox unavailable",
                     "problems": [{"problem_id": str(p.get("id")), "title": p.get("title")} for p in (rnd.questions_payload or [])]}
@@ -931,7 +1070,7 @@ def close_section(db: Session, session_pk: int, section: str, payload: Optional[
             _finalize_in_place(session, rounds, "TIMED_OUT", done_at)
         else:
             nxt = SECTION_ORDER[idx + 1]
-            deadline = min(done_at + timedelta(minutes=SECTION_MINUTES), overall)
+            deadline = min(done_at + timedelta(minutes=policy.section_minutes(nxt)), overall)
             session.current_state = STATE_FOR_SECTION[nxt]
             session.current_section_deadline_at = _db_dt(deadline)
             rounds[nxt].status = "IN_PROGRESS"
@@ -966,8 +1105,19 @@ def close_section(db: Session, session_pk: int, section: str, payload: Optional[
 def submit_section(db: Session, session: models.RoleReadySession, section: str, payload: Optional[Dict[str, Any]],
                    violations: Any = None) -> Dict[str, Any]:
     if section == "CODING" and isinstance((payload or {}).get("solutions"), dict):
-        for sol in payload["solutions"].values():        # an explicit submission is Python only (older drafts that close on the timer are still graded)
-            if isinstance(sol, dict) and (sol.get("language") or "python") not in ("python", "python3"):
+        # An explicit submission may only use a language its problem offers: typed (LeetCode-style) problems offer Python, Java, C++ and C;
+        # older stdin/stdout problems are Python only (older drafts that close on the timer are still graded).
+        coding = get_rounds(db, session.id).get("CODING")
+        keys = (coding.server_keys_payload or {}) if coding is not None else {}
+        for pid, sol in payload["solutions"].items():
+            if not isinstance(sol, dict):
+                continue
+            if (keys.get(str(pid)) or {}).get("spec"):
+                try:
+                    coding_spec.normalize_language(sol.get("language"))
+                except ValueError as exc:
+                    raise _http(400, str(exc))
+            elif (sol.get("language") or "python") not in ("python", "python3"):
                 raise _http(400, PYTHON_ONLY_DETAIL)
     pk = session.id
     db.rollback()

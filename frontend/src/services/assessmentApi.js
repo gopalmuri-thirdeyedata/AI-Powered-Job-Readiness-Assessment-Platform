@@ -53,10 +53,11 @@ const readable = (err) => {
  *   onSession       called once with { uuid, token, lease } when the attempt exists (the page starts its heartbeat)
  *   onTerminalState called with the latest server state whenever it reports a terminal state
  */
-export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSession = null, onTerminalState = null }) => {
-    let session = null;
+export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSession = null, onTerminalState = null, resume = null }) => {
+    // A reloaded sitting: the attempt already exists (`resume.handle` = { uuid, token, lease } with the lease the server just issued).
+    let session = resume?.handle || null;
     let startPromise = null;
-    let lastState = null;
+    let lastState = resume?.state || null;
 
     const need = () => {
         if (!session) throw readable({ response: { status: 409, data: { detail: 'The assessment has not started yet.' } } });
@@ -68,7 +69,7 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
         deadline_at: state?.section?.deadline_at,
         started_at: state?.section?.started_at,
         server_time: state?.server_time,
-        time_limit_minutes: 20,
+        time_limit_minutes: state?.section?.limit_minutes ?? 20,
     });
     const remember = (state) => {
         lastState = state;
@@ -113,6 +114,22 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
         proctorHeaders: () => (session ? { 'X-Session-Id': session.uuid, 'X-Session-Token': session.token } : {}),
         getHandle: () => session,
         getLastState: () => lastState,
+
+        /**
+         * The section that is running right now, straight from the server state: used after a reload, when the attempt (and its
+         * deadline) already exist, so nothing may be started again. { key, questions | problems, ...timing }
+         */
+        resumeSection: async () => {
+            try {
+                const state = remember(await candidateApi.state(need()));
+                const key = state?.section?.key;
+                if (!key) throw readable({ response: { status: 409, data: { detail: state?.message || 'There is no active section to resume.' } } });
+                const questions = state.section.questions;
+                return { key, session_uuid: session.uuid, current_state: state.state, ...(key === 'coding' ? { problems: questions } : { questions }), ...timing(state) };
+            } catch (err) {
+                throw readable(err);
+            }
+        },
 
         getSession: async () => {
             if (!session) {
@@ -204,8 +221,16 @@ export const createRecruitmentAssessmentApi = ({ shareToken, meta = {}, onSessio
             if (!session) return { saved: false };
             return candidateApi.saveDraft(session, sectionKey, payload, violations);
         },
-        // Recruitment never terminates an attempt on a browser-side proctoring event (policy 'flag'); events are saved with the drafts.
+        // The student-style immediate termination does not exist for candidates (policy 'flag'): see terminateAttempt.
         terminate: async () => ({ status: 'ignored' }),
+        // Ends the attempt because the integrity limits were exceeded. The server re-checks them and answers with the final state + message.
+        terminateAttempt: async (violations, reason) => {
+            try {
+                return remember(await candidateApi.terminate(need(), violations, reason));
+            } catch (err) {
+                throw readable(err);
+            }
+        },
         isTerminalState: (state) => TERMINAL.has(state),
     };
 };

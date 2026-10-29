@@ -37,6 +37,7 @@ def _language_names() -> str:
 
 def candidate_rules() -> List[Dict[str, Any]]:
     section = policy.SECTION_MINUTES
+    interview = policy.section_minutes("INTERVIEW")
     overall = policy.OVERALL_MINUTES
     code_kb = engine.MAX_CODE_BYTES // 1024
     drop_seconds = sweeper.HEARTBEAT_ABANDON_SECONDS
@@ -54,7 +55,7 @@ def candidate_rules() -> List[Dict[str, Any]]:
         {"key": "timing", "title": "Timing", "items": [
             _item("Nothing is timed until you select Start Assessment on the device check page. Reading these instructions, "
                   "ticking the confirmation box and checking your devices do not start any timer.", True),
-            _item(f"Each section has its own {section}-minute timer. The whole assessment has a hard limit of {overall} minutes, "
+            _item(f"Aptitude and Coding each have a {section}-minute timer and the Technical Interview has {interview} minutes. The whole assessment has a hard limit of {overall} minutes, "
                   "counted from the moment you select Start Assessment. It never pauses and never resets.", True),
             _item("The next section's timer starts as soon as you submit the previous one, even if a confirmation screen is still showing. "
                   "Time between sections is not paused, so continue straight away.", True),
@@ -66,13 +67,18 @@ def candidate_rules() -> List[Dict[str, Any]]:
         ]},
         {"key": "answering", "title": "Answering and Submitting", "items": [
             _item("Your work is saved automatically every few seconds. This saved copy is used only to score a section that ends before you "
-                  "submit it (time runs out or the attempt is interrupted). It does not let you resume a closed attempt."),
+                  "submit it (time runs out or the attempt ends early), and to restore your work if the page reloads."),
             _item("You can change your answers as often as you like until you submit the section."),
-            _item("Do not refresh, close or leave the assessment tab, and do not open it in a second tab or window. "
-                  "Refreshing or closing the page ends your attempt permanently; it cannot be resumed.", True),
+            _item("If the page reloads or the tab closes by accident, open the assessment link again in the same browser: your attempt resumes where "
+                  "you left off, with your saved work, and the timers keep running (they are never paused). Each resume is recorded and the number of "
+                  "resumes is limited. Do not open the assessment in a second tab or window.", True),
+            _item("Switching to another tab, leaving fullscreen, or the camera not seeing your face, or seeing a phone or "
+                  "another person, is recorded as an integrity event. If you switch to another tab more than once "
+                  "you are disqualified, and if more than 5 integrity events of any kind are recorded, the assessment ends and the "
+                  "work you have done so far is submitted.", True),
             _item(f"Keep a stable internet connection. A short drop while the page stays open is tolerated, but if the server hears nothing "
-                  f"from your page for about {drop}, your attempt is ended and cannot be resumed. Work saved before that point is kept "
-                  "and the attempt is recorded as incomplete.", True),
+                  f"from your page for about {drop} (for example you lost your connection and did not come back), your attempt is ended and cannot be "
+                  "resumed. Work saved before that point is kept and the attempt is recorded as incomplete.", True),
         ]},
         {"key": "aptitude", "title": "Aptitude", "items": [
             _item("Questions appear one at a time with answer options A to D. Select one option, and move between questions with "
@@ -94,7 +100,7 @@ def candidate_rules() -> List[Dict[str, Any]]:
         ]},
         {"key": "interview", "title": "Technical Interview", "items": [
             _item(f"The interview is a spoken conversation with an AI interviewer about {blueprint.INTERVIEW_COUNT} questions. "
-                  f"It connects as soon as the section begins, and the {section}-minute timer is already running. "
+                  f"It connects as soon as the section begins, and the {interview}-minute timer is already running. "
                   "Allow microphone access when your browser asks, and speak your answers. You can mute yourself or change microphone."),
             _item("If the microphone is blocked or the voice connection fails, you can choose Retry Connection or Answer in writing instead "
                   "(type an answer to each question). The written option appears only after a voice connection has failed."),

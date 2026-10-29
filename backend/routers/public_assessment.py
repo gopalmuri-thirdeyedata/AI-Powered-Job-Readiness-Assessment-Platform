@@ -31,7 +31,7 @@ from services.rate_limiter import SlidingWindowLimiter, client_ip
 SECTIONS = [
     {"key": "aptitude", "label": "Aptitude", "minutes": policy.SECTION_MINUTES},
     {"key": "coding", "label": "Coding", "minutes": policy.SECTION_MINUTES},
-    {"key": "interview", "label": "AI Technical Interview", "minutes": policy.SECTION_MINUTES},
+    {"key": "interview", "label": "AI Technical Interview", "minutes": policy.section_minutes("INTERVIEW")},
 ]
 # Candidate-facing Rules of Assessment: grouped, generated from the enforcing modules' constants (services/assessment_rules.py).
 RULES = assessment_rules.candidate_rules()
@@ -258,6 +258,34 @@ def heartbeat(session_uuid: str, headers=Depends(_session_headers), db: Session 
     return flow.record_heartbeat(db, session)
 
 
+resume_limiter = SlidingWindowLimiter(limit=10, window_seconds=60)       # per sitting: a reload loop cannot hammer the endpoint
+
+
+class TerminateRequest(BaseModel):
+    reason: Optional[str] = None
+    violations: List[Dict[str, Any]] = []
+
+
+@router.post("/session/{session_uuid}/resume")
+def resume(session_uuid: str, request: Request, x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
+           db: Session = Depends(database.get_db)):
+    """
+    A reloaded / reopened page continues the SAME attempt: it needs only the session capability (kept in sessionStorage) and receives a new
+    lease, the saved draft, the recorded integrity events and the current section with its server-side deadline.
+    """
+    if not resume_limiter.allow(session_uuid):
+        raise HTTPException(status_code=429, detail="Too many reload attempts. Please wait a moment and try again.")
+    return flow.resume_session(db, session_uuid, x_session_token, viewer=lambda: _signed_in_user_id(request, db))
+
+
+@router.post("/session/{session_uuid}/terminate")
+def terminate(session_uuid: str, body: TerminateRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+    """More than the allowed number of integrity events: end the assessment and submit the work so far (the count is verified here)."""
+    token, lease = headers
+    session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
+    return flow.terminate_for_integrity(db, session, body.violations)
+
+
 @router.put("/session/{session_uuid}/draft")
 def save_draft(session_uuid: str, body: DraftRequest, headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     token, lease = headers
@@ -335,7 +363,7 @@ def voice_caption_token(session_uuid: str, headers=Depends(_session_headers), db
 
 @router.post("/session/{session_uuid}/voice-turn-stream")
 def voice_turn_stream(session_uuid: str, audio: Optional[UploadFile] = File(None), history: str = Form("[]"), opening: bool = Form(False),
-                      headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
+                      hint: str = Form(""), headers=Depends(_session_headers), db: Session = Depends(database.get_db)):
     """The same exchange as /voice-turn as newline-delimited JSON events, so the first sentence is spoken before the reply is finished."""
     token, lease = headers
     session = flow.load_session(db, session_uuid, token, lease, viewer=headers.viewer)
@@ -345,7 +373,7 @@ def voice_turn_stream(session_uuid: str, audio: Optional[UploadFile] = File(None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid conversation history.")
     events = flow.voice_turn_stream(db, session, audio_bytes, (audio.content_type if audio is not None else None) or elevenlabs_service.AUDIO_WEBM,
-                                    parsed_history, opening)
+                                    parsed_history, opening, hint)
     return StreamingResponse(
         (json.dumps(event, separators=(",", ":")) + "\n" for event in events),
         media_type="application/x-ndjson",

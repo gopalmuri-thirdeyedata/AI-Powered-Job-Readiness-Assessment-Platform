@@ -266,22 +266,22 @@ describe('Candidate API client and runner behaviour', () => {
         assert.equal(errorMessage({}, 'fallback'), 'fallback');
     });
 
-    test('14. the page enforces the no-resume contract on the client side (the server enforces it for real)', () => {
+    test('14. a reload resumes the SAME attempt: the identity in sessionStorage buys a new in-memory lease (the server enforces one window per attempt)', () => {
         assert.ok(pageSrc.includes('const HEARTBEAT_MS = 15000'));
         assert.ok(pageSrc.includes("window.addEventListener('beforeunload', onBeforeUnload)"));
-        const heartbeatEffect = pageSrc.slice(pageSrc.indexOf('// ---- heartbeat'), pageSrc.indexOf('// ---- no-resume guard'));
+        const heartbeatEffect = pageSrc.slice(pageSrc.indexOf('// ---- heartbeat'), pageSrc.indexOf('// ---- unload guard'));
         assert.ok(heartbeatEffect.includes('if (!handle || phase') && heartbeatEffect.includes('candidateApi.heartbeat(handle)'), 'heartbeat only exists once the attempt does');
-        assert.ok(pageSrc.includes('getLease()'), 'the lease is read from memory');
-        assert.ok(pageSrc.includes('candidateApi.state({ uuid: stored.uuid, token: stored.token, lease: getLease() })'), 'a reload asks the server, which decides');
-        assert.ok(pageSrc.includes('An attempt cannot be resumed after a reload'));
+        assert.ok(pageSrc.includes('setLease(res.session_lease)'), 'the new lease is kept in memory only');
+        assert.ok(pageSrc.includes('candidateApi.resume({ uuid: stored.uuid, token: stored.token })'), 'a reload asks the server, which decides');
+        assert.ok(!pageSrc.includes('An attempt cannot be resumed after a reload'));
         assert.ok(adapterSrc.includes('setLease(session.lease)') && adapterSrc.includes('// volatile lease: in-memory ONLY'));
     });
 
-    test('15. all three sections are the Student Platform workspace: Monaco, Python only, voice interview, proctoring', () => {
+    test('15. all three sections are the Student Platform workspace: Monaco, multi-language coding, voice interview, proctoring', () => {
         assert.ok(pageSrc.includes("import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment'"), 'the page reuses the student workspace');
         assert.ok(pageSrc.includes('mode="recruitment"') && pageSrc.includes('skipInstructions') && pageSrc.includes('proctoringPolicy="flag"'));
         assert.ok(!pageSrc.includes('<textarea') && !pageSrc.includes('@monaco-editor') && !pageSrc.includes('voiceInterviewSession'), 'no second editor / voice implementation in the recruitment page');
-        for (const needle of ["from '@monaco-editor/react'", "from '../../utils/voiceInterviewSession'", "const selectedLanguage = 'python'", 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
+        for (const needle of ["from '@monaco-editor/react'", "from '../../utils/voiceInterviewSession'", 'const handleLanguageChange', 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
             assert.ok(workspaceSrc.includes(needle), `shared workspace has: ${needle}`);
         }
         assert.ok(!/hidden_test|hiddenTest|hidden test/i.test(adapterSrc + pageSrc), 'recruitment code never references hidden tests');
@@ -293,12 +293,12 @@ describe('Candidate API client and runner behaviour', () => {
         const panel = workspaceSrc.slice(workspaceSrc.indexOf('Malpractice Integrity Monitor'), workspaceSrc.indexOf('Question Palette Widget'));
         assert.ok(panel.length > 200, 'found the panel');
         assert.ok(!/\{violationCount\}\/3 Strikes/.test(panel), 'no hard-coded "/3 Strikes"');
-        assert.ok(panel.includes('strikeLimit ? `${violationCount}/${strikeLimit} Strikes` : `${violationCount} recorded`'));
+        assert.ok(panel.includes('strikeLimit ? `${violationCount}/${strikeLimit} Strikes` : `${violationCount}/${MAX_INTEGRITY_EVENTS} events`'));
         // the termination wording is only reachable inside a block that requires a strike limit (student policy)
         const terminated = panel.indexOf('Assessment terminated.');
         const gate = panel.lastIndexOf('{strikeLimit && (', terminated);
         assert.ok(terminated > 0 && gate > 0 && !panel.slice(gate, terminated).includes('{!strikeLimit'), 'terminated wording is student-only');
-        assert.ok(panel.includes('Integrity events are recorded for the hiring team. Your assessment continues'));
+        assert.ok(panel.includes('Integrity events are recorded for the hiring team. Switching tabs twice, or more than ${MAX_INTEGRITY_EVENTS} events, ends your assessment.'));
     });
 
     test('15c. an empty Constraints block is not rendered (blueprint problems carry no separate constraints text)', () => {
