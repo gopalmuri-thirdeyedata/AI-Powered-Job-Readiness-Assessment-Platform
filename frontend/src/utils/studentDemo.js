@@ -11,7 +11,7 @@ export const isStudentDemoPath = (pathname) => pathname === STUDENT_DEMO_BASE ||
 export const isStudentDemo = () => typeof window !== 'undefined' && isStudentDemoPath(window.location.pathname);
 
 // The student pages that run in the demo. A real student link (/student/<page>) maps to /admin/student-demo/<page>.
-export const DEMO_PAGES = ['skill-gap', 'roadmap', 'practice', 'coding', 'interview', 'simulation', 'projects', 'resume', 'resume-formatter', 'profile'];
+export const DEMO_PAGES = ['skill-gap', 'roadmap', 'practice', 'coding', 'interview', 'projects', 'resume', 'resume-formatter', 'profile'];
 const DASHBOARD_ALIASES = ['/student', '/student/dashboard', '/student/performance'];
 
 /** The demo route for a real student link, or null when that page is not part of the demo. */

@@ -9,7 +9,6 @@ import {
     Compass,
     Target,
     Code2,
-    Award,
     Sparkles,
     Menu,
     X,
@@ -41,7 +40,6 @@ export const navItems = [
     { label: 'Coding',               path: '/student/coding',     icon: Terminal,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Practice',             path: '/student/practice',   icon: Code2,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Mock Interview',       path: '/student/interview',  icon: MessageSquare,   accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
-    { label: 'Placement Simulation', path: '/student/simulation', icon: Award,           accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Projects',             path: '/student/projects',   icon: FolderGit2,      accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Resume Analyzer',      path: '/student/resume',     icon: FileText,        accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     { label: 'Resume Formatter',     path: '/student/resume-formatter', icon: LayoutTemplate, accent: '#10B981', glow: 'rgba(16,185,129,0.15)' },
@@ -56,7 +54,6 @@ const ASSESSMENT_GATED_PATHS = {
     '/student/practice': 'targeted practice questions',
     '/student/coding': 'the coding problem set',
     '/student/interview': 'mock interviews tailored to your profile',
-    '/student/simulation': 'placement simulations',
     '/student/projects': 'project reviews and recommendations',
     '/student/dashboard': 'your performance dashboard and career readiness metrics',
 };
@@ -201,7 +198,6 @@ const StudentLayout = () => {
                 () => import('../pages/student/StudentPractice'),
                 () => import('../pages/student/StudentCoding'),
                 () => import('../pages/student/StudentMockInterview'),
-                () => import('../pages/student/StudentPlacementSimulation'),
                 () => import('../pages/student/StudentProjects'),
                 () => import('../pages/student/StudentResumeUpload'),
                 () => import('../pages/student/StudentProfile'),
@@ -241,7 +237,7 @@ const StudentLayout = () => {
     const renderSidebar = (forMobile = false) => (
         <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800">
             {/* Nav Items */}
-            <nav className={`flex-1 py-3 overflow-y-auto student-scrollbar ${collapsed && !forMobile ? 'flex flex-col items-center' : ''}`}>
+            <nav className={`flex-1 min-h-0 py-3 overflow-y-auto overflow-x-hidden overscroll-contain student-nav-scroll ${collapsed && !forMobile ? 'flex flex-col items-center' : ''}`}>
                 {effectiveNavItems.map((item, i) => (
                     <NavItem
                         key={item.path}
@@ -400,7 +396,7 @@ const StudentLayout = () => {
                     className="hidden lg:flex flex-col fixed left-0 top-16 bottom-0 z-20 transition-all duration-300 ease-in-out"
                     style={{ width: SIDEBAR_W }}
                 >
-                    <div className="flex flex-col h-full overflow-x-hidden">
+                    <div className="flex flex-col h-full min-h-0 overflow-hidden">
                         {renderSidebar()}
                     </div>
 
@@ -428,7 +424,7 @@ const StudentLayout = () => {
                         />
                         {/* Drawer */}
                         <aside
-                            className="relative z-10 w-64 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200 bg-white dark:bg-slate-900"
+                            className="relative z-10 w-64 h-[100dvh] max-h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-200 bg-white dark:bg-slate-900"
                         >
                             {/* Mobile Drawer Header */}
                             <div className="flex items-center justify-between h-16 border-b border-slate-200/80 dark:border-slate-800 px-4 shrink-0">
@@ -445,7 +441,7 @@ const StudentLayout = () => {
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
-                            <div className="flex-1 flex flex-col overflow-y-auto">
+                            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                                 {renderSidebar(true)}
                             </div>
                         </aside>

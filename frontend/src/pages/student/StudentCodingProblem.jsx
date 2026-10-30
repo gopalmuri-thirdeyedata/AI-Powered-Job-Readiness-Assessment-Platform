@@ -1,33 +1,34 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Editor } from '@monaco-editor/react';
 import { motion } from 'framer-motion';
 import {
     ArrowLeft, CheckCircle2, CheckSquare, ChevronLeft, ChevronRight, Clock, FileText, Lightbulb, Lock, Play, RefreshCw, Send, Star, Terminal, XCircle,
 } from 'lucide-react';
 import codingApi from '../../services/codingApi';
 import RichText from '../../components/coding/RichText';
-import { Block, CaseViewer, EDITOR_OPTIONS, EditorStatusBar, EditorToolbar, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton, useCursorPosition, useIsDark } from '../../components/coding/workspaceParts';
+import CodeEditorPanel from '../../components/coding/CodeEditorPanel';
+import { Block, CaseViewer, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton } from '../../components/coding/workspaceParts';
 import {
     DIFFICULTY_CLASSES, TONE_CLASSES, clearDraft, errorMessage, formatMemory, formatRuntime, isRunShortcut, isSubmitShortcut,
     loadDraft, pickInitialCode, saveDraft, statusLabel, verdictInfo,
 } from '../../utils/codingPlatform';
 import { STUDENT_DEMO_BASE, isStudentDemo } from '../../utils/studentDemo';
+import { defaultLanguage, languageOptionsFor, starterFor } from '../../utils/codingLanguages';
 
 // In the Student Dashboard Demo the page lives under the demo routes, and its drafts must not mix with a real student's drafts in this browser
 const problemPath = (slug) => `${isStudentDemo() ? STUDENT_DEMO_BASE : '/student'}/coding/${slug}`;
-const draftId = (slug) => (isStudentDemo() ? `demo:${slug}` : slug);
+// Python keeps the original draft key, so drafts written before the other languages existed are still found
+const draftId = (slug, language = 'python') => `${isStudentDemo() ? `demo:${slug}` : slug}${language === 'python' ? '' : `:${language}`}`;
 
 const StudentCodingProblem = () => {
     const { slug } = useParams();
     const navigate = useNavigate();
-    const dark = useIsDark();
     const [expanded, setExpanded] = useState(false);
-    const [cursor, trackCursor] = useCursorPosition();
     const [problem, setProblem] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [code, setCode] = useState('');
+    const [language, setLanguage] = useState('python');
     const [leftTab, setLeftTab] = useState('description');
     const [mobileTab, setMobileTab] = useState('problem');
     const [consoleTab, setConsoleTab] = useState('testcase');
@@ -46,6 +47,10 @@ const StudentCodingProblem = () => {
     const rightRef = useRef(null);
     const runRef = useRef(() => {});
     const submitRef = useRef(() => {});
+    const buffersRef = useRef({});                 // { [language]: code }: what was left in the other languages, so switching never loses work
+
+    // The problem as the Assessment's language helpers read it: its languages and one starter per language
+    const languageView = useMemo(() => (problem ? { languages: problem.languages, starter_code: problem.starters || { python: problem.starter_code } } : null), [problem]);
 
     const loadProblem = useCallback(async () => {
         const res = await codingApi.getProblem(slug);
@@ -73,7 +78,11 @@ const StudentCodingProblem = () => {
         loadProblem()
             .then((res) => {
                 if (cancelled) return;
-                setCode(pickInitialCode({ draft: loadDraft(draftId(slug)), lastCode: res.last_code, starter: res.starter_code }));
+                const view = { languages: res.languages, starter_code: res.starters || { python: res.starter_code } };
+                const first = defaultLanguage(view);
+                buffersRef.current = {};
+                setLanguage(first);
+                setCode(pickInitialCode({ draft: loadDraft(draftId(slug, first)), lastCode: (res.last_language || 'python') === first ? res.last_code : null, starter: starterFor(view, first) }));
                 loadSubmissions();
             })
             .catch((err) => { if (!cancelled) setLoadError(errorMessage(err, 'Could not load this problem.')); })
@@ -83,9 +92,9 @@ const StudentCodingProblem = () => {
 
     useEffect(() => {
         if (!problem) return undefined;
-        const t = setTimeout(() => saveDraft(draftId(slug), code), 400);
+        const t = setTimeout(() => saveDraft(draftId(slug, language), code), 400);
         return () => clearTimeout(t);
-    }, [code, slug, problem]);
+    }, [code, slug, language, problem]);
 
     const handleRun = async () => {
         if (running || submitting) return;
@@ -95,7 +104,7 @@ const StudentCodingProblem = () => {
         setConsoleTab('result');
         setMobileTab('console');
         try {
-            const res = await codingApi.run(slug, code, null);
+            const res = await codingApi.run(slug, code, null, language);
             setRunResult(res);
             setCaseIndex(Math.max(0, (res.cases || []).findIndex((c) => c.status === 'failed' || c.status === 'error' || c.status === 'tle')));
         } catch (err) {
@@ -120,7 +129,7 @@ const StudentCodingProblem = () => {
         setConsoleTab('result');
         setMobileTab('console');
         try {
-            const res = await codingApi.submit(slug, code);
+            const res = await codingApi.submit(slug, code, language);
             setSubmitResult(res);
             loadSubmissions();
             if (res.verdict === 'ACCEPTED') loadProblem().catch(() => {});      // unlocks the Solution tab and updates the status
@@ -135,11 +144,6 @@ const StudentCodingProblem = () => {
     runRef.current = handleRun;
     submitRef.current = handleSubmit;
 
-    const onEditorMount = (editor, monaco) => {
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Quote, () => runRef.current());
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => submitRef.current());
-    };
-
     useEffect(() => {
         const onKey = (e) => {
             if (isRunShortcut(e)) { e.preventDefault(); runRef.current(); }
@@ -152,9 +156,20 @@ const StudentCodingProblem = () => {
     const resetCode = () => {
         if (!problem) return;
         if (window.confirm('Reset to the starter code? Your current code will be replaced.')) {
-            clearDraft(draftId(slug));
-            setCode(problem.starter_code);
+            clearDraft(draftId(slug, language));
+            delete buffersRef.current[language];
+            setCode(starterFor(languageView, language));
         }
+    };
+
+    // Switching language parks the current code and brings back that language's own code (its draft, its last submission, or its starter).
+    const handleLanguageChange = (next) => {
+        if (!languageView || next === language || running || submitting) return;
+        buffersRef.current[language] = code;
+        const restored = buffersRef.current[next]
+            ?? pickInitialCode({ draft: loadDraft(draftId(slug, next)), lastCode: (problem.last_language || 'python') === next ? problem.last_code : null, starter: starterFor(languageView, next) });
+        setLanguage(next);
+        setCode(restored);
     };
 
     const openSubmission = async (id) => {
@@ -281,7 +296,7 @@ const StudentCodingProblem = () => {
                                     <p className={`text-base font-bold ${TONE_CLASSES[verdictInfo(openedSubmission.verdict).tone]}`}>{verdictInfo(openedSubmission.verdict).label}</p>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">{openedSubmission.passed}/{openedSubmission.total} testcases · {formatRuntime(openedSubmission.runtime_ms)} · {formatMemory(openedSubmission.memory_kb)}</p>
                                     <pre className="rounded-xl bg-slate-950 text-slate-100 text-xs sm:text-[13px] p-4 overflow-x-auto font-mono">{openedSubmission.code}</pre>
-                                    <button type="button" onClick={() => { setCode(openedSubmission.code); setMobileTab('code'); }} className="min-h-[44px] px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200">Load into editor</button>
+                                    <button type="button" onClick={() => { const lang = languageOptionsFor(languageView).some((o) => o.value === openedSubmission.language) ? openedSubmission.language : language; if (lang !== language) { buffersRef.current[language] = code; setLanguage(lang); } setCode(openedSubmission.code); setMobileTab('code'); }} className="min-h-[44px] px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200">Load into editor</button>
                                 </div>
                             ) : submissions.length === 0 ? (
                                 <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-10">No submissions yet. Write your solution and press Submit.</p>
@@ -307,21 +322,14 @@ const StudentCodingProblem = () => {
 
                 {/* Right: editor above console */}
                 <div ref={rightRef} className={`${mobileTab === 'problem' ? 'hidden' : 'flex'} lg:flex flex-col flex-1 min-w-0 min-h-0 gap-2 lg:gap-0`} style={{ '--editor': `${editorPct}%` }}>
-                    <Pane className={`${mobileTab === 'console' ? 'hidden' : 'flex'} lg:flex flex-col h-[62vh] min-h-[340px] lg:h-auto lg:min-h-0 lg:basis-[var(--editor)] lg:shrink-0`}>
-                        <EditorToolbar onReset={resetCode} expanded={expanded} onToggleExpand={() => setExpanded((v) => !v)} />
-                        <div className="flex-1 min-h-0">
-                            <Editor
-                                height="100%"
-                                language="python"
-                                theme={dark ? 'vs-dark' : 'light'}
-                                value={code}
-                                onChange={(v) => setCode(v ?? '')}
-                                onMount={(editor, monaco) => { trackCursor(editor); onEditorMount(editor, monaco); }}
-                                options={EDITOR_OPTIONS}
-                            />
-                        </div>
-                        <EditorStatusBar saved="Autosaved" position={cursor} />
-                    </Pane>
+                    {/* The shared student code editor: the same component the assessment coding round renders */}
+                    <CodeEditorPanel
+                        className={`${mobileTab === 'console' ? 'hidden' : 'flex'} lg:flex flex-col h-[62vh] min-h-[340px] lg:h-auto lg:min-h-0 lg:basis-[var(--editor)] lg:shrink-0`}
+                        code={code} onCodeChange={setCode} language={language} path={`coding-${slug}.${language}`}
+                        languageOptions={languageOptionsFor(languageView)} onLanguageChange={handleLanguageChange} languageDisabled={running || submitting}
+                        onRun={() => runRef.current()} onSubmit={() => submitRef.current()} onReset={resetCode}
+                        expanded={expanded} onToggleExpand={() => setExpanded((v) => !v)} saved="Autosaved"
+                    />
 
                     <Splitter axis="y" containerRef={rightRef} value={editorPct} onChange={setEditorPct} min={25} max={80} label="Resize editor and console" />
 

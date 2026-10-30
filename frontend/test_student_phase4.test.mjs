@@ -41,8 +41,8 @@ describe('Student Career Platform Phase 4 Frontend Test Suite', () => {
     });
 
     test('5. StudentPractice renders a Python-only coding workspace with public test cases', () => {
-        assert.ok(studentPracticeCode.includes('Source Code'));
-        assert.ok(studentPracticeCode.includes('Python 3'));
+        assert.ok(studentPracticeCode.includes('<CodeEditorPanel') && studentPracticeCode.includes('language={selectedLanguage}') && studentPracticeCode.includes("useState('python')"), 'the shared student code editor, Python by default');
+        assert.ok(!studentPracticeCode.includes('Python 3'), 'the language lives in the editor toolbar (as in the assessment), not in a second static badge');
         assert.ok(!studentPracticeCode.includes('JavaScript'));
         assert.ok(!studentPracticeCode.includes('<option value="java'));
         assert.ok(studentPracticeCode.includes('Public Sample Test Cases'));

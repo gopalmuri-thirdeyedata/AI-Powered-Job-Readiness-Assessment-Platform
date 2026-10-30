@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CandidateTable from '../components/CandidateTable';
+import { downloadCandidatesFullPdf } from '../utils/bulkExportPdf';
 import ConfirmationModal from '../components/ConfirmationModal';
 
 import API_URL from '../apiConfig';
@@ -308,45 +309,7 @@ const Candidates = () => {
             return;
         }
 
-        const { jsPDF } = await import('jspdf');
-        const { default: autoTable } = await import('jspdf-autotable');
-        const doc = new jsPDF();
-        
-        // Add Title Header
-        doc.setFontSize(18);
-        doc.setTextColor(93, 140, 44); // Brand Color #5d8c2c
-        doc.text("PrepWin - Full Candidate Dataset", 14, 20);
-        
-        doc.setFontSize(10);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Generated on: ${new Date().toLocaleString()} | Scope: FULL DATASET`, 14, 26);
-        doc.text(`Total Candidates: ${candidates.length}`, 14, 31);
-        
-        // Table Columns & Rows
-        const headers = [["S.No", "Name", "Email", "Role", "Stage", "Status", "Score"]];
-        const body = candidates.map((c, index) => [
-            index + 1,
-            c.name,
-            c.email,
-            c.role || 'N/A',
-            c.stage,
-            c.status,
-            c.score !== undefined ? `${c.score}%` : '0%'
-        ]);
-
-        autoTable(doc, {
-            startY: 36,
-            head: headers,
-            body: body,
-            theme: 'striped',
-            headStyles: { fillColor: [93, 140, 44] }, // #5d8c2c
-            styles: { fontSize: 8, cellPadding: 2 },
-            columnStyles: {
-                2: { cellWidth: 45 }
-            }
-        });
-
-        doc.save(`Candidates_Report_Full_${new Date().toISOString().slice(0, 10)}.pdf`);
+        await downloadCandidatesFullPdf(candidates);
         setShowExportDropdown(false);
     };
 

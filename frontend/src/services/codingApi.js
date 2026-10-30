@@ -22,13 +22,13 @@ const realCodingApi = {
         return (await axios.get(`${BASE}/problems/${encodeURIComponent(slug)}`, { headers })).data;
     },
 
-    async run(slug, code, customInput) {
+    async run(slug, code, customInput, language = 'python') {
         return (await axios.post(`${BASE}/problems/${encodeURIComponent(slug)}/run`,
-            { code, custom_input: customInput ?? null }, { headers, timeout: 60000 })).data;
+            { code, custom_input: customInput ?? null, language }, { headers, timeout: 60000 })).data;
     },
 
-    async submit(slug, code) {
-        return (await axios.post(`${BASE}/problems/${encodeURIComponent(slug)}/submit`, { code }, { headers, timeout: 90000 })).data;
+    async submit(slug, code, language = 'python') {
+        return (await axios.post(`${BASE}/problems/${encodeURIComponent(slug)}/submit`, { code, language }, { headers, timeout: 90000 })).data;
     },
 
     async bookmark(slug) {

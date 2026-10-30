@@ -19,7 +19,6 @@ import Home from './pages/Home';
 // import StudentPractice from './pages/student/StudentPractice';
 // import StudentMockInterview from './pages/student/StudentMockInterview';
 // import StudentProjects from './pages/student/StudentProjects';
-// import StudentPlacementSimulation from './pages/student/StudentPlacementSimulation';
 // import CollegeDashboard from './pages/college/CollegeDashboard';
 // import CollegeStudents from './pages/college/CollegeStudents';
 // import CollegeDrives from './pages/college/CollegeDrives';
@@ -64,7 +63,6 @@ const StudentCoding = lazy(() => import('./pages/student/StudentCoding'));
 const StudentCodingProblem = lazy(() => import('./pages/student/StudentCodingProblem'));
 const StudentMockInterview = lazy(() => import('./pages/student/StudentMockInterview'));
 const StudentProjects = lazy(() => import('./pages/student/StudentProjects'));
-const StudentPlacementSimulation = lazy(() => import('./pages/student/StudentPlacementSimulation'));
 
 // College Placement Pages (Lazy Loaded)
 const CollegeDashboard = lazy(() => import('./pages/college/CollegeDashboard'));
@@ -139,7 +137,8 @@ function App() {
                             <Route path="coding" element={<StudentCoding />} />
                             <Route path="coding/:slug" element={<StudentCodingProblem />} />
                             <Route path="interview" element={<StudentMockInterview />} />
-                            <Route path="simulation" element={<StudentPlacementSimulation />} />
+                            {/* Placement Simulation is switched off: its old addresses redirect to the dashboard of the same portal. */}
+                            <Route path="simulation" element={<Navigate to="/admin/student-demo" replace />} />
                             <Route path="projects" element={<StudentProjects />} />
                             <Route path="resume" element={<StudentResumeUpload />} />
                             <Route path="resume-formatter" element={<StudentResumeFormatter />} />
@@ -179,7 +178,7 @@ function App() {
                             <Route path="coding" element={<StudentCoding />} />
                             <Route path="coding/:slug" element={<StudentCodingProblem />} />
                             <Route path="interview" element={<StudentMockInterview />} />
-                            <Route path="simulation" element={<StudentPlacementSimulation />} />
+                            <Route path="simulation" element={<Navigate to="/student/hub" replace />} />
                             <Route path="projects" element={<StudentProjects />} />
                             <Route path="resume" element={<StudentResumeUpload />} />
                             <Route path="resume-formatter" element={<StudentResumeFormatter />} />
@@ -192,7 +191,7 @@ function App() {
                             <Route path="/student/coding" element={<StudentCoding />} />
                             <Route path="/student/coding/:slug" element={<StudentCodingProblem />} />
                             <Route path="/student/interview" element={<StudentMockInterview />} />
-                            <Route path="/student/simulation" element={<StudentPlacementSimulation />} />
+                            <Route path="/student/simulation" element={<Navigate to="/student/dashboard" replace />} />
                             <Route path="/student/projects" element={<StudentProjects />} />
                             <Route path="/student/resume" element={<StudentResumeUpload />} />
                             <Route path="/student/resume-formatter" element={<StudentResumeFormatter />} />

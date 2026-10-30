@@ -43,6 +43,7 @@ import {
 } from 'recharts';
 import API_URL from '../apiConfig';
 import CandidateDetailDrawer from '../components/analytics/CandidateDetailDrawer';
+import { downloadAnalyticsPdf } from '../utils/bulkExportPdf';
 
 const FUNNEL_COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#6366f1', '#a855f7', '#10b981', '#5d8c2c'];
 const RECOMMENDATION_COLORS = {
@@ -620,81 +621,7 @@ export default function Analytics() {
             alert("No candidate data available to export.");
             return;
         }
-        const { jsPDF } = await import('jspdf');
-        const { default: autoTable } = await import('jspdf-autotable');
-        const doc = new jsPDF();
-        
-        // Brand Header
-        doc.setFontSize(20);
-        doc.setTextColor(93, 140, 44);
-        doc.text("PrepWin - Pipeline & Talent Intelligence Report", 14, 20);
-        
-        doc.setFontSize(9);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Generated on: ${new Date().toLocaleString()} | Filter: ${selectedRoleFilter} | Date Range: ${selectedDateRange}`, 14, 26);
-        
-        // High Level Metrics Section
-        doc.setFontSize(12);
-        doc.setTextColor(50, 50, 50);
-        doc.text("Executive Summary Metrics:", 14, 35);
-        
-        doc.setFontSize(10);
-        doc.text(`- Total Applicants Evaluated: ${kpi.total_applicants}`, 16, 42);
-        doc.text(`- Active Pipeline Candidates: ${kpi.active_pipeline}`, 16, 48);
-        doc.text(`- Overall Placement/Hired Rate: ${kpi.placement_rate}%`, 16, 54);
-        doc.text(`- Average Overall Talent Score: ${kpi.avg_talent_score}%`, 16, 60);
-        doc.text(`- Pipeline Health Score: ${kpi.pipeline_health_score}% (${kpi.pipeline_health_status})`, 16, 66);
-
-        // Funnel Table
-        doc.setFontSize(12);
-        doc.text("Recruitment Funnel Stage Distribution:", 14, 76);
-        
-        const funnelHeaders = [["Stage Name", "Candidates", "Conversion %"]];
-        const funnelBody = funnelStages.map(item => [item.stage, item.count, `${item.conversion_pct}%`]);
-        
-        autoTable(doc, {
-            startY: 80,
-            head: funnelHeaders,
-            body: funnelBody,
-            theme: 'striped',
-            headStyles: { fillColor: [93, 140, 44] },
-            styles: { fontSize: 8, cellPadding: 2 }
-        });
-        
-        // Recommendations Table
-        const currentY = doc.lastAutoTable.finalY + 10;
-        doc.text("AI Talent Recommendation Breakdown:", 14, currentY);
-        
-        const recHeaders = [["Recommendation Tier", "Count", "Percentage"]];
-        const recBody = recommendationData.map(item => [item.name, item.value, `${item.percentage}%`]);
-        
-        autoTable(doc, {
-            startY: currentY + 4,
-            head: recHeaders,
-            body: recBody,
-            theme: 'striped',
-            headStyles: { fillColor: [93, 140, 44] },
-            styles: { fontSize: 8, cellPadding: 2 }
-        });
-
-        // Add page for details
-        doc.addPage();
-        doc.setFontSize(12);
-        doc.text("Performance Insights by Job Role:", 14, 20);
-        
-        const roleHeaders = [["Job Role", "Candidates", "Avg Score", "Placement Rate"]];
-        const roleBody = roleInsights.map(item => [item.role, item.candidate_count, `${item.avg_score}%`, `${item.placement_rate}%`]);
-        
-        autoTable(doc, {
-            startY: 24,
-            head: roleHeaders,
-            body: roleBody,
-            theme: 'striped',
-            headStyles: { fillColor: [93, 140, 44] },
-            styles: { fontSize: 8, cellPadding: 2 }
-        });
-
-        doc.save(`PrepWin_Analytics_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+        await downloadAnalyticsPdf({ kpi, funnelStages, recommendationData, roleInsights, selectedRoleFilter, selectedDateRange });
         setShowExportDropdown(false);
     };
 

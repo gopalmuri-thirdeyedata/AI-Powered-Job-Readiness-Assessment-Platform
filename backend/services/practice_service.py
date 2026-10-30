@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 import models
-from services import function_style, judge0_service, student_sandbox
+from services import function_style, judge0_service, student_sandbox, student_typed
 
 # ==============================================================================
 # CURATED STANDARD PRACTICE QUESTION CATALOG
@@ -217,6 +217,14 @@ def _student_starter(starter_code):
     return {**starter_code, "python": converted["starter"]} if converted else starter_code
 
 
+def _student_starters(question, spec) -> Any:
+    """What the editor starts with, per language: the question's own Python starter (as before) plus the Assessment's generated starters."""
+    base = _student_starter(question.starter_code)
+    if question.category != "CODING" or not isinstance(base, dict):
+        return base
+    return {**base, **student_typed.starters(spec, base.get("python"))}
+
+
 def get_sanitized_questions(
     topic: Optional[str],
     category: Optional[str],
@@ -257,6 +265,7 @@ def get_sanitized_questions(
                         "expected_output": tc.get("expected_output")
                     })
 
+        spec = student_typed.practice_spec_for(q)         # None: Python only (not a coding question, or its tests do not fit a typed signature)
         sanitized.append({
             "id": q.id,
             "topic": q.topic,
@@ -265,12 +274,43 @@ def get_sanitized_questions(
             "title": q.title,
             "description": q.description,
             "options": q.options,
-            "starter_code": _student_starter(q.starter_code),
+            "starter_code": _student_starters(q, spec),
+            "languages": student_typed.offered_languages(spec) if q.category == "CODING" else None,
             "public_test_cases": public_test_cases,
             "is_solved": q.id in solved_q_ids
         })
 
     return sanitized
+
+
+def _evaluate_typed(question, language: str, code: str):
+    """Java / C++ / C: one batch through the Assessment's driver; returns (tests_passed, public results) like the Python loop below."""
+    spec = student_typed.practice_spec_for(question)
+    if spec is None:
+        raise ValueError("This question is only available in Python.")
+    tests = question.test_cases or []
+    cases = student_typed.practice_cases(spec, question)
+    try:
+        run = student_typed.run_cases(spec, language, code, [args for args, _ in cases])
+    except (student_typed.SandboxUnavailable, student_typed.SandboxBusy):
+        raise judge0_service.SandboxBusy("The code runner is busy right now.")
+    passed_count, public = 0, []
+    for idx, (tc, (_, expected)) in enumerate(zip(tests, cases)):
+        error, actual, passed = None, "", False
+        if run.get("compile_error"):
+            error = run["compile_error"]
+        else:
+            one = run["cases"][idx]
+            if one["status"] == "ok":
+                actual = student_typed.compact(one["value"])
+                passed = student_typed.coding_spec.compare_values(spec, one["value"], expected)
+            else:
+                error = "Time Limit Exceeded" if one["status"] == "tle" else one["error"]
+        passed_count += 1 if passed else 0
+        if not tc.get("is_hidden", False):
+            public.append({"test_case_number": idx + 1, "input": tc.get("input", ""), "expected_output": str(tc.get("expected_output", "")).strip(),
+                           "actual_output": actual, "passed": passed, "error": error})
+    return passed_count, public
 
 
 def evaluate_practice_submission(
@@ -315,13 +355,19 @@ def evaluate_practice_submission(
     elif question.category == "CODING":
         if not code or not language:
             raise ValueError("Coding submission requires both code and language.")
-        if language.strip().lower() not in ("python", "python3"):
-            raise ValueError("Only Python is supported for coding practice.")
+        try:
+            chosen = student_typed.normalize(language)           # the Assessment's languages: python | java | cpp | c
+        except ValueError as exc:
+            raise ValueError(str(exc))
 
         all_tests = question.test_cases or []
         total_tests = len(all_tests)
         driver = (function_style.to_function_style((question.starter_code or {}).get("python")) or {}).get("driver")
-        program = function_style.compose(code, driver)
+        program = function_style.compose(code, driver) if chosen == "python" else ""
+
+        if chosen != "python":
+            tests_passed, public_results = _evaluate_typed(question, chosen, code)
+            all_tests = []                                          # judged above; the Python loop below has nothing left to do
 
         # Run test cases against Judge0 sandbox
         for idx, tc in enumerate(all_tests):

@@ -1,162 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Copy, Download, Loader2, Printer, RefreshCw, RotateCcw, ShieldCheck, ThumbsDown, Trash2, X } from 'lucide-react';
 import ConfirmationModal from '../ConfirmationModal';
 import { adminApi, errorMessage } from '../../services/recruitmentApi';
 import { downloadCandidateDossierPdf } from '../../utils/candidateDossierPdf';
+import { buildAdminDossierModel } from '../../utils/candidateDossier/model';
+import { PRINT_CSS, printFooterCss } from '../../utils/candidateDossier/printCss';
+import DossierPrintDocument from './DossierPrintDocument';
 import { StatusBadge, Toast, copyText, dangerGhostBtn, formatDate, formatDuration, formatScore, ghostBtn, ghostBtnSm, inputCls, primaryBtn, thCls } from './adminUi';
 
 const SECTION_LABELS = { aptitude: 'Aptitude', coding: 'Coding', interview: 'AI Technical Interview' };
 
-const PRINT_CSS = `@page {
-  size: A4 portrait;
-  margin: 12mm 15mm;
-}
-@media print {
-  html, body {
-    background: rgb(255, 255, 255) !important;
-    color: rgb(15, 23, 42) !important;
-    font-size: 10pt !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    height: auto !important;
-    min-height: 100% !important;
-    overflow: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-  body * {
-    visibility: hidden !important;
-  }
-  .pw-admin:has(.pw-print-root),
-  div[role="dialog"][aria-label="Candidate dossier"] {
-    position: static !important;
-    display: block !important;
-    inset: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 100% !important;
-    max-height: none !important;
-    overflow: visible !important;
-    background: transparent !important;
-    backdrop-filter: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    z-index: auto !important;
-  }
-  .pw-print-root, .pw-print-root * {
-    visibility: visible !important;
-  }
-  .pw-print-root {
-    position: static !important;
-    display: block !important;
-    left: auto !important;
-    top: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    max-height: none !important;
-    height: auto !important;
-    overflow: visible !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    background: rgb(255, 255, 255) !important;
-    color: rgb(15, 23, 42) !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-  .pw-no-print, .pw-no-print * {
-    display: none !important;
-    visibility: hidden !important;
-  }
-  .pw-print-header {
-    display: flex !important;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 8pt;
-    margin-bottom: 12pt;
-    border-bottom: 2pt solid #5d8c2c;
-  }
-  .pw-print-root .sticky {
-    position: static !important;
-    background: transparent !important;
-    backdrop-filter: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    border-bottom: none !important;
-  }
-  .pw-print-root details {
-    display: block !important;
-    border: 1pt solid rgb(203, 213, 225) !important;
-    background: rgb(255, 255, 255) !important;
-    border-radius: 4pt !important;
-    padding: 6pt 8pt !important;
-    margin-bottom: 8pt !important;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-  .pw-print-root details > summary {
-    font-size: 10.5pt !important;
-    font-weight: 700 !important;
-    color: rgb(15, 23, 42) !important;
-    cursor: default !important;
-    list-style: none !important;
-    padding-bottom: 3pt;
-    border-bottom: 1pt solid rgb(226, 232, 240);
-    margin-bottom: 6pt !important;
-  }
-  .pw-print-root details > summary::-webkit-details-marker {
-    display: none !important;
-  }
-  .pw-print-root details > * {
-    display: block !important;
-  }
-  table {
-    width: 100% !important;
-    min-width: 0 !important;
-    border-collapse: collapse !important;
-    page-break-inside: auto;
-    font-size: 8.5pt !important;
-  }
-  thead {
-    display: table-header-group !important;
-  }
-  tr {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-  th, td {
-    border: 1pt solid rgb(226, 232, 240) !important;
-    color: rgb(15, 23, 42) !important;
-    padding: 3.5pt 5pt !important;
-    font-size: 8.5pt !important;
-  }
-  th {
-    background-color: rgb(241, 245, 249) !important;
-    font-weight: 600 !important;
-  }
-  .pw-scroll-x {
-    overflow: visible !important;
-    border: none !important;
-  }
-  pre {
-    background-color: rgb(248, 250, 252) !important;
-    border: 1pt solid rgb(226, 232, 240) !important;
-    color: rgb(15, 23, 42) !important;
-    white-space: pre-wrap !important;
-    word-break: break-all !important;
-    font-size: 7.5pt !important;
-    padding: 4pt !important;
-    border-radius: 3pt !important;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-  .pw-print-root * {
-    color: rgb(15, 23, 42);
-    background-color: transparent;
-    box-shadow: none !important;
-    text-shadow: none !important;
-  }
-}`;
+// Print / Save as PDF prints <DossierPrintDocument>: the shared Candidate Dossier model (utils/candidateDossier), not this screen.
 
 const Score = ({ label, value, big }) => (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3.5">
@@ -175,6 +30,10 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
     const [justify, setJustify] = useState(null); // { kind: 'retake' | 'reject' }
     const [justification, setJustification] = useState('');
     const [retakeLink, setRetakeLink] = useState('');
+    const footerStyleRef = useRef(null);
+    const model = useMemo(() => {
+        try { return data ? buildAdminDossierModel(data) : null; } catch { return null; }
+    }, [data]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -196,17 +55,34 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [onClose, confirm, justify]);
 
+    // The printed footer carries the moment of printing: refresh it right before the browser lays the pages out (Print button or Ctrl+P).
+    const stampPrintFooter = useCallback(() => {
+        if (footerStyleRef.current) footerStyleRef.current.textContent = printFooterCss(model, new Date());
+    }, [model]);
+
     useEffect(() => {
+        stampPrintFooter();
+        // The report is always printed on white paper: take the dark theme off the page while the browser prints, then put it back.
+        let darkWasOn = false;
         const onBeforePrint = () => {
+            stampPrintFooter();
             if (typeof document !== 'undefined') {
-                document.querySelectorAll('.pw-print-root details').forEach((el) => {
-                    el.setAttribute('open', 'true');
-                });
+                darkWasOn = document.documentElement.classList.contains('dark');
+                document.documentElement.classList.remove('dark');
             }
         };
+        const onAfterPrint = () => {
+            if (darkWasOn) document.documentElement.classList.add('dark');
+            darkWasOn = false;
+        };
         window.addEventListener('beforeprint', onBeforePrint);
-        return () => window.removeEventListener('beforeprint', onBeforePrint);
-    }, []);
+        window.addEventListener('afterprint', onAfterPrint);
+        return () => {
+            window.removeEventListener('beforeprint', onBeforePrint);
+            window.removeEventListener('afterprint', onAfterPrint);
+            onAfterPrint();
+        };
+    }, [stampPrintFooter]);
 
     const act = async (name, fn, okMessage) => {
         setBusy(name);
@@ -254,11 +130,7 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
     };
 
     const handlePrint = () => {
-        if (typeof document !== 'undefined') {
-            document.querySelectorAll('.pw-print-root details').forEach((el) => {
-                el.setAttribute('open', 'true');
-            });
-        }
+        stampPrintFooter();
         window.print();
     };
 
@@ -290,9 +162,11 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
     const report = data?.report;
     const sections = report?.sections || {};
 
-    return (
-        <div className="pw-admin fixed inset-0 z-[90] flex items-start sm:items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Candidate dossier">
+    // Portalled under <body> so the print stylesheet can drop the whole app shell (display: none) and the report starts on page 1.
+    return createPortal(
+        <div className="pw-admin pw-dossier-dialog fixed inset-0 z-[90] flex items-start sm:items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Candidate dossier">
             <style>{PRINT_CSS}</style>
+            <style ref={footerStyleRef} />
             <div className="pw-print-root w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-xl bg-white dark:bg-[var(--pw-surface)] border border-slate-200 dark:border-slate-800 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.35)]">
                 <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-5 sm:px-6 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
                     <h2 className="pw-section-title">Candidate Dossier</h2>
@@ -314,21 +188,6 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
 
                     {data && (
                         <>
-                            {/* Print-only official report header */}
-                            <div className="hidden print:flex pw-print-header items-center justify-between gap-4 pb-3 mb-4 border-b-2 border-[#5d8c2c]">
-                                <div className="flex items-center gap-2.5">
-                                    <img src="/logo_main.png" alt="PrepWin Logo" className="h-8 w-auto object-contain" />
-                                    <div>
-                                        <h1 className="text-base font-bold text-slate-900 leading-tight">PrepWin</h1>
-                                        <p className="text-[10px] text-slate-500 font-medium">Recruitment Assessment Intelligence</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <h2 className="text-sm font-bold text-slate-900">Candidate Assessment Dossier</h2>
-                                    <p className="text-[10px] text-slate-500">Official Evaluation Report</p>
-                                </div>
-                            </div>
-
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <h3 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white break-words">{data.candidate.name}</h3>
@@ -485,6 +344,7 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
                         </>
                     )}
                 </div>
+                {model && <DossierPrintDocument model={model} />}
             </div>
 
             <ConfirmationModal
@@ -509,7 +369,8 @@ const CandidateReportModal = ({ candidateId, onClose, onChanged }) => {
                 </div>
             )}
             <Toast toast={toast} onClose={() => setToast(null)} />
-        </div>
+        </div>,
+        document.body,
     );
 };
 

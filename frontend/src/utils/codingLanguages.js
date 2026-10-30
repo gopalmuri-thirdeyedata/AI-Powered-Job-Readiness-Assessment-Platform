@@ -24,6 +24,9 @@ export const problemLanguages = (problem) => {
     return known.length ? known : [DEFAULT_LANGUAGE];
 };
 
+/** The dropdown entries for a problem, in its own order: the Assessment's list (Python3, Java, C++, C) restricted to what the problem offers. */
+export const languageOptionsFor = (problem) => problemLanguages(problem).map((l) => ({ value: l, label: LANGUAGE_OPTIONS[l].label }));
+
 /** Python when the problem offers it (every problem does today), otherwise its first language. */
 export const defaultLanguage = (problem) => {
     const offered = problemLanguages(problem);

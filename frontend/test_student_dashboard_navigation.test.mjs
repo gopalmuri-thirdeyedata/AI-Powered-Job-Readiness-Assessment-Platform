@@ -78,11 +78,12 @@ describe('Student Dashboard Navigation & Routing Test Suite', () => {
         // Confirm all remaining items exist (Resume became Resume Analyzer, Resume Formatter was added)
         const expectedItems = [
             'Dashboard', 'Skill Gap', 'Roadmap', 'Practice', 'Mock Interview',
-            'Placement Simulation', 'Projects', 'Resume Analyzer', 'Resume Formatter', 'Profile'
+            'Projects', 'Resume Analyzer', 'Resume Formatter', 'Profile'
         ];
         for (const item of expectedItems) {
             assert.ok(fileContent.includes(`label: '${item}'`), `Sidebar must retain ${item}`);
         }
+        assert.ok(!fileContent.includes('Placement Simulation') && !fileContent.includes('/student/simulation'), 'Placement Simulation is switched off');
     });
 });
 

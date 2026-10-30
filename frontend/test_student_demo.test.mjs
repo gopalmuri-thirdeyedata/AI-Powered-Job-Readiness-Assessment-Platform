@@ -20,9 +20,10 @@ describe('Student Dashboard Demo', () => {
         assert.equal(demoPathFor('/student/dashboard?tab=readiness'), '/admin/student-demo?tab=readiness');
         assert.equal(demoPathFor('/student/resume'), '/admin/student-demo/resume');
         assert.equal(demoPathFor('/student/resume-formatter/'), '/admin/student-demo/resume-formatter');
-        for (const page of ['skill-gap', 'roadmap', 'practice', 'coding', 'interview', 'simulation', 'projects', 'profile']) {
+        for (const page of ['skill-gap', 'roadmap', 'practice', 'coding', 'interview', 'projects', 'profile']) {
             assert.equal(demoPathFor(`/student/${page}`), `/admin/student-demo/${page}`, page);
         }
+        assert.equal(demoPathFor('/student/simulation'), null, 'Placement Simulation is switched off in the demo');
         assert.equal(demoPathFor('/student/coding/two-sum'), '/admin/student-demo/coding/two-sum');
         assert.equal(demoPathFor('/student/hub/roadmap'), '/admin/student-demo/roadmap');
         for (const outside of ['/student/unknown', '/student/roadmap/extra', '/student/login', '/assessment/abc/report', '/assessment/setup']) assert.equal(demoPathFor(outside), null, outside);
@@ -103,10 +104,11 @@ describe('Student Dashboard Demo', () => {
         const block = app.slice(start, app.indexOf('</Route>', start));
         assert.ok(block.includes('<AdminGuard><StudentDemoLayout /></AdminGuard>'));
         for (const [route, el] of [['skill-gap', 'StudentSkillGap'], ['roadmap', 'StudentRoadmap'], ['practice', 'StudentPractice'], ['coding', 'StudentCoding'],
-            ['coding/:slug', 'StudentCodingProblem'], ['interview', 'StudentMockInterview'], ['simulation', 'StudentPlacementSimulation'], ['projects', 'StudentProjects'],
+            ['coding/:slug', 'StudentCodingProblem'], ['interview', 'StudentMockInterview'], ['projects', 'StudentProjects'],
             ['resume', 'StudentResumeUpload'], ['resume-formatter', 'StudentResumeFormatter'], ['profile', 'StudentProfile']]) {
             assert.ok(block.includes(`path="${route}" element={<${el} />}`), route);
         }
+        assert.ok(block.includes('<Route path="simulation" element={<Navigate to="/admin/student-demo" replace />} />'), 'the old demo simulation address redirects to the demo dashboard');
         assert.ok(block.includes('<Route index element={<StudentDashboard />} />'));
         assert.ok(!block.includes('<StudentLayout'), 'no student session or assessment checks');
         assert.ok(read('src/layouts/DashboardLayout.jsx').includes('label="Student Dashboard Demo" path={STUDENT_DEMO_BASE}'));
@@ -128,7 +130,7 @@ describe('Student Dashboard Demo', () => {
 
     test('10. every studentApi / codingApi method a demo page calls has a demo handler (nothing falls through to the network)', async () => {
         const pages = ['StudentDashboard', 'StudentSkillGap', 'StudentRoadmap', 'StudentPractice', 'StudentCoding', 'StudentCodingProblem', 'StudentMockInterview',
-            'StudentPlacementSimulation', 'StudentProjects', 'StudentResumeUpload', 'StudentResumeFormatter', 'StudentProfile'].map((n) => `src/pages/student/${n}.jsx`);
+            'StudentProjects', 'StudentResumeUpload', 'StudentResumeFormatter', 'StudentProfile'].map((n) => `src/pages/student/${n}.jsx`);
         const extra = ['src/components/student/StudentPerformanceView.jsx', 'src/components/student/CareerCopilotDrawer.jsx', 'src/components/student-ui/ResumeJdAnalyzer.jsx',
             'src/hooks/useStudentTaskStatus.js', 'src/layouts/StudentDemoLayout.jsx'];
         const used = new Set();

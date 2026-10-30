@@ -25,7 +25,6 @@ import {
     HelpCircle,
     Zap,
     Compass,
-    ArrowRight,
 } from 'lucide-react';
 import {
     ResponsiveContainer,
@@ -420,13 +419,6 @@ const StudentPerformanceView = () => {
                 actions={(
                     <>
                         <Link
-                            to="/student/simulation"
-                            className="px-4 py-2.5 min-h-[40px] rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
-                        >
-                            <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                            <span>Simulate Drive</span>
-                        </Link>
-                        <Link
                             to="/student/interview"
                             className="px-4 py-2.5 min-h-[40px] rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
@@ -455,13 +447,6 @@ const StudentPerformanceView = () => {
                                 <p className="text-xs text-slate-500 dark:text-slate-400">{overview.active_test_message}</p>
                             </div>
                         </div>
-                        <Link
-                            to="/student/simulation"
-                            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all self-start sm:self-auto shrink-0 shadow-xs"
-                        >
-                            <span>Resume Assessment</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
                     </div>
                 )}
             </PageHero>
@@ -551,7 +536,6 @@ const StudentPerformanceView = () => {
                     {[
                         { label: 'All Assessments', key: 'ALL' },
                         { label: 'RoleReady', key: 'ROLEREADY' },
-                        { label: 'Simulations', key: 'SIMULATION' },
                         { label: 'Mock Interviews', key: 'MOCK_INTERVIEW' },
                     ].map(tab => (
                         <button
@@ -662,7 +646,6 @@ const StudentPerformanceView = () => {
                         >
                             <option value="ALL">All Categories</option>
                             <option value="ROLEREADY">RoleReady</option>
-                            <option value="SIMULATION">Placement Simulations</option>
                             <option value="MOCK_INTERVIEW">Mock Interviews</option>
                             <option value="ASSIGNED">Recruiter Assigned</option>
                         </select>

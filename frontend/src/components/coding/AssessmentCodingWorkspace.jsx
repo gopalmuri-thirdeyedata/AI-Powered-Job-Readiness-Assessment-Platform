@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Editor } from '@monaco-editor/react';
 import { CheckSquare, FileText, Plus, RefreshCw, Terminal, X } from 'lucide-react';
 import RichText from './RichText';
-import { CaseViewer, Block, EDITOR_OPTIONS, EditorStatusBar, EditorToolbar, Field, LabeledFields, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton, useCursorPosition, useIsDark } from './workspaceParts';
+import CodeEditorPanel from './CodeEditorPanel';
+import { CaseViewer, Block, Field, LabeledFields, Pane, SLIM_LABEL, Splitter, TAB_BAR, TabButton, useIsDark } from './workspaceParts';
 import { DIFFICULTY_CLASSES, isRunShortcut } from '../../utils/codingPlatform';
 import { PROTECTION_TEST_MODE } from '../../hooks/useAssessmentProtection';
 
-// The assessment editor has no right-click menu (its Paste entry) and takes no dropped text, unless protection is switched off for testing.
-const PROTECTED_EDITOR_OPTIONS = { ...EDITOR_OPTIONS, contextmenu: false, dropIntoEditor: { enabled: false } };
 import {
     DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, constraintLines, customInputIssue, exampleValues, inlineInput, isTypedProblem, monacoLanguage, problemLanguages,
 } from '../../utils/codingLanguages';
@@ -66,7 +64,6 @@ const AssessmentCodingWorkspace = ({
     const appDark = useIsDark();
     const dark = themeIsDark === undefined ? appDark : themeIsDark;
     const [expanded, setExpanded] = useState(false);
-    const [cursor, trackCursor] = useCursorPosition();
     const [mobileTab, setMobileTab] = useState('problem');
     const [consoleTab, setConsoleTab] = useState('testcase');
     const [caseIndex, setCaseIndex] = useState(0);
@@ -176,23 +173,13 @@ const AssessmentCodingWorkspace = ({
 
                 {/* Right: editor above the console */}
                 <div ref={rightRef} className={`${mobileTab === 'problem' ? 'hidden' : 'flex'} lg:flex flex-col flex-1 min-w-0 min-h-0 gap-2 lg:gap-0`} style={{ '--editor': `${editorPct}%` }}>
-                    <Pane className={`${mobileTab === 'console' ? 'hidden' : 'flex'} lg:flex flex-col h-[62vh] min-h-[340px] lg:h-auto lg:min-h-0 lg:basis-[var(--editor)] lg:shrink-0`}>
-                        <EditorToolbar onReset={onReset} onToggleTheme={onToggleTheme} themeIsDark={dark} expanded={expanded} onToggleExpand={() => setExpanded((v) => !v)}
-                            language={language} languageOptions={languageOptions} onLanguageChange={onLanguageChange} languageDisabled={running} />
-                        <div className="flex-1 min-h-0">
-                            <Editor
-                                height="100%"
-                                path={`problem-${problem.id}.${language}`}
-                                language={monacoLanguage(language)}
-                                theme={dark ? 'vs-dark' : 'light'}
-                                value={code}
-                                onChange={(v) => onCodeChange(v ?? '')}
-                                onMount={(editor, monaco) => { trackCursor(editor); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Quote, () => runRef.current()); }}
-                                options={PROTECTION_TEST_MODE ? EDITOR_OPTIONS : PROTECTED_EDITOR_OPTIONS}
-                            />
-                        </div>
-                        <EditorStatusBar saved="Autosaved" position={cursor} />
-                    </Pane>
+                    {/* The editor is the shared student code editor (CodeEditorPanel); the assessment keeps its own theme switch, and no right-click menu or dropped text unless protection is off for testing */}
+                    <CodeEditorPanel
+                        className={`${mobileTab === 'console' ? 'hidden' : 'flex'} lg:flex flex-col h-[62vh] min-h-[340px] lg:h-auto lg:min-h-0 lg:basis-[var(--editor)] lg:shrink-0`}
+                        code={code} onCodeChange={onCodeChange} language={language} languageOptions={languageOptions} onLanguageChange={onLanguageChange} languageDisabled={running}
+                        path={`problem-${problem.id}.${language}`} onRun={onRun} onReset={onReset} onToggleTheme={onToggleTheme} themeIsDark={dark}
+                        expanded={expanded} onToggleExpand={() => setExpanded((v) => !v)} protectedInput={!PROTECTION_TEST_MODE} saved="Autosaved"
+                    />
 
                     <Splitter axis="y" containerRef={rightRef} value={editorPct} onChange={setEditorPct} min={25} max={80} label="Resize editor and console" />
 

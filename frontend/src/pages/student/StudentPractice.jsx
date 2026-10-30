@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Code2,
     CheckCircle2,
@@ -6,17 +6,15 @@ import {
     Play,
     Check,
     RefreshCw,
-    Terminal,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Editor } from '@monaco-editor/react';
-import { EDITOR_OPTIONS, useIsDark } from '../../components/coding/workspaceParts';
+import CodeEditorPanel from '../../components/coding/CodeEditorPanel';
 import studentApi from '../../services/studentApi';
+import { defaultLanguage, languageOptionsFor, starterFor } from '../../utils/codingLanguages';
 import { PageHero, EmptyState } from '../../components/student-ui/StudentMotion';
 import { EASE } from '../../components/home/primitives';
 
 const StudentPractice = () => {
-    const dark = useIsDark();
     const [topics, setTopics] = useState([]);
     const [selectedTopic, setSelectedTopic] = useState('All');
     const [selectedCategory, setSelectedCategory] = useState('ALL'); // 'ALL' | 'CODING' | 'APTITUDE'
@@ -26,7 +24,8 @@ const StudentPractice = () => {
 
     // Coding practice state
     const [code, setCode] = useState('');
-    const selectedLanguage = 'python'; // Practice workspace is Python-only
+    const [selectedLanguage, setSelectedLanguage] = useState('python');   // a question offers the Assessment's languages (Python3, Java, C++, C) or Python alone
+    const buffersRef = useRef({});                                       // { [language]: code } of the open question, so switching never loses work
 
     // Aptitude practice state
     const [selectedOption, setSelectedOption] = useState('');
@@ -64,8 +63,10 @@ const StudentPractice = () => {
         setSelectedOption('');
 
         if (q.category === 'CODING') {
-            const starter = q.starter_code?.python || '';
-            setCode(starter);
+            const first = defaultLanguage(q);
+            buffersRef.current = {};
+            setSelectedLanguage(first);
+            setCode(starterFor(q, first));
         }
     };
 
@@ -109,8 +110,23 @@ const StudentPractice = () => {
         }
     };
 
+    const resetCode = () => {
+        if (!activeQuestion || activeQuestion.category !== 'CODING') return;
+        if (window.confirm('Reset to the starter code? Your current code will be replaced.')) {
+            delete buffersRef.current[selectedLanguage];
+            setCode(starterFor(activeQuestion, selectedLanguage));
+        }
+    };
+
+    const handleLanguageChange = (next) => {
+        if (!activeQuestion || next === selectedLanguage || isSubmitting) return;
+        buffersRef.current[selectedLanguage] = code;
+        setSelectedLanguage(next);
+        setCode(buffersRef.current[next] ?? starterFor(activeQuestion, next));
+    };
+
     const handleSubmit = async () => {
-        if (!activeQuestion) return;
+        if (!activeQuestion || isSubmitting) return;      // one execution request at a time
         setIsSubmitting(true);
         setSubmissionResult(null);
 
@@ -328,16 +344,6 @@ const StudentPractice = () => {
                                     </div>
                                     <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white break-words">{activeQuestion.title}</h2>
                                 </div>
-
-                                {/* Coding Language (Python only) */}
-                                {activeQuestion.category === 'CODING' && (
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Language:</label>
-                                        <span className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 font-medium">
-                                            Python 3
-                                        </span>
-                                    </div>
-                                )}
                             </div>
 
                             {/* Problem Description */}
@@ -348,24 +354,14 @@ const StudentPractice = () => {
                             {/* Arena Type 1: CODING */}
                             {activeQuestion.category === 'CODING' && (
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                            <Terminal className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                            <span>Source Code ({selectedLanguage})</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Editor Area */}
-                                    <div className="w-full h-[300px] sm:h-[340px] rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700/80">
-                                        <Editor
-                                            height="100%"
-                                            language="python"
-                                            theme={dark ? 'vs-dark' : 'light'}
-                                            value={code}
-                                            onChange={(value) => setCode(value ?? '')}
-                                            options={EDITOR_OPTIONS}
-                                        />
-                                    </div>
+                                    {/* The shared student code editor (the same component the assessment and the Coding page use). Practice has no run-only
+                                        endpoint: Submit runs every test case on the server and returns the sample results below. */}
+                                    <CodeEditorPanel
+                                        className="flex flex-col h-[340px] sm:h-[380px]"
+                                        code={code} onCodeChange={setCode} language={selectedLanguage} path={`practice-${activeQuestion.id}.${selectedLanguage}`}
+                                        languageOptions={languageOptionsFor(activeQuestion)} onLanguageChange={handleLanguageChange} languageDisabled={isSubmitting}
+                                        onReset={resetCode} saved=""
+                                    />
 
                                     {/* Public Test Cases Preview */}
                                     {activeQuestion.public_test_cases?.length > 0 && (

@@ -184,8 +184,8 @@ const WEEKS = [
         ['RESUME', 'Add GitHub and LinkedIn links', 20, 'Add both links to the contact line and pin your best repositories.', 'The resume analyzer flagged missing profile links.'],
         ['MOCK_INTERVIEW', 'Technical mock interview', 45, 'Take a technical mock and review the feedback.', 'Practise under realistic conditions before the drive.'],
     ]],
-    ['Week 6: Placement Simulation and Polish', [
-        ['MOCK_INTERVIEW', 'Full placement simulation', 120, 'Take the 4-round placement simulation without pausing.', 'Tests the full process in one sitting.'],
+    ['Week 6: Final Polish', [
+        ['MOCK_INTERVIEW', 'Full-length mock interview', 120, 'Take a full-length mock interview without pausing.', 'Tests the whole interview in one sitting.'],
         ['DSA', 'Revise your mistake log', 60, 'Re-solve the 8 problems you got wrong during the plan.', 'Spaced repetition on weak areas.'],
         ['SYSTEM_DESIGN', 'Review trade-off vocabulary', 45, 'Write one paragraph each on consistency, availability and caching trade-offs.', 'Gives you language for design discussions.'],
         ['RESUME', 'Final resume pass', 45, 'Format the resume with the formatter and re-run the analyzer.', 'Target an ATS score above 85.'],

@@ -505,6 +505,7 @@ class PracticeQuestionPublicResponse(BaseModel):
     description: str
     options: Optional[List[Dict[str, Any]]] = None
     starter_code: Optional[Dict[str, str]] = None
+    languages: Optional[List[str]] = None            # coding questions: the languages this one is offered in (python | java | cpp | c)
     public_test_cases: List[Dict[str, Any]] = []
     is_solved: bool = False
 

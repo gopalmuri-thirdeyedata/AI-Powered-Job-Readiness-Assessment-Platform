@@ -55,7 +55,7 @@ describe('Student Career Platform Phase 8 Frontend Test Suite', () => {
         assert.ok(studentDashboardCode.includes('practiceStats'));
         assert.ok(studentDashboardCode.includes('interviewStats'));
         assert.ok(studentDashboardCode.includes('projectStats'));
-        assert.ok(studentDashboardCode.includes('simulationStats'));
+        assert.ok(!studentDashboardCode.includes('simulationStats'), 'Placement Simulation is switched off');
     });
 
     test('8. StudentDashboard.jsx displays Multi-Factor Preparation Hub and Copilot recommendations', () => {

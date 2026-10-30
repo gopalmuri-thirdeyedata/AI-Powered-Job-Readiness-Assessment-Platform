@@ -302,7 +302,7 @@ describe('Admin dashboard structure and requirements', () => {
         }
         assert.ok(modalSrc.includes('text.length < 10') && modalSrc.includes('audit log'), 'retake/reject need a recorded justification');
         assert.ok(modalSrc.includes('data.actions.can_authorize_retake') && modalSrc.includes('data.actions.can_revoke') && modalSrc.includes('data.actions.can_retry_evaluation'));
-        assert.ok(modalSrc.includes('@media print'));
+        assert.ok(modalSrc.includes('<DossierPrintDocument model={model} />') && read('src/utils/candidateDossier/printCss.js').includes('@media print'), 'print prints the shared dossier document');
         assert.ok(modalSrc.includes("report.overall_score === null ? 'INCOMPLETE'"), 'incomplete assessments show INCOMPLETE, never a fabricated overall');
         assert.ok(modalSrc.includes('role="dialog"'));
     });

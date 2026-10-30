@@ -53,7 +53,7 @@ describe('Student navigation destinations resolve to the intended modules', () =
     const layoutCode = read('./src/layouts/StudentLayout.jsx');
     const expected = {
         'skill-gap': 'StudentSkillGap', roadmap: 'StudentRoadmap', practice: 'StudentPractice', coding: 'StudentCoding',
-        interview: 'StudentMockInterview', simulation: 'StudentPlacementSimulation', projects: 'StudentProjects', resume: 'StudentResumeUpload', 'resume-formatter': 'StudentResumeFormatter', profile: 'StudentProfile',
+        interview: 'StudentMockInterview', projects: 'StudentProjects', resume: 'StudentResumeUpload', 'resume-formatter': 'StudentResumeFormatter', profile: 'StudentProfile',
     };
     const hubBlock = appCode.slice(appCode.indexOf('<Route path="/student/hub"'), appCode.indexOf('{/* College Placement'));
     const [hubPart, aliasPart] = hubBlock.split('<Route element={<StudentLayout />}>');
@@ -79,7 +79,7 @@ describe('Student navigation destinations resolve to the intended modules', () =
 
     test('every sidebar link is served by a route', () => {
         const navPaths = [...layoutCode.matchAll(/path: '(\/student\/[a-z-]+)'/g)].map(m => m[1]);
-        assert.strictEqual(navPaths.length, 11);
+        assert.strictEqual(navPaths.length, 10);     // Placement Simulation is switched off
         for (const p of navPaths) {
             const slug = p.replace('/student/', '');
             assert.ok(slug === 'dashboard' || slug in expected, `${p} has no route`);

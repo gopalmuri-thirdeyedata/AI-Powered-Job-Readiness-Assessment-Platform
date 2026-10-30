@@ -281,7 +281,7 @@ describe('Candidate API client and runner behaviour', () => {
         assert.ok(pageSrc.includes("import { AssessmentWorkspace } from '../roleready/RoleReadyAssessment'"), 'the page reuses the student workspace');
         assert.ok(pageSrc.includes('mode="recruitment"') && pageSrc.includes('skipInstructions') && pageSrc.includes('proctoringPolicy="flag"'));
         assert.ok(!pageSrc.includes('<textarea') && !pageSrc.includes('@monaco-editor') && !pageSrc.includes('voiceInterviewSession'), 'no second editor / voice implementation in the recruitment page');
-        for (const needle of ["from '@monaco-editor/react'", "from '../../utils/voiceInterviewSession'", 'const handleLanguageChange', 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
+        for (const needle of ["import AssessmentCodingWorkspace from '../../components/coding/AssessmentCodingWorkspace'", "from '../../utils/voiceInterviewSession'", 'const handleLanguageChange', 'useFaceProctoring', 'useAssessmentFullscreen', 'api.initVoice()', 'api.runCode(']) {
             assert.ok(workspaceSrc.includes(needle), `shared workspace has: ${needle}`);
         }
         assert.ok(!/hidden_test|hiddenTest|hidden test/i.test(adapterSrc + pageSrc), 'recruitment code never references hidden tests');

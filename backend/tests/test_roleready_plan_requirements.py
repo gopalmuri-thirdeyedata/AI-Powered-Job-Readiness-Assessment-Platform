@@ -386,14 +386,14 @@ def test_backend_never_executes_code_on_host():
     assert offenders == []
 
 
-# ─── Practice workspace is Python only ─────────────────────────────────────────
+# ─── Practice accepts the Assessment's languages (Python3, Java, C++, C) and nothing else ──────────
 
 def test_practice_submission_rejects_non_python(db_session, setup_test_data):
     from services.practice_service import evaluate_practice_submission
     question = db_session.query(models.StudentPracticeQuestion).filter_by(category="CODING").first()
     if question is None:
         pytest.skip("No seeded coding practice question in this database")
-    with pytest.raises(ValueError, match="Only Python"):
+    with pytest.raises(ValueError, match="Python, Java, C\+\+ and C"):
         evaluate_practice_submission(profile=setup_test_data["student_profile"], question_id=question.id,
                                      code="console.log(1)", language="javascript", selected_option=None, db=db_session)
 

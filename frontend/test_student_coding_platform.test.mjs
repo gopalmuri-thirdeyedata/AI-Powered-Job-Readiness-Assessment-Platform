@@ -155,9 +155,9 @@ describe('coding workspace wiring', () => {
         assert.ok(!/localStorage|Authorization|Bearer/.test(api));
     });
 
-    test('the workspace is Python only, Monaco based, with run, submit, read-only example cases and a locked solution', () => {
-        assert.ok(problem.includes("language=\"python\""));
-        assert.ok(!/language=\{?['"]java/.test(problem) && !/javascript|cpp/i.test(problem.replace(/Monaco|Editor/g, '')));
+    test('the workspace is Monaco based, with run, submit, read-only example cases and a locked solution; its languages come from the problem, never from the page', () => {
+        assert.ok(problem.includes('language={language}') && problem.includes('languageOptionsFor(languageView)') && problem.includes("useState('python')"), 'Python by default, the options from the problem');
+        assert.ok(!/language=\{?['"]java/.test(problem) && !/javascript|cpp/i.test(problem.replace(/Monaco|Editor|languageOptionsFor/g, '')), 'no language list of its own');
         for (const piece of ['handleRun', 'handleSubmit', 'Case ', 'Solve this problem to unlock', 'beats_runtime_pct', 'Autosaved']) {
             assert.ok(problem.includes(piece), piece);
         }
@@ -188,15 +188,16 @@ describe('coding workspace wiring', () => {
         const panel = read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx');
         assert.ok(panel.includes('languageOptions={languageOptions}') && panel.includes('onLanguageChange={onLanguageChange}'), 'the toolbar gets the language dropdown');
         const student = read('src', 'pages', 'student', 'StudentCodingProblem.jsx');
-        assert.ok(!student.includes('languageOptions'), 'the Python-only Coding page keeps its static Python3 label');
+        assert.ok(student.includes('languageOptionsFor(languageView)') && student.includes('onLanguageChange={handleLanguageChange}'), 'the Coding page gets the same dropdown from the same helpers');
     });
 
     test('the assessment page shows API errors as text and runs public tests with Ctrl/Cmd + quote', () => {
         const ws = read('src', 'pages', 'roleready', 'RoleReadyAssessment.jsx');
         assert.ok(ws.includes("import { errorMessage } from '../../utils/codingPlatform'"));
         assert.ok(!/setError\(err\.response\?\.data\?\.detail/.test(ws), 'a { code, message } detail can no longer be rendered as an object');
-        const panel = read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx');
-        assert.ok(panel.includes('monaco.KeyCode.Quote') && panel.includes('runRef.current()'), 'Ctrl/Cmd + quote runs the tests in the one shared workspace');
+        const panel = read('src', 'components', 'coding', 'CodeEditorPanel.jsx');
+        assert.ok(panel.includes('monaco.KeyCode.Quote') && panel.includes('runRef.current()'), 'Ctrl/Cmd + quote runs the tests in the one shared editor');
+        assert.ok(read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx').includes('onRun={onRun}'), 'the assessment hands its Run to the shared editor');
     });
 
     test('both coding screens share the LeetCode look: toolbar, status bar, tab bars, Accepted / Wrong Answer, dark by default in the assessment', () => {
@@ -207,8 +208,10 @@ describe('coding workspace wiring', () => {
         const assessment = read('src', 'components', 'coding', 'AssessmentCodingWorkspace.jsx');
         const student = read('src', 'pages', 'student', 'StudentCodingProblem.jsx');
         for (const [name, src] of [['assessment', assessment], ['student', student]]) {
-            assert.ok(src.includes('<EditorToolbar') && src.includes('<EditorStatusBar') && src.includes('TAB_BAR') && src.includes('Test Result'), `${name} workspace uses the shared pieces`);
+            assert.ok(src.includes('<CodeEditorPanel') && src.includes('TAB_BAR') && src.includes('Test Result'), `${name} workspace uses the shared editor and pieces`);
         }
+        const editor = read('src', 'components', 'coding', 'CodeEditorPanel.jsx');
+        assert.ok(editor.includes('<EditorToolbar') && editor.includes('<EditorStatusBar'), 'the one editor panel carries the toolbar and the status bar');
         assert.ok(assessment.includes("label: 'Accepted'") && assessment.includes('Wrong Answer'));
         const page = read('src', 'pages', 'roleready', 'RoleReadyAssessment.jsx');
         assert.ok(page.includes('useWorkspaceTheme()') && page.includes("workspaceTheme === 'dark' ? 'dark' : ''") && page.includes("const codingDark = codingWorkspaceActive && workspaceTheme === 'dark'"), 'the assessment coding area is dark unless the candidate switches to light');

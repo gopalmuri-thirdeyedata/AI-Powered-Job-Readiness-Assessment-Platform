@@ -100,7 +100,7 @@ const StudentDemoLayout = () => {
 
                 <div className="flex-1 flex relative">
                     <aside className="hidden lg:flex flex-col fixed left-0 top-16 bottom-0 z-20 w-[252px] bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800">
-                        <nav className="flex-1 py-3 px-2.5 space-y-1 overflow-y-auto" aria-label="Student demo sections">
+                        <nav className="flex-1 min-h-0 py-3 px-2.5 space-y-1 overflow-y-auto overflow-x-hidden overscroll-contain student-nav-scroll" aria-label="Student demo sections">
                             {DEMO_NAV.map(({ label, path, icon: Icon, end }) => (
                                 <NavLink key={path} to={path} end={end} className={({ isActive }) => navClass(isActive)}>
                                     <Icon className="w-[18px] h-[18px] shrink-0" />

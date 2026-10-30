@@ -28,7 +28,7 @@ describe('Student Performance Dashboard Frontend Test Suite', () => {
         assert.ok(performanceViewCode.includes('Welcome back,'), 'Displays personalized greeting');
         assert.ok(performanceViewCode.includes('overview?.has_active_test'), 'Checks for active in-progress test');
         assert.ok(performanceViewCode.includes('Active Assessment In Progress'), 'Displays active test notice');
-        assert.ok(performanceViewCode.includes('Resume Assessment'), 'Provides resume test CTA');
+        assert.ok(!performanceViewCode.includes('Resume Assessment'), 'the banner no longer has a button: its only target was the Placement Simulation page, which is switched off');
     });
 
     test('3. StudentPerformanceView.jsx renders Section B Compact 4-Card Performance Summary', () => {

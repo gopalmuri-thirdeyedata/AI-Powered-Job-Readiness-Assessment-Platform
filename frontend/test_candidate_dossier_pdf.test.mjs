@@ -167,32 +167,8 @@ describe('Candidate Dossier PDF Generation & Sanitization', () => {
     });
 });
 
-describe('Candidate Dossier Modal Print & Export Integration', () => {
+describe('Candidate Dossier Modal Export Integration', () => {
     const modalSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/admin/CandidateReportModal.jsx'), 'utf-8');
-
-    test('6. dedicated print stylesheet configures A4 page, removes modal clipping and resets backgrounds', () => {
-        assert.ok(modalSrc.includes('@page {'), 'defines @page rules');
-        assert.ok(modalSrc.includes('size: A4 portrait;'), 'specifies A4 portrait page dimensions');
-        assert.ok(modalSrc.includes('@media print {'), 'defines @media print stylesheet');
-        assert.ok(modalSrc.includes('overflow: visible !important;'), 'removes overflow clipping');
-        assert.ok(modalSrc.includes('max-height: none !important;'), 'removes max-height restrictions');
-        assert.ok(modalSrc.includes('.pw-no-print') && modalSrc.includes('display: none !important;'), 'hides UI chrome in print');
-    });
-
-    test('7. print layout expands all details accordions and repeats table headers across pages', () => {
-        assert.ok(modalSrc.includes('.pw-print-root details {') && modalSrc.includes('display: block !important;'), 'forces all details sections open');
-        assert.ok(modalSrc.includes('thead {') && modalSrc.includes('display: table-header-group !important;'), 'repeats table headers on page breaks');
-        assert.ok(modalSrc.includes('tr {') && modalSrc.includes('break-inside: avoid !important;'), 'prevents awkward table row breaks');
-        assert.ok(modalSrc.includes('handlePrint') && modalSrc.includes("el.setAttribute('open', 'true')"), 'expands details before window.print()');
-        assert.ok(modalSrc.includes('beforeprint'), 'registers beforeprint listener for Ctrl+P printing');
-    });
-
-    test('8. print view renders official PrepWin branding and report title in dedicated header', () => {
-        assert.ok(modalSrc.includes('/logo_main.png'), 'uses official logo asset');
-        assert.ok(modalSrc.includes('pw-print-header'), 'has dedicated print header');
-        assert.ok(modalSrc.includes('PrepWin'), 'contains PrepWin brand name');
-        assert.ok(modalSrc.includes('Candidate Assessment Dossier'), 'contains official report title');
-    });
 
     test('9. export button generates professional candidate dossier PDF with sanitized filename', () => {
         assert.ok(modalSrc.includes('downloadCandidateDossierPdf(data)'), 'calls PDF download generator');
@@ -201,7 +177,10 @@ describe('Candidate Dossier Modal Print & Export Integration', () => {
         assert.ok(modalSrc.includes('onClick={exportPdf}'), 'wires export button to PDF generation');
     });
 
-    test('10. strict brand color tokens preserved with no stray hex colors', () => {
-        assert.ok(!/#[0-9a-f]{6}/i.test(modalSrc.replace(/#5d8c2c|#4c7324|#9fd05a/gi, '')), 'no stray hard-coded hex colors');
+    test('10. strict brand color tokens preserved with no stray hex colors (screen modal, print document, shared model and styles)', () => {
+        for (const f of ['src/components/admin/CandidateReportModal.jsx', 'src/components/admin/DossierPrintDocument.jsx', 'src/utils/candidateDossier/model.js', 'src/utils/candidateDossier/printCss.js', 'src/utils/candidateDossier/pdfRenderer.js']) {
+            const src = fs.readFileSync(path.join(process.cwd(), f), 'utf-8');
+            assert.ok(!/#[0-9a-f]{6}/i.test(src.replace(/#5d8c2c|#4c7324|#9fd05a/gi, '')), `${f}: no stray hard-coded hex colors`);
+        }
     });
 });

@@ -1,10 +1,10 @@
 // Downloads the student's assessment report as a PDF file (real text, not a screenshot).
 //  buildReportSections(reportData)  pure: the report data -> a flat list of blocks (unit tested without a browser)
-//  buildReportPdf(reportData)       draws the blocks with jsPDF and returns the document
+//  buildReportPdf(reportData)       draws the blocks with jsPDF (shared PrepWin header/footer) and returns the document
 //  downloadReportPdf(reportData)    builds it and saves "<role>-assessment-report.pdf"
 
-const PAGE = { width: 595.28, height: 841.89, margin: 48 };    // A4, points
-const COLORS = { ink: [15, 23, 42], muted: [100, 116, 139], brand: [5, 150, 105], rule: [203, 213, 225] };
+import { THEME as C } from './candidateDossier/model.js';
+import { drawBrandHeader, drawFooters, loadDossierLogo, pageGeometry, setFont } from './candidateDossier/pdfChrome.js';
 
 const REPLACEMENTS = [
     [/[‘’‚′]/g, "'"], [/[“”„″]/g, '"'], [/[–—−]/g, '-'],
@@ -94,45 +94,57 @@ export const reportFileName = (reportData) => {
     return `${slug || 'prepwin'}-assessment-report.pdf`;
 };
 
-/** Draws the report and returns the jsPDF document (nothing is saved). */
-export const buildReportPdf = async (reportData) => {
+/**
+ * Draws the report and returns the jsPDF document (nothing is saved). Content comes from buildReportSections; the branding header,
+ * margins, typography, footer and page numbers are the shared PrepWin PDF look (candidateDossier/pdfChrome.js).
+ * The report has no real destination page, so its footer carries no URL row.
+ */
+export const buildReportPdf = async (reportData, { logo, now } = {}) => {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const width = PAGE.width - PAGE.margin * 2;
-    let y = PAGE.margin;
+    const g = pageGeometry(doc);
+    const logoFile = logo !== undefined ? logo : await loadDossierLogo();
+    let y = g.top;
 
     const ensure = (needed) => {
-        if (y + needed > PAGE.height - PAGE.margin) { doc.addPage(); y = PAGE.margin; }
+        if (y + needed > g.bottom) { doc.addPage(); y = g.top; }
     };
-    const write = (text, { size = 10, bold = false, color = COLORS.ink, indent = 0, gapAfter = 4 } = {}) => {
-        doc.setFont('helvetica', bold ? 'bold' : 'normal');
-        doc.setFontSize(size);
-        doc.setTextColor(...color);
-        const lines = doc.splitTextToSize(text, width - indent);
-        const lineHeight = size * 1.35;
-        lines.forEach((line) => { ensure(lineHeight); doc.text(line, PAGE.margin + indent, y + size); y += lineHeight; });
+    /** One paragraph; a short one is kept on a single page, a long one may continue. */
+    const write = (text, { size = 9.5, bold = false, color = C.ink, indent = 0, gapAfter = 4, bullet = false } = {}) => {
+        setFont(doc, size, { bold, color });
+        const lines = doc.splitTextToSize(text, g.cw - indent);
+        const lh = size * 1.35;
+        ensure(lines.length <= 6 ? lines.length * lh : lh * 2);
+        lines.forEach((line, i) => {
+            ensure(lh);
+            setFont(doc, size, { bold, color });
+            if (bullet && i === 0) { doc.setFillColor(...color); doc.circle(g.left + indent - 7, y + size * 0.62, 1.4, 'F'); }
+            doc.text(line, g.left + indent, y, { baseline: 'top' });
+            y += lh;
+        });
         y += gapAfter;
     };
 
     buildReportSections(reportData).forEach((b) => {
         if (b.t === 'title') {
-            write(b.text, { size: 20, bold: true, color: COLORS.brand, gapAfter: 6 });
+            y = drawBrandHeader(doc, g, { title: b.text, logo: logoFile, y });
         } else if (b.t === 'h') {
-            ensure(34);
+            ensure(46);
             y += 8;
-            write(b.text, { size: 13, bold: true, gapAfter: 2 });
-            doc.setDrawColor(...COLORS.rule);
-            doc.line(PAGE.margin, y, PAGE.margin + width, y);
-            y += 8;
+            write(b.text, { size: 11, bold: true, gapAfter: 3 });
+            doc.setDrawColor(...C.rule); doc.setLineWidth(0.75);
+            doc.line(g.left, y, g.left + g.cw, y);
+            y += 7;
         } else if (b.t === 'kv') {
             write(`${b.k}: ${b.v}`, { gapAfter: 2 });
         } else if (b.t === 'bullet') {
-            write(`- ${b.text}`, { indent: 10, gapAfter: 3 });
+            write(b.text, { indent: 14, gapAfter: 3, bullet: true });
         } else {
-            write(b.text, { bold: !!b.bold, color: b.bold ? COLORS.ink : COLORS.muted, gapAfter: 4 });
+            write(b.text, { bold: !!b.bold, color: b.bold ? C.ink : C.muted, gapAfter: 4 });
         }
     });
 
+    drawFooters(doc, g, { reportUrl: null, now: now || new Date() });
     return doc;
 };
 

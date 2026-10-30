@@ -23,7 +23,7 @@ export const DEMO_DASHBOARD = {
     latest_resume_version: 3,
     readiness_breakdown: {
         resume: 82, technical_skills: 76, projects: 70, experience: 58, education: 85, ats_quality: 80,
-        assessment: 73, interview: 68, practice: 64, roadmap: 55, simulation: 71,
+        assessment: 73, interview: 68, practice: 64, roadmap: 55,
     },
     strengths: [
         'Strong fundamentals in data structures and algorithms',
@@ -48,7 +48,6 @@ export const DEMO_UNIFIED = {
     practice: { solved_count: 23 },
     mock_interviews: { completed_sessions: 3, avg_score: 68 },
     projects: { total_projects: 3 },
-    placement_simulation: { score: 71 },
     copilot_suggestions: [
         'Revise graph traversal and dynamic programming: your last coding round lost most marks there.',
         'Book a mock HR interview this week to lift your interview score above 75%.',
@@ -99,8 +98,6 @@ export const DEMO_ASSESSMENT_HISTORY = {
 const PERF_ITEMS = [
     { id: 'a3', raw_id: 3, category_key: 'ROLEREADY', category: 'RoleReady', test_name: 'Software Engineer Assessment', score: DEMO_SESSIONS[0].overall_readiness_score, status: 'COMPLETED', n: 4, duration_minutes: 82,
       rounds_summary: [{ round_name: 'Aptitude', score: 82 }, { round_name: 'Coding', score: 74 }, { round_name: 'Interview', score: 70 }] },
-    { id: 's1', raw_id: 1, category_key: 'SIMULATION', category: 'Placement Simulations', test_name: 'Placement Drive Simulation', score: 71, status: 'COMPLETED', n: 9, duration_minutes: 95,
-      rounds_summary: [{ round_name: 'Aptitude', score: 78 }, { round_name: 'Coding', score: 69 }, { round_name: 'Technical', score: 66 }, { round_name: 'HR', score: 72 }] },
     { id: 'a2', raw_id: 2, category_key: 'ROLEREADY', category: 'RoleReady', test_name: 'Backend Developer Assessment', score: DEMO_SESSIONS[1].overall_readiness_score, status: 'COMPLETED', n: 19, duration_minutes: 76,
       rounds_summary: [{ round_name: 'Aptitude', score: 76 }, { round_name: 'Coding', score: 66 }, { round_name: 'Interview', score: 64 }] },
     { id: 'm2', raw_id: 2, category_key: 'MOCK_INTERVIEW', category: 'Mock Interviews', test_name: 'Technical Mock Interview', score: 68, status: 'COMPLETED', n: 24, duration_minutes: 25, rounds_summary: [] },

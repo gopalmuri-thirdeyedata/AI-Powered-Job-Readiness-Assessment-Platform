@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, defer, load_only
 
 import models
-from services import coding_problem_bank, function_style, judge0_service, student_sandbox
+from services import coding_problem_bank, function_style, judge0_service, student_sandbox, student_typed
 
 ACCEPTED = "ACCEPTED"
 WRONG_ANSWER = "WRONG_ANSWER"
@@ -369,6 +369,9 @@ def _ensure_columns(db: Session) -> None:
     for name, ddl in (("param_types", "JSON"), ("return_type", "VARCHAR(20)")):
         if name not in present:
             db.execute(text(f"ALTER TABLE coding_problems ADD COLUMN {name} {ddl}"))
+    inspector = inspect(db.get_bind())
+    if inspector.has_table("coding_submissions") and "language" not in {c["name"] for c in inspector.get_columns("coding_submissions")}:
+        db.execute(text("ALTER TABLE coding_submissions ADD COLUMN language VARCHAR(20)"))
     db.commit()
     _columns_checked = True
 
@@ -451,8 +454,36 @@ def _truncate(text: Any, limit: int = SHOWN_CHARS) -> str:
     return text if len(text) <= limit else text[:limit] + "… (%d characters)" % len(text)
 
 
-def _execute(problem: models.CodingProblem, code: str, cases: List[List[Any]], capture: bool) -> Dict[str, Any]:
-    nonce = "@@LC-" + secrets.token_hex(12) + "@@"
+def _execute_typed(problem: models.CodingProblem, language: str, code: str, cases: List[List[Any]], capture: bool) -> Dict[str, Any]:
+    """Java / C++ / C (and Python through the Assessment's driver): same answer shape as _execute, so Run and Submit judge it identically."""
+    spec = student_typed.coding_spec_for(problem.slug, problem.test_cases)
+    if spec is None:
+        raise CodingPlatformError("This problem is only available in Python.", 400)
+    try:
+        run = student_typed.run_cases(spec, language, code, cases)
+    except ValueError as exc:
+        raise CodingPlatformError(str(exc), 400)
+    except (student_typed.SandboxUnavailable, student_typed.SandboxBusy):
+        raise CodingPlatformError("The code runner is busy or unavailable right now. Please try again in a few seconds.", 429)
+    if run.get("compile_error"):
+        return {"fatal": COMPILE_ERROR, "message": _truncate(run["compile_error"], 800)}
+    results = []
+    for case in run["cases"]:
+        item = {"s": case["status"], "ms": case["ms"], "d": None, "o": None, "e": case["error"], "p": case["prints"][:STDOUT_SHOWN_CHARS] if capture else None}
+        if case["status"] == "ok":
+            item["d"] = _digest(case["value"], problem.compare_mode)
+            shown = student_typed.compact(case["value"])
+            item["o"] = shown if len(shown) <= SHOWN_CHARS else None
+        results.append(item)
+        if case["status"] != "ok":
+            break                                    # like the Python harness: nothing runs after a failure
+    return {"results": results, "mem_kb": None}
+
+
+def _execute(problem: models.CodingProblem, code: str, cases: List[List[Any]], capture: bool, language: str = "python") -> Dict[str, Any]:
+    if language != "python":
+        return _execute_typed(problem, language, code, cases, capture)
+    nonce ="@@LC-" + secrets.token_hex(12) + "@@"
     stdin = json.dumps({"nonce": nonce, "fn": problem.function_name, "cases": cases, "compare": problem.compare_mode,
                         "capture": capture, "limit_s": PER_CASE_SECONDS,
                         "argtypes": problem.param_types or [], "rettype": problem.return_type})
@@ -550,9 +581,18 @@ def parse_custom_input(problem: models.CodingProblem, text: str) -> List[Any]:
         raise CodingPlatformError("Each line must be valid JSON, e.g. [1,2,3] or \"text\" or 5.", 400)
 
 
-def run_code(db: Session, problem: models.CodingProblem, code: str, custom_input: Optional[str]) -> Dict[str, Any]:
+def _language(language: Optional[str]) -> str:
+    """'python' | 'java' | 'cpp' | 'c': the Assessment's language list (Python3, Java, C++, C)."""
+    try:
+        return student_typed.normalize(language)
+    except ValueError as exc:
+        raise CodingPlatformError(str(exc), 400)
+
+
+def run_code(db: Session, problem: models.CodingProblem, code: str, custom_input: Optional[str], language: str = "python") -> Dict[str, Any]:
     """The Run button: the examples, plus the student's own testcase when given. Nothing is stored."""
     code = _check_code(code)
+    language = _language(language)
     problem = _snapshot(problem)
     _release_connection(db)
     cases = [c for c in problem.test_cases if c.get("is_example")]
@@ -561,7 +601,7 @@ def run_code(db: Session, problem: models.CodingProblem, code: str, custom_input
         args = parse_custom_input(problem, custom_input)
         cases = cases + [{"args": args, "expected": None, "is_example": False}]
         labels.append({"input": _display_args(problem.param_names, args), "expected": None, "custom": True})
-    raw = _execute(problem, code, [c["args"] for c in cases], capture=True)
+    raw = _execute(problem, code, [c["args"] for c in cases], capture=True, language=language)
     if raw.get("fatal"):
         return {"verdict": raw["fatal"], "message": raw.get("message"), "cases": [], "passed": 0, "total": len(cases)}
     out_cases, passed, verdict = [], 0, ACCEPTED
@@ -592,14 +632,15 @@ def run_code(db: Session, problem: models.CodingProblem, code: str, custom_input
     return {"verdict": verdict, "cases": out_cases, "passed": passed, "total": len(problem.examples or []), "message": None}
 
 
-def submit_code(db: Session, profile: models.StudentProfile, problem: models.CodingProblem, code: str) -> Dict[str, Any]:
+def submit_code(db: Session, profile: models.StudentProfile, problem: models.CodingProblem, code: str, language: str = "python") -> Dict[str, Any]:
     """The Submit button: every test, the first failure decides the verdict. The submission is stored."""
     code = _check_code(code)
+    language = _language(language)
     problem = _snapshot(problem)
     profile_id, organization_id = profile.id, profile.organization_id
     _release_connection(db)
     cases = problem.test_cases
-    raw = _execute(problem, code, [c["args"] for c in cases], capture=False)
+    raw = _execute(problem, code, [c["args"] for c in cases], capture=False, language=language)
     total = len(cases)
     verdict, passed, runtime, failed, error_text = ACCEPTED, 0, None, None, None
     memory = raw.get("mem_kb")
@@ -629,7 +670,7 @@ def submit_code(db: Session, profile: models.StudentProfile, problem: models.Cod
     submission = models.CodingSubmission(
         student_profile_id=profile_id, organization_id=organization_id, problem_id=problem.id, code=code,
         verdict=verdict, passed=passed, total=total, runtime_ms=runtime if verdict == ACCEPTED else None,
-        memory_kb=memory if verdict == ACCEPTED else None, failed_case=failed, error_text=error_text)
+        memory_kb=memory if verdict == ACCEPTED else None, failed_case=failed, error_text=error_text, language=language)
     db.add(submission)
     db.commit()
     db.refresh(submission)
@@ -769,12 +810,14 @@ def problem_detail(db: Session, profile: models.StudentProfile, slug: str) -> Di
     idx = order.index(slug) if slug in order else -1
     tests = snapshot_for_execution(db, slug).test_cases           # from memory: the test data is never read from the database for a screen
     first_case_args = tests[0]["args"] if tests else []
+    spec = student_typed.coding_spec_for(slug, tests)           # None: only Python for this problem (linked lists, trees ...)
     return {
         "id": problem.id, "slug": problem.slug, "title": problem.title, "difficulty": problem.difficulty, "tags": problem.tags or [],
         "description": problem.description, "constraints": problem.constraints or [], "examples": problem.examples or [],
         "hints": problem.hints or [], "function_name": problem.function_name, "param_names": problem.param_names,
         "starter_code": problem.starter_code, "status": "solved" if solved else ("attempted" if last else "todo"),
-        "last_code": last.code if last else None,
+        "languages": student_typed.offered_languages(spec), "starters": student_typed.starters(spec, problem.starter_code),
+        "last_code": last.code if last else None, "last_language": (last.language or "python") if last else None,
         "bookmarked": db.query(models.CodingBookmark).filter(
             models.CodingBookmark.student_profile_id == profile.id, models.CodingBookmark.problem_id == problem.id).first() is not None,
         "is_daily": bool(order) and slug == order[utc_today().toordinal() % len(order)],       # the same rule as daily_problem_slug, on slugs only
@@ -790,7 +833,7 @@ def list_submissions(db: Session, profile: models.StudentProfile, slug: str, lim
         models.CodingSubmission.student_profile_id == profile.id, models.CodingSubmission.problem_id == problem.id
     ).order_by(models.CodingSubmission.id.desc()).limit(limit).all()
     return [{"id": r.id, "verdict": r.verdict, "passed": r.passed, "total": r.total, "runtime_ms": r.runtime_ms,
-             "memory_kb": r.memory_kb, "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
+             "language": r.language or "python", "memory_kb": r.memory_kb, "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
 
 
 def get_submission(db: Session, profile: models.StudentProfile, submission_id: int) -> Dict[str, Any]:
@@ -798,6 +841,6 @@ def get_submission(db: Session, profile: models.StudentProfile, submission_id: i
         models.CodingSubmission.id == submission_id, models.CodingSubmission.student_profile_id == profile.id).first()
     if row is None:
         raise CodingPlatformError("Submission not found.", 404)
-    return {"id": row.id, "verdict": row.verdict, "code": row.code, "passed": row.passed, "total": row.total,
+    return {"id": row.id, "verdict": row.verdict, "code": row.code, "language": row.language or "python", "passed": row.passed, "total": row.total,
             "runtime_ms": row.runtime_ms, "memory_kb": row.memory_kb, "failed_case": row.failed_case, "message": row.error_text,
             "created_at": row.created_at.isoformat() if row.created_at else None}

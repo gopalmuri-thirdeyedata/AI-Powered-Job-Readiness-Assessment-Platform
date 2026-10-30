@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { downloadCandidateTablePdf } from '../utils/bulkExportPdf';
 import {
     ChevronDown,
     CheckCircle,
@@ -304,46 +305,7 @@ const CandidateTable = ({
             return;
         }
 
-        const { jsPDF } = await import('jspdf');
-        const { default: autoTable } = await import('jspdf-autotable');
-        const doc = new jsPDF();
-        
-        // Add Title Header
-        doc.setFontSize(18);
-        doc.setTextColor(93, 140, 44); // Brand Color #5d8c2c
-        doc.text("PrepWin - Candidate Assessment Dataset", 14, 20);
-        
-        doc.setFontSize(10);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Generated on: ${new Date().toLocaleString()} | Scope: ${type.toUpperCase()}`, 14, 26);
-        doc.text(`Total Candidates: ${data.length}`, 14, 31);
-        
-        // Table Columns & Rows
-        const headers = [["S.No", "Name", "Email", "Role", "Stage", "Status", "AI Rec", "Score"]];
-        const body = data.map(row => [
-            row["S.No"],
-            row["Name"],
-            row["Email"],
-            row["Job Role"],
-            row["Current Stage"],
-            row["Status"],
-            row["AI Recommendation"],
-            row["Accuracy Score"]
-        ]);
-
-        autoTable(doc, {
-            startY: 36,
-            head: headers,
-            body: body,
-            theme: 'striped',
-            headStyles: { fillColor: [93, 140, 44] }, // #5d8c2c
-            styles: { fontSize: 8, cellPadding: 2 },
-            columnStyles: {
-                2: { cellWidth: 40 }
-            }
-        });
-
-        doc.save(`Candidates_Report_${type}_${new Date().toISOString().slice(0, 10)}.pdf`);
+        await downloadCandidateTablePdf(data, type);
         setShowExportDropdown(false);
     };
 

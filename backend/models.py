@@ -503,6 +503,7 @@ class CodingSubmission(Base):
     memory_kb = Column(Integer, nullable=True)
     failed_case = Column(JSON, nullable=True)  # {"input": "...", "expected": "...", "actual": "...", "stdout": "..."}
     error_text = Column(Text, nullable=True)
+    language = Column(String(20), nullable=True)  # python | java | cpp | c; NULL = a submission from when Coding was Python only
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     student_profile = relationship("StudentProfile")

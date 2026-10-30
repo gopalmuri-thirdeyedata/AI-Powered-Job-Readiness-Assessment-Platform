@@ -43,7 +43,6 @@ import {
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Counter } from '../../components/home/primitives';
 import { StepHighlight, PopIn, Stagger, StaggerItem, SlideSwap, ProgressBar, Enter } from '../../components/roleready-ui/assessmentMotion';
-import { Editor } from '@monaco-editor/react';
 import AssessmentCodingWorkspace from '../../components/coding/AssessmentCodingWorkspace';
 import CodingTopBar from '../../components/coding/CodingTopBar';
 import { FOCUS_WARNING, MAX_INTEGRITY_EVENTS, decideRecruitmentAction, restoreFromResume } from '../../utils/integrityPolicy';

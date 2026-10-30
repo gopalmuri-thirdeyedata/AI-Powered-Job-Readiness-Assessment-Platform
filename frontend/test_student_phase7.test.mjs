@@ -14,15 +14,17 @@ const studentApiCode = fs.readFileSync(path.join(__dirname, 'src', 'services', '
 
 describe('Student Career Platform Phase 7 Frontend Test Suite', () => {
 
-    test('1. App.jsx registers /student/simulation route and imports StudentPlacementSimulation', () => {
-        assert.ok(appCode.includes("import StudentPlacementSimulation from './pages/student/StudentPlacementSimulation'"));
-        assert.ok(appCode.includes('path="simulation" element={<StudentPlacementSimulation />}'));
+    test('1. App.jsx no longer serves Placement Simulation: every old address redirects, the page is not imported', () => {
+        assert.ok(!appCode.includes('StudentPlacementSimulation'), 'no import of the page');
+        assert.ok(appCode.includes('<Route path="/student/simulation" element={<Navigate to="/student/dashboard" replace />} />'));
+        assert.ok(appCode.includes('<Route path="simulation" element={<Navigate to="/student/hub" replace />} />'));
+        assert.ok(appCode.includes('<Route path="simulation" element={<Navigate to="/admin/student-demo" replace />} />'));
     });
 
-    test('2. StudentLayout navigation includes Placement Simulation item with Award icon', () => {
-        assert.ok(studentLayoutCode.includes('/student/simulation'));
-        assert.ok(studentLayoutCode.includes('Placement Simulation'));
-        assert.ok(studentLayoutCode.includes('Award'));
+    test('2. StudentLayout navigation no longer lists Placement Simulation', () => {
+        assert.ok(!studentLayoutCode.includes('/student/simulation'));
+        assert.ok(!studentLayoutCode.includes('Placement Simulation'));
+        assert.ok(!studentLayoutCode.includes('StudentPlacementSimulation'), 'not even pre-loaded in the background');
     });
 
     test('3. studentApi.js encapsulates all Phase 7 placement simulation endpoints', () => {

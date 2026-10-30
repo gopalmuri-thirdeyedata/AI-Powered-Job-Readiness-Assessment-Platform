@@ -714,6 +714,13 @@
     .student-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .student-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
     .student-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    /* Sidebar navigation list: same 4px bar, but a thumb that shows on both the light and the dark sidebar */
+    .student-nav-scroll { scrollbar-width: thin; scrollbar-color: rgba(100,116,139,0.45) transparent; }
+    .student-nav-scroll::-webkit-scrollbar { width: 4px; }
+    .student-nav-scroll::-webkit-scrollbar-track { background: transparent; }
+    .student-nav-scroll::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.45); border-radius: 2px; }
+    .student-nav-scroll::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.7); }
 }
 /* ─── PrepWin Admin Workspace design system ─────────────────────────────────────────────────────────────────
    One token set for every admin page. Light values are the defaults, `.dark` (the existing theme switch) overrides them.

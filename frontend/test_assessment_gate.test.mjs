@@ -19,7 +19,7 @@ describe('Assessment-required gate for new students', () => {
     });
 
     test('2. layout gates every assessment-dependent sidebar page', () => {
-        for (const p of ['skill-gap', 'roadmap', 'practice', 'interview', 'simulation', 'projects', 'dashboard']) {
+        for (const p of ['skill-gap', 'roadmap', 'practice', 'interview', 'projects', 'dashboard']) {
             assert.ok(layout.includes(`'/student/${p}':`), `${p} must be gated`);
         }
     });

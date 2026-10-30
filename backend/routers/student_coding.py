@@ -1,5 +1,5 @@
 """
-Student LeetCode-style coding platform API (Python only).
+Student LeetCode-style coding platform API (Python, Java, C++ and C: the Assessment's languages).
 Problem list, problem detail, Run (examples + custom input), Submit (all tests) and submission history.
 Hidden test inputs and every expected output stay on the server; only the first failing case of a submission is echoed back.
 """
@@ -24,10 +24,12 @@ submit_limiter = SlidingWindowLimiter(limit=10, window_seconds=60)
 class RunRequest(BaseModel):
     code: str = Field(..., max_length=platform.MAX_CODE_CHARS + 1000)
     custom_input: Optional[str] = Field(None, max_length=platform.MAX_CUSTOM_INPUT_CHARS + 1000)
+    language: str = Field("python", max_length=20)           # python | java | cpp | c: the Assessment's languages
 
 
 class SubmitRequest(BaseModel):
     code: str = Field(..., max_length=platform.MAX_CODE_CHARS + 1000)
+    language: str = Field("python", max_length=20)
 
 
 def _fail(exc: platform.CodingPlatformError):
@@ -72,7 +74,7 @@ def run(slug: str, payload: RunRequest, profile: models.StudentProfile = Depends
         raise HTTPException(status_code=429, detail="Too many runs. Please wait a moment.", headers={"Retry-After": "5"})
     try:
         problem = platform.snapshot_for_execution(db, slug)
-        return platform.run_code(db, problem, payload.code, payload.custom_input)
+        return platform.run_code(db, problem, payload.code, payload.custom_input, payload.language)
     except platform.CodingPlatformError as exc:
         _fail(exc)
 
@@ -84,7 +86,7 @@ def submit(slug: str, payload: SubmitRequest, profile: models.StudentProfile = D
         raise HTTPException(status_code=429, detail="Too many submissions. Please wait a moment.", headers={"Retry-After": "10"})
     try:
         problem = platform.snapshot_for_execution(db, slug)
-        result = platform.submit_code(db, profile, problem, payload.code)
+        result = platform.submit_code(db, profile, problem, payload.code, payload.language)
     except platform.CodingPlatformError as exc:
         _fail(exc)
     if result["verdict"] == platform.ACCEPTED:
